@@ -40,7 +40,12 @@ export async function createCategory(formData: FormData) {
     const validated = categorySchema.parse(data);
 
     await prisma.category.create({
-      data: validated,
+      data: {
+        name: validated.name,
+        type: validated.type,
+        color: validated.color || '#6B7280',
+        icon: validated.icon,
+      },
     });
 
     revalidatePath('/categories');
@@ -67,7 +72,12 @@ export async function updateCategory(id: string, formData: FormData) {
 
     await prisma.category.update({
       where: { id },
-      data: validated,
+      data: {
+        name: validated.name,
+        type: validated.type,
+        color: validated.color || '#6B7280',
+        icon: validated.icon,
+      },
     });
 
     revalidatePath('/categories');
