@@ -10,7 +10,7 @@ import { Plus, Edit2, Trash2 } from 'lucide-react';
 interface Category {
   id: string;
   name: string;
-  type: 'INCOME' | 'EXPENSE' | 'BOTH';
+  type: 'INCOME' | 'EXPENSE';
   color: string | null;
   icon: string | null;
   _count: {
@@ -71,12 +71,12 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Categories</h1>
-          <p className="text-gray-600 mt-1">Manage your income and expense categories</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Categories</h1>
+          <p className="text-sm sm:text-base text-gray-600 mt-1">Organize your income and expenses</p>
         </div>
-        <Button onClick={handleAdd}>
+        <Button onClick={handleAdd} className="w-full sm:w-auto">
           <Plus size={20} className="inline mr-2" />
           Add Category
         </Button>

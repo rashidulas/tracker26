@@ -94,14 +94,14 @@ export default function ExpenseForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 sm:space-y-4">
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         <Input
           label="Date"
           type="date"
@@ -165,11 +165,11 @@ export default function ExpenseForm({
         placeholder="e.g., business, deductible"
       />
 
-      <div className="flex gap-3 pt-4">
-        <Button type="submit" disabled={isSubmitting} className="flex-1">
-          {isSubmitting ? 'Saving...' : expense ? 'Update' : 'Create'}
+      <div className="flex flex-col sm:flex-row gap-3 pt-2 sm:pt-4">
+        <Button type="submit" disabled={isSubmitting} className="flex-1 w-full">
+          {isSubmitting ? 'Saving...' : expense ? 'Update Expense' : 'Add Expense'}
         </Button>
-        <Button type="button" variant="secondary" onClick={onCancel}>
+        <Button type="button" variant="secondary" onClick={onCancel} className="flex-1 w-full">
           Cancel
         </Button>
       </div>

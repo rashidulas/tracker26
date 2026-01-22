@@ -107,7 +107,29 @@ export async function createPayment(formData: FormData) {
 
     const validated = paymentSchema.parse(data);
 
-    // Create payment
+    // Find or create "Debt Payment" category
+    let debtCategory = await prisma.category.findFirst({
+      where: { name: 'Debt Payment', type: 'EXPENSE' },
+    });
+
+    if (!debtCategory) {
+      debtCategory = await prisma.category.create({
+        data: {
+          name: 'Debt Payment',
+          type: 'EXPENSE',
+          color: '#ef4444',
+          icon: '💳',
+        },
+      });
+    }
+
+    // Get debt name for transaction notes
+    const debt = await prisma.debt.findUnique({ where: { id: validated.debtId } });
+    if (!debt) {
+      return { success: false, error: 'Debt not found' };
+    }
+
+    // Create payment record
     await prisma.debtPayment.create({
       data: {
         ...validated,
@@ -115,16 +137,30 @@ export async function createPayment(formData: FormData) {
       },
     });
 
-    // Update debt balance
-    const debt = await prisma.debt.findUnique({ where: { id: validated.debtId } });
-    if (debt) {
-      await prisma.debt.update({
-        where: { id: validated.debtId },
-        data: { currentBalance: debt.currentBalance - validated.amount },
-      });
-    }
+    // Create corresponding expense transaction
+    await prisma.transaction.create({
+      data: {
+        date: new Date(validated.date),
+        amount: validated.amount,
+        kind: 'EXPENSE',
+        categoryId: debtCategory.id,
+        accountId: validated.fromAccountId,
+        merchantOrSource: debt.name,
+        notes: validated.notes || `Payment for ${debt.name}`,
+        tags: ['debt-payment'],
+      },
+    });
+
+    // Update debt balance (never below 0)
+    const newBalance = Math.max(0, debt.currentBalance - validated.amount);
+    await prisma.debt.update({
+      where: { id: validated.debtId },
+      data: { currentBalance: newBalance },
+    });
 
     revalidatePath('/debts');
+    revalidatePath('/expenses');
+    revalidatePath('/dashboard');
     return { success: true };
   } catch (error) {
     if (error instanceof z.ZodError) {

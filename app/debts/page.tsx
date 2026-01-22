@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
-import { createDebt, updateDebt, deleteDebt, createPayment } from './actions';
+import { createDebt, updateDebt, deleteDebt, createPayment, getDebts, getAccounts } from './actions';
 import { Plus, Edit2, Trash2, DollarSign } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -46,9 +46,9 @@ interface Debt {
   }>;
 }
 
-interface DebtsClientProps {
-  initialDebts: Debt[];
-  accounts: Array<{ id: string; name: string }>;
+interface Account {
+  id: string;
+  name: string;
 }
 
 function DebtForm({ debt, onSuccess, onCancel }: {
@@ -260,19 +260,47 @@ function PaymentForm({
   );
 }
 
-export default function DebtsClient({ initialDebts, accounts }: DebtsClientProps) {
-  const [debts, setDebts] = useState(initialDebts);
+export default function DebtsPage() {
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
   const [selectedDebtForPayment, setSelectedDebtForPayment] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
+    try {
+      setIsLoading(true);
+      const [debtsResult, accountsResult] = await Promise.all([
+        getDebts(),
+        getAccounts(),
+      ]);
+      
+      if (debtsResult.success && debtsResult.data) {
+        setDebts(debtsResult.data);
+      }
+      
+      if (accountsResult.success && accountsResult.data) {
+        setAccounts(accountsResult.data);
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   const handleSuccess = () => {
     setIsDebtModalOpen(false);
     setIsPaymentModalOpen(false);
     setEditingDebt(null);
     setSelectedDebtForPayment(null);
-    window.location.reload();
+    loadData();
   };
 
   const handleDelete = async (id: string) => {
@@ -289,6 +317,14 @@ export default function DebtsClient({ initialDebts, accounts }: DebtsClientProps
       currency: 'USD',
     }).format(amount);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
 
   const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
 

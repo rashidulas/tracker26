@@ -105,19 +105,23 @@ export async function getDashboardData() {
     // Calculate accounts total
     const accounts = await prisma.account.findMany({
       include: {
-        transactions: {
+        transactionsFrom: {
           select: { amount: true, kind: true },
+        },
+        transactionsTo: {
+          select: { amount: true },
         },
       },
     });
 
     const totalBalance = accounts.reduce((sum, account) => {
-      const transactionTotal = account.transactions.reduce((s, t) => {
+      const transactionTotal = account.transactionsFrom.reduce((s, t) => {
         if (t.kind === 'INCOME') return s + t.amount;
         if (t.kind === 'EXPENSE') return s - t.amount;
         return s;
       }, 0);
-      return sum + account.startingBalance + transactionTotal;
+      const transfersIn = account.transactionsTo.reduce((s, t) => s + t.amount, 0);
+      return sum + account.startingBalance + transactionTotal + transfersIn;
     }, 0);
 
     return {

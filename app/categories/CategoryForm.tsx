@@ -11,7 +11,7 @@ import { useState } from 'react';
 
 const categorySchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  type: z.enum(['INCOME', 'EXPENSE', 'BOTH']),
+  type: z.enum(['INCOME', 'EXPENSE']),
   color: z.string().optional(),
   icon: z.string().optional(),
 });
@@ -22,7 +22,7 @@ interface CategoryFormProps {
   category?: {
     id: string;
     name: string;
-    type: 'INCOME' | 'EXPENSE' | 'BOTH';
+    type: 'INCOME' | 'EXPENSE';
     color?: string | null;
     icon?: string | null;
   };
@@ -93,7 +93,6 @@ export default function CategoryForm({ category, onSuccess, onCancel }: Category
         options={[
           { value: 'INCOME', label: 'Income' },
           { value: 'EXPENSE', label: 'Expense' },
-          { value: 'BOTH', label: 'Both' },
         ]}
       />
 

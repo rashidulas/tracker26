@@ -85,12 +85,12 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Accounts</h1>
-          <p className="text-gray-600 mt-1">Manage your financial accounts</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Accounts</h1>
+          <p className="text-sm sm:text-base text-gray-600 mt-1">Manage your financial accounts</p>
         </div>
-        <Button onClick={handleAdd}>
+        <Button onClick={handleAdd} className="w-full sm:w-auto">
           <Plus size={20} className="inline mr-2" />
           Add Account
         </Button>

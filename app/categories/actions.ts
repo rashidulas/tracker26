@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const categorySchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  type: z.enum(['INCOME', 'EXPENSE', 'BOTH']),
+  type: z.enum(['INCOME', 'EXPENSE']),
   color: z.string().optional(),
   icon: z.string().optional(),
 });
@@ -58,7 +58,7 @@ export async function updateCategory(id: string, formData: FormData) {
   try {
     const data = {
       name: formData.get('name') as string,
-      type: formData.get('type') as 'INCOME' | 'EXPENSE' | 'BOTH',
+      type: formData.get('type') as 'INCOME' | 'EXPENSE',
       color: formData.get('color') as string,
       icon: formData.get('icon') as string,
     };

@@ -143,7 +143,7 @@ export async function getCategoriesForSelect() {
   try {
     const categories = await prisma.category.findMany({
       where: {
-        OR: [{ type: 'INCOME' }, { type: 'BOTH' }],
+        type: 'INCOME',
       },
       orderBy: { name: 'asc' },
     });

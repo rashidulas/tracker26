@@ -94,17 +94,17 @@ export default function ExpensesClient({
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Expenses</h1>
-          <p className="text-gray-600 mt-1">Track and manage your expenses</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Expenses</h1>
+          <p className="text-sm sm:text-base text-gray-600 mt-1">Track and manage your expenses</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="secondary" onClick={() => setShowFilters(!showFilters)}>
+          <Button variant="secondary" onClick={() => setShowFilters(!showFilters)} className="flex-1 sm:flex-none">
             <Filter size={20} className="inline mr-2" />
             Filters
           </Button>
-          <Button onClick={handleAdd}>
+          <Button onClick={handleAdd} className="flex-1 sm:flex-none">
             <Plus size={20} className="inline mr-2" />
             Add Expense
           </Button>

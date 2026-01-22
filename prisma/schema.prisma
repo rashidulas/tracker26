@@ -1,6 +1,3 @@
-// This is your Prisma schema file for MongoDB
-// Learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,80 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== CATEGORIES ====================
-model Category {
-  id           String        @id @default(auto()) @map("_id") @db.ObjectId
-  name         String
-  type         CategoryType  @default(BOTH)
-  color        String?       // Hex color code
-  icon         String?       // Icon name or emoji
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  
-  // Relations
-  transactions Transaction[]
-  budgets      Budget[]
-
-  @@map("categories")
-}
-
+// Enums
 enum CategoryType {
   INCOME
   EXPENSE
-  BOTH
-}
-
-// ==================== ACCOUNTS ====================
-model Account {
-  id              String          @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  type            AccountType
-  institution     String?
-  startingBalance Float           @default(0)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  
-  // Relations
-  transactions           Transaction[]
-  debtPayments           DebtPayment[]
-  goalContributions      GoalContribution[]
-  investmentTransactions InvestmentTransaction[]
-  investmentHoldings     InvestmentHolding[]
-
-  @@map("accounts")
 }
 
 enum AccountType {
   CHECKING
   SAVINGS
-  CASH
   CREDIT_CARD
+  CASH
   INVESTMENT
-}
-
-// ==================== TRANSACTIONS (Unified) ====================
-model Transaction {
-  id               String          @id @default(auto()) @map("_id") @db.ObjectId
-  date             DateTime
-  amount           Float
-  kind             TransactionKind
-  categoryId       String?         @db.ObjectId
-  accountId        String          @db.ObjectId
-  merchantOrSource String?         // Merchant for expense, Source for income
-  notes            String?
-  tags             String[]        @default([])
-  
-  // For split transactions
-  splitItems       SplitItem[]
-  
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  
-  // Relations
-  category         Category?       @relation(fields: [categoryId], references: [id])
-  account          Account         @relation(fields: [accountId], references: [id])
-
-  @@map("transactions")
 }
 
 enum TransactionKind {
@@ -92,147 +27,197 @@ enum TransactionKind {
   TRANSFER
 }
 
-// Embedded document for split transactions
-type SplitItem {
-  categoryId String  @db.ObjectId
-  amount     Float
-  notes      String?
-}
-
-// ==================== DEBTS ====================
-model Debt {
-  id             String        @id @default(auto()) @map("_id") @db.ObjectId
-  name           String
-  type           DebtType
-  currentBalance Float
-  apr            Float?        // Annual Percentage Rate
-  minPayment     Float?
-  dueDay         Int?          // Day of month (1-31)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  
-  // Relations
-  payments       DebtPayment[]
-
-  @@map("debts")
-}
-
 enum DebtType {
   CREDIT_CARD
-  PERSONAL_LOAN
   STUDENT_LOAN
   MORTGAGE
+  PERSONAL_LOAN
   AUTO_LOAN
   OTHER
-}
-
-model DebtPayment {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  date          DateTime
-  amount        Float
-  debtId        String   @db.ObjectId
-  fromAccountId String   @db.ObjectId
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  // Relations
-  debt          Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
-  fromAccount   Account  @relation(fields: [fromAccountId], references: [id])
-
-  @@map("debt_payments")
-}
-
-// ==================== INVESTMENTS ====================
-model InvestmentHolding {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  symbol        String   // Ticker symbol
-  name          String
-  quantity      Float
-  avgCostBasis  Float    // Average cost per unit
-  lastPrice     Float    // Last manually updated price
-  accountId     String   @db.ObjectId
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  // Relations
-  account       Account  @relation(fields: [accountId], references: [id])
-
-  @@map("investment_holdings")
-}
-
-model InvestmentTransaction {
-  id          String                    @id @default(auto()) @map("_id") @db.ObjectId
-  type        InvestmentTransactionType
-  date        DateTime
-  amount      Float                     // Dollar amount
-  quantity    Float?                    // Number of shares (for buy/sell)
-  price       Float?                    // Price per share (for buy/sell)
-  symbol      String?                   // Ticker symbol (for buy/sell)
-  accountId   String                    @db.ObjectId
-  notes       String?
-  createdAt   DateTime                  @default(now())
-  updatedAt   DateTime                  @updatedAt
-  
-  // Relations
-  account     Account                   @relation(fields: [accountId], references: [id])
-
-  @@map("investment_transactions")
 }
 
 enum InvestmentTransactionType {
   BUY
   SELL
-  CONTRIBUTION
-  WITHDRAWAL
   DIVIDEND
+  CONTRIBUTION
 }
 
-// ==================== GOALS / SAVINGS ====================
-model Goal {
-  id            String             @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  targetAmount  Float
-  dueDate       DateTime?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  
-  // Relations
-  contributions GoalContribution[]
+// Models
+model Category {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  type      CategoryType
+  color     String
+  icon      String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
-  @@map("goals")
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@index([type])
+}
+
+model Account {
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  type            AccountType
+  institution     String?
+  startingBalance Float       @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  transactionsFrom Transaction[]            @relation("FromAccount")
+  transactionsTo   Transaction[]            @relation("ToAccount")
+  debtPayments     DebtPayment[]
+  investmentHoldings InvestmentHolding[]
+  investmentTransactions InvestmentTransaction[]
+  goalContributions GoalContribution[]
+
+  @@index([type])
+}
+
+type SplitItem {
+  categoryId String
+  amount     Float
+  notes      String?
+}
+
+model Transaction {
+  id               String          @id @default(auto()) @map("_id") @db.ObjectId
+  date             DateTime
+  amount           Float
+  kind             TransactionKind
+  categoryId       String?         @db.ObjectId
+  accountId        String          @db.ObjectId
+  toAccountId      String?         @db.ObjectId
+  merchantOrSource String?
+  notes            String?
+  tags             String[]
+  splitItems       SplitItem[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  category   Category? @relation(fields: [categoryId], references: [id])
+  account    Account   @relation("FromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount  Account?  @relation("ToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([kind])
+  @@index([categoryId])
+  @@index([accountId])
+  @@index([date, kind])
+}
+
+model Debt {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  type           DebtType
+  currentBalance Float
+  originalAmount Float?
+  apr            Float?
+  minPayment     Float?
+  dueDay         Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  payments DebtPayment[]
+}
+
+model DebtPayment {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  debtId          String   @db.ObjectId
+  date            DateTime
+  amount          Float
+  fromAccountId   String   @db.ObjectId
+  transactionId   String?  @db.ObjectId
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  debt        Debt    @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  fromAccount Account @relation(fields: [fromAccountId], references: [id])
+
+  @@index([date])
+  @@index([debtId])
+}
+
+model InvestmentHolding {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  accountId    String   @db.ObjectId
+  symbol       String
+  name         String
+  quantity     Float
+  avgCostBasis Float
+  lastPrice    Float
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  account      Account                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  transactions InvestmentTransaction[]
+
+  @@index([accountId])
+  @@index([symbol])
+}
+
+model InvestmentTransaction {
+  id        String                     @id @default(auto()) @map("_id") @db.ObjectId
+  holdingId String                     @db.ObjectId
+  accountId String                     @db.ObjectId
+  date      DateTime
+  type      InvestmentTransactionType
+  quantity  Float
+  price     Float
+  amount    Float
+  fees      Float                      @default(0)
+  notes     String?
+  createdAt DateTime                   @default(now())
+
+  holding InvestmentHolding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  account Account           @relation(fields: [accountId], references: [id])
+
+  @@index([date])
+  @@index([accountId])
+  @@index([holdingId])
+}
+
+model Goal {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  targetAmount Float
+  dueDate      DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  contributions GoalContribution[]
 }
 
 model GoalContribution {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  goalId        String   @db.ObjectId
   date          DateTime
   amount        Float
-  goalId        String   @db.ObjectId
   fromAccountId String   @db.ObjectId
   notes         String?
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  // Relations
-  goal          Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  fromAccount   Account  @relation(fields: [fromAccountId], references: [id])
 
-  @@map("goal_contributions")
+  goal        Goal    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  fromAccount Account @relation(fields: [fromAccountId], references: [id])
+
+  @@index([date])
+  @@index([goalId])
 }
 
-// ==================== BUDGETS ====================
 model Budget {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  month           String   // Format: "YYYY-MM"
-  categoryId      String   @db.ObjectId
-  budgetAmount    Float
-  rolloverEnabled Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  // Relations
-  category        Category @relation(fields: [categoryId], references: [id])
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  month      DateTime
+  categoryId String   @db.ObjectId
+  amount     Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([month, categoryId])
-  @@map("budgets")
+  @@index([month])
 }

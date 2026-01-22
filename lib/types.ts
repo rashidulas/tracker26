@@ -1,7 +1,7 @@
 // Type definitions for the application
 
 export type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
-export type CategoryType = 'INCOME' | 'EXPENSE' | 'BOTH';
+export type CategoryType = 'INCOME' | 'EXPENSE';
 export type AccountType = 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT';
 export type DebtType = 'CREDIT_CARD' | 'PERSONAL_LOAN' | 'STUDENT_LOAN' | 'MORTGAGE' | 'AUTO_LOAN' | 'OTHER';
 export type InvestmentTransactionType = 'BUY' | 'SELL' | 'CONTRIBUTION' | 'WITHDRAWAL' | 'DIVIDEND';

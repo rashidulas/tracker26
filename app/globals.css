@@ -24,6 +24,33 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+  
+  /* Mobile-responsive table */
+  .mobile-table-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Touch-friendly button sizes */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Toast animation */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
 }
 
 /* Custom scrollbar */

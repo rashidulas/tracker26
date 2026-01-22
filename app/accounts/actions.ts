@@ -16,10 +16,15 @@ export async function getAccounts() {
     const accounts = await prisma.account.findMany({
       orderBy: { name: 'asc' },
       include: {
-        transactions: {
+        transactionsFrom: {
           select: {
             amount: true,
             kind: true,
+          },
+        },
+        transactionsTo: {
+          select: {
+            amount: true,
           },
         },
       },
@@ -27,7 +32,8 @@ export async function getAccounts() {
 
     // Calculate current balance for each account
     const accountsWithBalance = accounts.map((account) => {
-      const transactionTotal = account.transactions.reduce((sum, transaction) => {
+      // Regular transactions (income and expense)
+      const transactionTotal = account.transactionsFrom.reduce((sum, transaction) => {
         if (transaction.kind === 'INCOME') {
           return sum + transaction.amount;
         } else if (transaction.kind === 'EXPENSE') {
@@ -36,10 +42,13 @@ export async function getAccounts() {
         return sum;
       }, 0);
 
+      // Transfers in (to this account)
+      const transfersIn = account.transactionsTo.reduce((sum, transfer) => sum + transfer.amount, 0);
+
       return {
         ...account,
-        currentBalance: account.startingBalance + transactionTotal,
-        transactionCount: account.transactions.length,
+        currentBalance: account.startingBalance + transactionTotal + transfersIn,
+        transactionCount: account.transactionsFrom.length + account.transactionsTo.length,
       };
     });
 

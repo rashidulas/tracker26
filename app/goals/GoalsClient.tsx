@@ -87,13 +87,13 @@ function GoalForm({ goal, onSuccess, onCancel }: any) {
         </div>
       )}
 
-      <Input label="Goal Name" {...register('name')} error={errors.name?.message} placeholder="e.g., Emergency Fund" />
+      <Input label="Goal Name" {...register('name')} error={errors.name?.message as string} placeholder="e.g., Emergency Fund" />
       <Input
         label="Target Amount"
         type="number"
         step="0.01"
         {...register('targetAmount')}
-        error={errors.targetAmount?.message}
+        error={errors.targetAmount?.message as string}
         placeholder="10000.00"
       />
       <Input label="Due Date (Optional)" type="date" {...register('dueDate')} />
@@ -227,27 +227,27 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Goals</h1>
-          <p className="text-gray-600 mt-1">Track your savings goals</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Goals</h1>
+          <p className="text-sm sm:text-base text-gray-600 mt-1">Track your savings goals</p>
         </div>
-        <Button onClick={() => setIsGoalModalOpen(true)}>
+        <Button onClick={() => setIsGoalModalOpen(true)} className="w-full sm:w-auto">
           <Plus size={20} className="inline mr-2" />
           Add Goal
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {goals.map((goal) => (
-          <div key={goal.id} className="bg-white rounded-lg shadow p-6">
+          <div key={goal.id} className="bg-white rounded-lg shadow p-4 sm:p-6">
             <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-3">
-                <TargetIcon size={24} className="text-blue-600" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{goal.name}</h3>
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                <TargetIcon size={20} className="sm:w-6 sm:h-6 text-blue-600 flex-shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{goal.name}</h3>
                   {goal.dueDate && (
-                    <p className="text-sm text-gray-500">Due: {format(new Date(goal.dueDate), 'MMM dd, yyyy')}</p>
+                    <p className="text-xs sm:text-sm text-gray-500">Due: {format(new Date(goal.dueDate), 'MMM dd, yyyy')}</p>
                   )}
                 </div>
               </div>
