@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
 import { ToastProvider } from "@/components/ToastProvider";
@@ -6,12 +6,13 @@ import { ToastProvider } from "@/components/ToastProvider";
 export const metadata: Metadata = {
   title: "Tracker26 - Personal Finance Manager",
   description: "Manage your finances, budgets, investments, and goals",
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({

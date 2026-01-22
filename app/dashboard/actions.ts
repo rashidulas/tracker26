@@ -139,6 +139,7 @@ export async function getDashboardData() {
     };
   } catch (error) {
     console.error('Error fetching dashboard data:', error);
-    return { success: false, error: 'Failed to fetch dashboard data' };
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch dashboard data';
+    return { success: false, error: `Failed to fetch dashboard data: ${errorMessage}` };
   }
 }

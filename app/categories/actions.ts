@@ -24,7 +24,8 @@ export async function getCategories() {
     return { success: true, data: categories };
   } catch (error) {
     console.error('Error fetching categories:', error);
-    return { success: false, error: 'Failed to fetch categories' };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Failed to fetch categories: ${errorMessage}` };
   }
 }
 

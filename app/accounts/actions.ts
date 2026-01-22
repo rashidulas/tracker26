@@ -55,7 +55,8 @@ export async function getAccounts() {
     return { success: true, data: accountsWithBalance };
   } catch (error) {
     console.error('Error fetching accounts:', error);
-    return { success: false, error: 'Failed to fetch accounts' };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Failed to fetch accounts: ${errorMessage}` };
   }
 }
 

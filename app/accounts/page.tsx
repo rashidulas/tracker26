@@ -1,6 +1,9 @@
 import { getAccounts } from './actions';
 import AccountsClient from './AccountsClient';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function AccountsPage() {
   const result = await getAccounts();
 

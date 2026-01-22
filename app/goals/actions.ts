@@ -42,7 +42,8 @@ export async function getGoals() {
     return { success: true, data: goalsWithProgress };
   } catch (error) {
     console.error('Error fetching goals:', error);
-    return { success: false, error: 'Failed to fetch goals' };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Failed to fetch goals: ${errorMessage}` };
   }
 }
 

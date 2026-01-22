@@ -60,7 +60,8 @@ export async function getExpenses(filters?: {
     return { success: true, data: expenses };
   } catch (error) {
     console.error('Error fetching expenses:', error);
-    return { success: false, error: 'Failed to fetch expenses' };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Failed to fetch expenses: ${errorMessage}` };
   }
 }
 
