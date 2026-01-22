@@ -150,10 +150,15 @@ export async function createInvestmentTransaction(data: InvestmentTransactionInp
         });
 
         // Create transaction
-        const transaction = await prisma.investmentTransaction.create({
-          data: {
-            ...validated,
+        const transaction = await prisma.investmentTransaction.create({          data: {
+            type: validated.type,
+            date: validated.date,
+            quantity: validated.quantity!,
+            price: validated.price!,
+            amount: validated.amount,
+            accountId: validated.accountId,
             holdingId: existingHolding.id,
+            notes: validated.notes,
           },
         });
 
@@ -175,8 +180,14 @@ export async function createInvestmentTransaction(data: InvestmentTransactionInp
         // Create transaction
         const transaction = await prisma.investmentTransaction.create({
           data: {
-            ...validated,
+            type: validated.type,
+            date: validated.date,
+            quantity: validated.quantity!,
+            price: validated.price!,
+            amount: validated.amount,
+            accountId: validated.accountId,
             holdingId: holding.id,
+            notes: validated.notes,
           },
         });
 
@@ -217,8 +228,14 @@ export async function createInvestmentTransaction(data: InvestmentTransactionInp
       // Create transaction
       const transaction = await prisma.investmentTransaction.create({
         data: {
-          ...validated,
+          type: validated.type,
+          date: validated.date,
+          quantity: validated.quantity!,
+          price: validated.price!,
+          amount: validated.amount,
+          accountId: validated.accountId,
           holdingId: holding.id,
+          notes: validated.notes,
         },
       });
 
@@ -227,8 +244,43 @@ export async function createInvestmentTransaction(data: InvestmentTransactionInp
     }
 
     // For other transaction types (CONTRIBUTION, WITHDRAWAL, DIVIDEND)
+    // These transaction types need a holdingId - find or create a default one
+    let holdingId = validated.holdingId;
+    if (!holdingId) {
+      // Get or create a default cash holding for the account
+      let cashHolding = await prisma.investmentHolding.findFirst({
+        where: {
+          symbol: 'CASH',
+          accountId: validated.accountId,
+        },
+      });
+
+      if (!cashHolding) {
+        cashHolding = await prisma.investmentHolding.create({
+          data: {
+            symbol: 'CASH',
+            name: 'Cash',
+            quantity: 0,
+            avgCostBasis: 1,
+            lastPrice: 1,
+            accountId: validated.accountId,
+          },
+        });
+      }
+      holdingId = cashHolding.id;
+    }
+
     const transaction = await prisma.investmentTransaction.create({
-      data: validated,
+      data: {
+        type: validated.type,
+        date: validated.date,
+        amount: validated.amount,
+        accountId: validated.accountId,
+        quantity: validated.quantity || 0,
+        price: validated.price || 1,
+        holdingId: holdingId,
+        notes: validated.notes,
+      },
     });
 
     revalidatePath('/investments');

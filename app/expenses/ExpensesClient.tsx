@@ -14,12 +14,12 @@ interface Expense {
   id: string;
   date: Date;
   amount: number;
-  categoryId: string;
+  categoryId: string | null;
   accountId: string;
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
-  category: { id: string; name: string; icon: string | null };
+  category: { id: string; name: string; icon: string | null } | null;
   account: { id: string; name: string };
 }
 
@@ -191,8 +191,8 @@ export default function ExpensesClient({
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
-                    {expense.category.icon && <span>{expense.category.icon}</span>}
-                    <span className="text-sm text-gray-900">{expense.category.name}</span>
+                    {expense.category?.icon && <span>{expense.category.icon}</span>}
+                    <span className="text-sm text-gray-900">{expense.category?.name || 'Uncategorized'}</span>
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">

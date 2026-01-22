@@ -163,25 +163,25 @@ export default function InvestmentsPage() {
           <SummaryCard
             title="Market Value"
             value={formatCurrency(stats.totalMarketValue)}
-            icon={<DollarSign />}
+            icon={DollarSign}
             color="blue"
           />
           <SummaryCard
             title="Total Cost"
             value={formatCurrency(stats.totalCost)}
-            icon={<TrendingDown />}
+            icon={TrendingDown}
             color="gray"
           />
           <SummaryCard
             title="Total Gain"
             value={formatCurrency(stats.totalGain)}
-            icon={stats.totalGain >= 0 ? <TrendingUp /> : <TrendingDown />}
+            icon={stats.totalGain >= 0 ? TrendingUp : TrendingDown}
             color={stats.totalGain >= 0 ? 'green' : 'red'}
           />
           <SummaryCard
             title="Return"
             value={formatPercent(stats.totalGainPercent)}
-            icon={stats.totalGain >= 0 ? <TrendingUp /> : <TrendingDown />}
+            icon={stats.totalGain >= 0 ? TrendingUp : TrendingDown}
             color={stats.totalGain >= 0 ? 'green' : 'red'}
           />
         </div>

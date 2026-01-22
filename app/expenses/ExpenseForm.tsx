@@ -26,7 +26,7 @@ interface ExpenseFormProps {
     id: string;
     date: Date;
     amount: number;
-    categoryId: string;
+    categoryId: string | null;
     accountId: string;
     merchantOrSource?: string | null;
     notes?: string | null;

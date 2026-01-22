@@ -41,6 +41,7 @@ enum InvestmentTransactionType {
   SELL
   DIVIDEND
   CONTRIBUTION
+  WITHDRAWAL
 }
 
 // Models
