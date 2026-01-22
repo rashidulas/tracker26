@@ -21,14 +21,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-      </head>
-      <body className="antialiased">
+      <body className="antialiased bg-gray-50" suppressHydrationWarning>
         <ToastProvider>
-          <div className="flex min-h-screen bg-gray-50">
+          <div className="flex min-h-screen">
             <Navigation />
-            <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 px-3 py-4 sm:p-6 lg:p-8 w-full max-w-full overflow-x-hidden">
+            <main className="flex-1 lg:ml-64 pt-20 lg:pt-8 px-3 py-4 sm:px-6 lg:px-8 pb-8 w-full max-w-full overflow-x-hidden bg-gray-50">
               {children}
             </main>
           </div>
