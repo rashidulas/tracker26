@@ -154,7 +154,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                    {transaction.account.name}
+                    {transaction.account?.name || '-'}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                     <span

@@ -180,7 +180,7 @@ export default function TransfersPage() {
                       {formatDate(transfer.date)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {transfer.account.name}
+                      {transfer.account?.name || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <ArrowRight size={16} className="text-blue-500 mx-auto" />

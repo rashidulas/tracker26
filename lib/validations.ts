@@ -38,7 +38,7 @@ export const incomeSchema = baseTransactionSchema.extend({
 export const expenseSchema = baseTransactionSchema.extend({
   kind: z.literal('EXPENSE'),
   categoryId: z.string().min(1, 'Category is required'),
-  accountId: z.string().min(1, 'Account is required'),
+  accountId: z.string().optional(),
   merchantOrSource: z.string().max(100).optional(),
   splitItems: z.array(z.object({
     categoryId: z.string().min(1),

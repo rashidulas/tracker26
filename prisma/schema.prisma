@@ -91,7 +91,7 @@ model Transaction {
   amount           Float
   kind             TransactionKind
   categoryId       String?         @db.ObjectId
-  accountId        String          @db.ObjectId
+  accountId        String?         @db.ObjectId
   toAccountId      String?         @db.ObjectId
   merchantOrSource String?
   notes            String?
@@ -101,7 +101,7 @@ model Transaction {
   updatedAt        DateTime        @updatedAt
 
   category   Category? @relation(fields: [categoryId], references: [id])
-  account    Account   @relation("FromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  account    Account?  @relation("FromAccount", fields: [accountId], references: [id], onDelete: Cascade)
   toAccount  Account?  @relation("ToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
 
   @@index([date])

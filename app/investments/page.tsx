@@ -235,7 +235,7 @@ export default function InvestmentsPage() {
                   <tr key={holding.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{holding.symbol}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{holding.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{holding.account.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{holding.account?.name || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{holding.quantity.toFixed(4)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCurrency(holding.avgCostBasis)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">

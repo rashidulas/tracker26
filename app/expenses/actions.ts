@@ -8,7 +8,7 @@ const transactionSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.number().positive('Amount must be positive'),
   categoryId: z.string().min(1, 'Category is required'),
-  accountId: z.string().min(1, 'Account is required'),
+  accountId: z.string().optional(),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
   tags: z.array(z.string()).optional(),
@@ -68,11 +68,12 @@ export async function getExpenses(filters?: {
 export async function createExpense(formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
+    const rawAccountId = formData.get('accountId') as string;
     const data = {
       date: formData.get('date') as string,
       amount: parseFloat(formData.get('amount') as string),
       categoryId: formData.get('categoryId') as string,
-      accountId: formData.get('accountId') as string,
+      accountId: rawAccountId || undefined,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
       tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
@@ -82,9 +83,14 @@ export async function createExpense(formData: FormData) {
 
     await prisma.transaction.create({
       data: {
-        ...validated,
         date: new Date(validated.date),
+        amount: validated.amount,
         kind: 'EXPENSE',
+        categoryId: validated.categoryId,
+        accountId: validated.accountId || null,
+        merchantOrSource: validated.merchantOrSource,
+        notes: validated.notes,
+        tags: validated.tags || [],
       },
     });
 
@@ -102,11 +108,12 @@ export async function createExpense(formData: FormData) {
 export async function updateExpense(id: string, formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
+    const rawAccountId = formData.get('accountId') as string;
     const data = {
       date: formData.get('date') as string,
       amount: parseFloat(formData.get('amount') as string),
       categoryId: formData.get('categoryId') as string,
-      accountId: formData.get('accountId') as string,
+      accountId: rawAccountId || undefined,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
       tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
@@ -117,9 +124,14 @@ export async function updateExpense(id: string, formData: FormData) {
     await prisma.transaction.update({
       where: { id },
       data: {
-        ...validated,
         date: new Date(validated.date),
+        amount: validated.amount,
         kind: 'EXPENSE',
+        categoryId: validated.categoryId,
+        accountId: validated.accountId || null,
+        merchantOrSource: validated.merchantOrSource,
+        notes: validated.notes,
+        tags: validated.tags || [],
       },
     });
 

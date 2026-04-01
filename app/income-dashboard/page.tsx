@@ -423,7 +423,7 @@ export default function IncomeDashboardPage() {
                       {incomeItem.merchantOrSource || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {incomeItem.account.name}
+                      {incomeItem.account?.name || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600 text-right">
                       {formatCurrency(incomeItem.amount)}
@@ -458,7 +458,7 @@ export default function IncomeDashboardPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Account:</span>
-                <span className="text-sm font-medium">{editingIncome.account.name}</span>
+                <span className="text-sm font-medium">{editingIncome.account?.name || '-'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Description:</span>

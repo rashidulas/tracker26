@@ -7,7 +7,8 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import ExpenseForm from './ExpenseForm';
 import { deleteExpense } from './actions';
-import { Plus, Edit2, Trash2, Filter, X } from 'lucide-react';
+import ReceiptScanner from './ReceiptScanner';
+import { Plus, Edit2, Trash2, Filter, X, Camera } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Expense {
@@ -15,12 +16,12 @@ interface Expense {
   date: Date;
   amount: number;
   categoryId: string | null;
-  accountId: string;
+  accountId: string | null;
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
   category: { id: string; name: string; icon: string | null } | null;
-  account: { id: string; name: string };
+  account: { id: string; name: string } | null;
 }
 
 interface ExpensesClientProps {
@@ -36,6 +37,7 @@ export default function ExpensesClient({
 }: ExpensesClientProps) {
   const [expenses, setExpenses] = useState(initialExpenses);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -103,6 +105,10 @@ export default function ExpensesClient({
           <Button variant="secondary" onClick={() => setShowFilters(!showFilters)} className="flex-1 sm:flex-none">
             <Filter size={20} className="inline mr-2" />
             Filters
+          </Button>
+          <Button variant="secondary" onClick={() => setIsScannerOpen(true)} className="flex-1 sm:flex-none">
+            <Camera size={20} className="inline mr-2" />
+            Scan Receipt
           </Button>
           <Button onClick={handleAdd} className="flex-1 sm:flex-none">
             <Plus size={20} className="inline mr-2" />
@@ -199,7 +205,7 @@ export default function ExpensesClient({
                   {expense.merchantOrSource || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {expense.account.name}
+                  {expense.account?.name || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-red-600">
                   {formatCurrency(expense.amount)}
@@ -248,6 +254,23 @@ export default function ExpensesClient({
             setIsModalOpen(false);
             setEditingExpense(null);
           }}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        title="Scan Receipt"
+        size="lg"
+      >
+        <ReceiptScanner
+          categories={categories}
+          accounts={accounts}
+          onSuccess={() => {
+            setIsScannerOpen(false);
+            window.location.reload();
+          }}
+          onCancel={() => setIsScannerOpen(false)}
         />
       </Modal>
     </div>

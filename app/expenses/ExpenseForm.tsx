@@ -13,7 +13,7 @@ const expenseSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.string().min(1, 'Amount is required'),
   categoryId: z.string().min(1, 'Category is required'),
-  accountId: z.string().min(1, 'Account is required'),
+  accountId: z.string().optional(),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
   tags: z.string().optional(),
@@ -27,7 +27,7 @@ interface ExpenseFormProps {
     date: Date;
     amount: number;
     categoryId: string | null;
-    accountId: string;
+    accountId: string | null;
     merchantOrSource?: string | null;
     notes?: string | null;
     tags: string[];
@@ -75,7 +75,7 @@ export default function ExpenseForm({
     formData.append('date', data.date);
     formData.append('amount', data.amount);
     formData.append('categoryId', data.categoryId);
-    formData.append('accountId', data.accountId);
+    formData.append('accountId', data.accountId || '');
     formData.append('merchantOrSource', data.merchantOrSource || '');
     formData.append('notes', data.notes || '');
     formData.append('tags', data.tags || '');
@@ -130,11 +130,11 @@ export default function ExpenseForm({
       />
 
       <Select
-        label="Account"
+        label="Account (Optional)"
         {...register('accountId')}
         error={errors.accountId?.message}
         options={[
-          { value: '', label: 'Select account...' },
+          { value: '', label: 'No account' },
           ...accounts.map((a) => ({ value: a.id, label: a.name })),
         ]}
       />

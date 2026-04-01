@@ -434,7 +434,7 @@ export default function ExpenseDashboardPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {expense.account.name}
+                      {expense.account?.name || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600 text-right">
                       {formatCurrency(expense.amount)}
@@ -469,7 +469,7 @@ export default function ExpenseDashboardPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Account:</span>
-                <span className="text-sm font-medium">{editingExpense.account.name}</span>
+                <span className="text-sm font-medium">{editingExpense.account?.name || '-'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-500">Merchant:</span>

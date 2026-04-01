@@ -388,7 +388,7 @@ export default function IncomePage() {
                   {item.merchantOrSource || '-'}
                 </td>
                 <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 hidden md:table-cell">
-                  {item.account.name}
+                  {item.account?.name || '-'}
                 </td>
                 <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium text-green-600">
                   {formatCurrency(item.amount)}
