@@ -207,8 +207,8 @@ export default function ExpenseDashboardPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Expense Dashboard</h1>
-        <p className="text-gray-500 mt-1">Analyze your spending patterns with powerful filters</p>
+        <h1 className="text-3xl font-bold text-white">Expense Dashboard</h1>
+        <p className="text-zinc-500 mt-1">Analyze your spending patterns with powerful filters</p>
       </div>
 
       {/* Filters */}
@@ -294,8 +294,8 @@ export default function ExpenseDashboardPage() {
       {chartData && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* Pie Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Expenses by Category</h2>
+          <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Expenses by Category</h2>
             {chartData.pieData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -316,17 +316,17 @@ export default function ExpenseDashboardPage() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-gray-500 py-12">No data to display</div>
+              <div className="text-center text-zinc-500 py-12">No data to display</div>
             )}
           </div>
 
           {/* Line Chart */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Daily Expense Trend</h2>
+          <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Daily Expense Trend</h2>
             {chartData.trendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData.trendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                   <XAxis dataKey="date" />
                   <YAxis />
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
@@ -335,7 +335,7 @@ export default function ExpenseDashboardPage() {
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-gray-500 py-12">No data to display</div>
+              <div className="text-center text-zinc-500 py-12">No data to display</div>
             )}
           </div>
         </div>
@@ -343,18 +343,18 @@ export default function ExpenseDashboardPage() {
 
       {/* Top Categories */}
       {summary?.topCategories && summary.topCategories.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Categories</h2>
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-semibold text-white mb-4">Top 5 Categories</h2>
           <div className="space-y-3">
             {summary.topCategories.map((cat: any, index: number) => (
               <div key={cat.id} className="flex items-center gap-3">
-                <span className="text-gray-500 font-medium w-6">{index + 1}</span>
+                <span className="text-zinc-500 font-medium w-6">{index + 1}</span>
                 {cat.color && (
                   <span className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }} />
                 )}
-                <span className="flex-1 text-gray-900">{cat.name}</span>
-                <span className="font-semibold text-red-600">{formatCurrency(cat.amount)}</span>
-                <span className="text-sm text-gray-500">
+                <span className="flex-1 text-zinc-200">{cat.name}</span>
+                <span className="font-semibold text-red-400">{formatCurrency(cat.amount)}</span>
+                <span className="text-sm text-zinc-500">
                   ({((cat.amount / summary.total) * 100).toFixed(1)}%)
                 </span>
               </div>
@@ -364,62 +364,62 @@ export default function ExpenseDashboardPage() {
       )}
 
       {/* Expense Table */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Expense Transactions</h2>
+      <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl">
+        <div className="px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-white">Expense Transactions</h2>
         </div>
         <div className="overflow-x-auto">
           {isLoading ? (
-            <div className="text-center py-12 text-gray-500">Loading...</div>
+            <div className="text-center py-12 text-zinc-500">Loading...</div>
           ) : sortedExpenses.length === 0 ? (
             <div className="text-center py-12">
-              <TrendingDown className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">No expenses found with current filters</p>
+              <TrendingDown className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
+              <p className="text-zinc-500">No expenses found with current filters</p>
             </div>
           ) : (
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-zinc-800/50 border-b border-zinc-800">
                 <tr>
                   <th
                     onClick={() => handleSort('date')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
                   >
                     Date {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
                     Merchant
                   </th>
                   <th
                     onClick={() => handleSort('category')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
                   >
                     Category {sortBy === 'category' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
                     Account
                   </th>
                   <th
                     onClick={() => handleSort('amount')}
-                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
                   >
                     Amount {sortBy === 'amount' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
                     Notes
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-zinc-800">
                 {sortedExpenses.map((expense) => (
                   <tr
                     key={expense.id}
                     onClick={() => handleRowClick(expense)}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className="hover:bg-zinc-800/30 cursor-pointer"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                       {formatDate(expense.date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                       {expense.merchantOrSource || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -430,16 +430,16 @@ export default function ExpenseDashboardPage() {
                             style={{ backgroundColor: expense.category.color }}
                           />
                         )}
-                        <span className="text-gray-900">{expense.category?.name || 'Uncategorized'}</span>
+                        <span className="text-white">{expense.category?.name || 'Uncategorized'}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">
                       {expense.account?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600 text-right">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-400 text-right">
                       {formatCurrency(expense.amount)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                    <td className="px-6 py-4 text-sm text-zinc-500 max-w-xs truncate">
                       {expense.notes || '-'}
                     </td>
                   </tr>
@@ -454,31 +454,31 @@ export default function ExpenseDashboardPage() {
       {editingExpense && (
         <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Expense Details">
           <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+            <div className="bg-zinc-800/50 p-4 rounded-xl space-y-2">
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Date:</span>
-                <span className="text-sm font-medium">{formatDate(editingExpense.date)}</span>
+                <span className="text-sm text-zinc-500">Date:</span>
+                <span className="text-sm font-medium text-zinc-200">{formatDate(editingExpense.date)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Amount:</span>
-                <span className="text-lg font-bold text-red-600">{formatCurrency(editingExpense.amount)}</span>
+                <span className="text-sm text-zinc-500">Amount:</span>
+                <span className="text-lg font-bold text-red-400">{formatCurrency(editingExpense.amount)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Category:</span>
-                <span className="text-sm font-medium">{editingExpense.category?.name || 'Uncategorized'}</span>
+                <span className="text-sm text-zinc-500">Category:</span>
+                <span className="text-sm font-medium text-zinc-200">{editingExpense.category?.name || 'Uncategorized'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Account:</span>
-                <span className="text-sm font-medium">{editingExpense.account?.name || '-'}</span>
+                <span className="text-sm text-zinc-500">Account:</span>
+                <span className="text-sm font-medium text-zinc-200">{editingExpense.account?.name || '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-gray-500">Merchant:</span>
-                <span className="text-sm font-medium">{editingExpense.merchantOrSource || '-'}</span>
+                <span className="text-sm text-zinc-500">Merchant:</span>
+                <span className="text-sm font-medium text-zinc-200">{editingExpense.merchantOrSource || '-'}</span>
               </div>
               {editingExpense.notes && (
                 <div>
-                  <span className="text-sm text-gray-500 block mb-1">Notes:</span>
-                  <span className="text-sm text-gray-700">{editingExpense.notes}</span>
+                  <span className="text-sm text-zinc-500 block mb-1">Notes:</span>
+                  <span className="text-sm text-zinc-300">{editingExpense.notes}</span>
                 </div>
               )}
             </div>

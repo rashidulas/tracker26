@@ -5,10 +5,10 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses = {
-  primary: 'bg-blue-600 text-white hover:bg-blue-700',
-  secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300',
-  danger: 'bg-red-600 text-white hover:bg-red-700',
-  ghost: 'bg-transparent text-gray-700 hover:bg-gray-100',
+  primary: 'bg-emerald-500 text-white hover:bg-emerald-600 border border-emerald-500/50',
+  secondary: 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-700',
+  danger: 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20',
+  ghost: 'bg-transparent text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200',
 };
 
 const sizeClasses = {
@@ -30,7 +30,7 @@ export default function Button({
       className={`
         ${variantClasses[variant]}
         ${sizeClasses[size]}
-        rounded-lg font-medium transition-colors
+        rounded-xl font-medium transition-all duration-200
         disabled:opacity-50 disabled:cursor-not-allowed
         ${className}
       `}

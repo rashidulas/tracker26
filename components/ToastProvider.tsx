@@ -106,16 +106,16 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   };
 
   const styles = {
-    success: 'bg-green-50 text-green-800 border-green-200',
-    error: 'bg-red-50 text-red-800 border-red-200',
-    warning: 'bg-yellow-50 text-yellow-800 border-yellow-200',
-    info: 'bg-blue-50 text-blue-800 border-blue-200',
+    success: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    error: 'bg-red-500/10 text-red-400 border-red-500/20',
+    warning: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
+    info: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
   };
 
   return (
     <div
       className={`
-        flex items-start gap-3 p-4 rounded-lg border shadow-lg
+        flex items-start gap-3 p-4 rounded-xl border shadow-2xl backdrop-blur-xl
         animate-slide-in-right
         ${styles[toast.type]}
       `}

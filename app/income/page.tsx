@@ -111,7 +111,7 @@ function IncomeForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 sm:space-y-4">
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
           {error}
         </div>
       )}
@@ -160,12 +160,12 @@ function IncomeForm({
       />
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-zinc-400 mb-1">
           Notes (Optional)
         </label>
         <textarea
           {...register('notes')}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:outline-none focus:border-transparent"
           rows={3}
           placeholder="Add notes..."
         />
@@ -276,7 +276,7 @@ export default function IncomePage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-zinc-500">Loading...</div>
       </div>
     );
   }
@@ -287,8 +287,8 @@ export default function IncomePage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Income</h1>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">Track and manage your income</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white">Income</h1>
+          <p className="text-sm sm:text-base text-zinc-400 mt-1">Track and manage your income</p>
         </div>
         <div className="flex gap-3">
           <Button variant="secondary" onClick={() => setShowFilters(!showFilters)} className="flex-1 sm:flex-none">
@@ -303,10 +303,10 @@ export default function IncomePage() {
       </div>
 
       {showFilters && (
-        <div className="bg-white rounded-lg shadow p-4 sm:p-6 mb-6">
+        <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800/60 p-4 sm:p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900">Filters</h3>
-            <button onClick={() => setShowFilters(false)} className="text-gray-400 hover:text-gray-600 p-1">
+            <h3 className="text-base sm:text-lg font-semibold text-white">Filters</h3>
+            <button onClick={() => setShowFilters(false)} className="text-zinc-500 hover:text-zinc-300 p-1">
               <X size={20} />
             </button>
           </div>
@@ -351,60 +351,60 @@ export default function IncomePage() {
         </div>
       )}
 
-      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 mb-6">
         <div className="flex justify-between items-center">
-          <span className="text-gray-700 font-medium">Total Income</span>
-          <span className="text-2xl font-bold text-green-600">{formatCurrency(totalIncome)}</span>
+          <span className="text-zinc-400 font-medium">Total Income</span>
+          <span className="text-2xl font-bold text-emerald-400">{formatCurrency(totalIncome)}</span>
         </div>
-        <p className="text-sm text-gray-600 mt-1">{income.length} transaction(s)</p>
+        <p className="text-sm text-zinc-400 mt-1">{income.length} transaction(s)</p>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800/60 overflow-hidden">
         <div className="overflow-x-auto mobile-table-scroll">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-zinc-800">
+            <thead className="bg-zinc-800/50 border-b border-zinc-800">
               <tr>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Source</th>
-                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Account</th>
-                <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Date</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Category</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase hidden sm:table-cell">Source</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase hidden md:table-cell">Account</th>
+                <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Amount</th>
+                <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-zinc-800">
               {income.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">
+                <tr key={item.id} className="hover:bg-zinc-800/30">
+                  <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-white">
                     {format(new Date(item.date), 'MMM dd, yyyy')}
                   </td>
                   <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     {item.category?.icon && <span>{item.category.icon}</span>}
-                    <span className="text-sm text-gray-900">{item.category?.name || 'Uncategorized'}</span>
+                    <span className="text-sm text-white">{item.category?.name || 'Uncategorized'}</span>
                   </div>
                 </td>
-                <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-gray-600 hidden sm:table-cell">
+                <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-zinc-400 hidden sm:table-cell">
                   {item.merchantOrSource || '-'}
                 </td>
-                <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600 hidden md:table-cell">
+                <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-zinc-400 hidden md:table-cell">
                   {item.account?.name || '-'}
                 </td>
-                <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium text-green-600">
+                <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium text-emerald-400">
                   {formatCurrency(item.amount)}
                 </td>
                 <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right">
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={() => handleEdit(item)}
-                      className="text-blue-600 hover:text-blue-900 p-1 touch-target"
+                      className="text-emerald-400 hover:text-emerald-300 p-1 touch-target"
                       aria-label="Edit"
                     >
                       <Edit2 size={16} className="sm:w-[18px] sm:h-[18px]" />
                     </button>
                     <button
                       onClick={() => handleDelete(item.id)}
-                      className="text-red-600 hover:text-red-900 p-1 touch-target"
+                      className="text-red-400 hover:text-red-300 p-1 touch-target"
                       aria-label="Delete"
                     >
                       <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
@@ -419,7 +419,7 @@ export default function IncomePage() {
 
         {income.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-sm sm:text-base text-gray-500">No income found</p>
+            <p className="text-sm sm:text-base text-zinc-500">No income found</p>
           </div>
         )}
       </div>

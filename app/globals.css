@@ -3,34 +3,37 @@
 @tailwind utilities;
 
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  --background: #09090b;
+  --foreground: #fafafa;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
-  
-  /* Mobile-responsive table */
+
   .mobile-table-scroll {
     -webkit-overflow-scrolling: touch;
   }
-  
-  /* Touch-friendly button sizes */
+
   .touch-target {
     min-height: 44px;
     min-width: 44px;
   }
+
+  .glass {
+    background: rgba(24, 24, 27, 0.5);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(63, 63, 70, 0.4);
+  }
 }
 
-/* Toast animation */
 @keyframes slide-in-right {
   from {
     transform: translateX(100%);
@@ -46,21 +49,35 @@ body {
   animation: slide-in-right 0.3s ease-out;
 }
 
-/* Custom scrollbar */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #18181b;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+  background: #3f3f46;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #52525b;
 }

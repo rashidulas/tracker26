@@ -102,7 +102,7 @@ export default function InvestmentsPage() {
   async function handleSubmit(formData: FormData) {
     const data = {
       symbol: (formData.get('symbol') as string).toUpperCase(),
-      name: formData.get('name') as string,
+      name: (formData.get('name') as string),
       quantity: parseFloat(formData.get('quantity') as string),
       avgCostBasis: parseFloat(formData.get('avgCostBasis') as string),
       lastPrice: parseFloat(formData.get('lastPrice') as string),
@@ -140,7 +140,7 @@ export default function InvestmentsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-500">Loading investments...</div>
+        <div className="text-zinc-500">Loading investments...</div>
       </div>
     );
   }
@@ -149,8 +149,8 @@ export default function InvestmentsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Investments</h1>
-          <p className="text-gray-500 mt-1">Track your investment portfolio</p>
+          <h1 className="text-3xl font-bold text-white">Investments</h1>
+          <p className="text-zinc-500 mt-1">Track your investment portfolio</p>
         </div>
         <Button onClick={handleAdd}>
           <Plus size={20} />
@@ -164,7 +164,7 @@ export default function InvestmentsPage() {
             title="Market Value"
             value={formatCurrency(stats.totalMarketValue)}
             icon={DollarSign}
-            color="blue"
+            color="green"
           />
           <SummaryCard
             title="Total Cost"
@@ -188,74 +188,74 @@ export default function InvestmentsPage() {
       )}
 
       {stats?.contributionHistory && stats.contributionHistory.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Contribution History (Last 12 Months)</h2>
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-semibold text-white mb-4">Contribution History (Last 12 Months)</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={stats.contributionHistory}>
-              <CartesianGrid strokeDasharray="3 3" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
               <XAxis dataKey="month" />
               <YAxis />
               <Tooltip formatter={(value: number) => formatCurrency(value)} />
               <Legend />
-              <Bar dataKey="amount" fill="#3b82f6" name="Contributions" />
+              <Bar dataKey="amount" fill="#10b981" name="Contributions" />
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
 
       {holdings.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <LineChart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No holdings yet</h3>
-          <p className="text-gray-500 mb-6">Start tracking your investments by adding your first holding</p>
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-12 text-center">
+          <LineChart className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-white mb-2">No holdings yet</h3>
+          <p className="text-zinc-500 mb-6">Start tracking your investments by adding your first holding</p>
           <Button onClick={handleAdd}>
             <Plus size={20} />
             Add Holding
           </Button>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-zinc-800/50 border-b border-zinc-800">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Avg Cost</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Last Price</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Market Value</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Gain/Loss</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Symbol</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Account</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Quantity</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Avg Cost</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Last Price</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Market Value</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Gain/Loss</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-zinc-800">
                 {holdings.map((holding) => (
-                  <tr key={holding.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{holding.symbol}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{holding.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{holding.account?.name || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{holding.quantity.toFixed(4)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCurrency(holding.avgCostBasis)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  <tr key={holding.id} className="hover:bg-zinc-800/30">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{holding.symbol}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">{holding.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">{holding.account?.name || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white text-right">{holding.quantity.toFixed(4)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white text-right">{formatCurrency(holding.avgCostBasis)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white text-right">
                       <div className="flex items-center justify-end gap-2">
                         {formatCurrency(holding.lastPrice)}
-                        <button onClick={() => handleUpdatePrice(holding)} className="text-blue-600 hover:text-blue-800" title="Update price">
+                        <button onClick={() => handleUpdatePrice(holding)} className="text-emerald-400 hover:text-emerald-300" title="Update price">
                           <RefreshCw size={14} />
                         </button>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{formatCurrency(holding.marketValue)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white text-right">{formatCurrency(holding.marketValue)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                      <div className={holding.gain >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      <div className={holding.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}>
                         <div className="font-medium">{formatCurrency(holding.gain)}</div>
                         <div className="text-xs">{formatPercent(holding.gainPercent)}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button onClick={() => handleEdit(holding)} className="text-blue-600 hover:text-blue-800 mr-3"><Pencil size={16} /></button>
-                      <button onClick={() => handleDelete(holding.id)} className="text-red-600 hover:text-red-800"><Trash2 size={16} /></button>
+                      <button onClick={() => handleEdit(holding)} className="text-emerald-400 hover:text-emerald-300 mr-3"><Pencil size={16} /></button>
+                      <button onClick={() => handleDelete(holding.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16} /></button>
                     </td>
                   </tr>
                 ))}
@@ -294,9 +294,9 @@ export default function InvestmentsPage() {
       <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title={`Update Price - ${updatingPrice?.symbol}`}>
         <form action={handlePriceUpdate}>
           <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-sm text-gray-500">Current Price</div>
-              <div className="text-2xl font-bold text-gray-900">{formatCurrency(updatingPrice?.lastPrice || 0)}</div>
+            <div className="bg-zinc-800/50 p-4 rounded-xl">
+              <div className="text-sm text-zinc-500">Current Price</div>
+              <div className="text-2xl font-bold text-white">{formatCurrency(updatingPrice?.lastPrice || 0)}</div>
             </div>
             <Input label="New Price per Share" name="lastPrice" type="number" step="0.01" min="0" defaultValue={updatingPrice?.lastPrice || ''} required autoFocus />
           </div>

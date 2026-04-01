@@ -22,30 +22,30 @@ export function FilterPanel({ children, onClearAll, activeFilterCount, isOpen = 
   const handleToggle = onToggle || (() => setInternalOpen(!internalOpen));
 
   return (
-    <div className="bg-white rounded-lg shadow mb-6">
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+    <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl mb-6">
+      <div className="px-5 py-4 border-b border-zinc-800/60 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={handleToggle}
-            className="flex items-center gap-2 text-lg font-semibold text-gray-900 hover:text-blue-600"
+            className="flex items-center gap-2 text-lg font-semibold text-white hover:text-emerald-400 transition-colors"
           >
             <span>Filters</span>
             {open ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
           </button>
           {activeFilterCount > 0 && (
-            <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
+            <span className="bg-emerald-500/10 text-emerald-400 text-xs font-medium px-2.5 py-0.5 rounded-full border border-emerald-500/20">
               {activeFilterCount} active
             </span>
           )}
         </div>
         {activeFilterCount > 0 && (
-          <Button variant="secondary" onClick={onClearAll} size="sm">
+          <Button variant="ghost" onClick={onClearAll} size="sm">
             <X size={16} />
             Clear All
           </Button>
         )}
       </div>
-      {open && <div className="p-6">{children}</div>}
+      {open && <div className="p-5">{children}</div>}
     </div>
   );
 }
@@ -61,21 +61,21 @@ export function DateRangeFilter({ startDate, endDate, onStartDateChange, onEndDa
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+        <label className="block text-sm font-medium text-zinc-400 mb-1">Start Date</label>
         <input
           type="date"
           value={startDate ? formatDateForInput(startDate) : ''}
           onChange={(e) => onStartDateChange(e.target.value ? new Date(e.target.value) : undefined)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-zinc-700 rounded-xl bg-zinc-800/50 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+        <label className="block text-sm font-medium text-zinc-400 mb-1">End Date</label>
         <input
           type="date"
           value={endDate ? formatDateForInput(endDate) : ''}
           onChange={(e) => onEndDateChange(e.target.value ? new Date(e.target.value) : undefined)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-zinc-700 rounded-xl bg-zinc-800/50 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
         />
       </div>
     </div>
@@ -93,7 +93,7 @@ export function AmountRangeFilter({ minAmount, maxAmount, onMinAmountChange, onM
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Min Amount</label>
+        <label className="block text-sm font-medium text-zinc-400 mb-1">Min Amount</label>
         <input
           type="number"
           step="0.01"
@@ -101,11 +101,11 @@ export function AmountRangeFilter({ minAmount, maxAmount, onMinAmountChange, onM
           placeholder="$0.00"
           value={minAmount ?? ''}
           onChange={(e) => onMinAmountChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-zinc-700 rounded-xl bg-zinc-800/50 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Max Amount</label>
+        <label className="block text-sm font-medium text-zinc-400 mb-1">Max Amount</label>
         <input
           type="number"
           step="0.01"
@@ -113,7 +113,7 @@ export function AmountRangeFilter({ minAmount, maxAmount, onMinAmountChange, onM
           placeholder="$999,999"
           value={maxAmount ?? ''}
           onChange={(e) => onMaxAmountChange(e.target.value ? parseFloat(e.target.value) : undefined)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-zinc-700 rounded-xl bg-zinc-800/50 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
         />
       </div>
     </div>
@@ -138,23 +138,23 @@ export function MultiSelectFilter({ label, options, selectedIds, onChange }: Mul
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
-      <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-2 space-y-1">
+      <label className="block text-sm font-medium text-zinc-400 mb-2">{label}</label>
+      <div className="max-h-48 overflow-y-auto border border-zinc-700 rounded-xl p-2 space-y-1 bg-zinc-800/30">
         {options.map(option => (
           <label
             key={option.id}
-            className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer"
+            className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-700/50 rounded-lg cursor-pointer transition-colors"
           >
             <input
               type="checkbox"
               checked={selectedIds.includes(option.id)}
               onChange={() => toggleOption(option.id)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
             />
-            <span className="flex-1 text-sm text-gray-700">{option.name}</span>
+            <span className="flex-1 text-sm text-zinc-300">{option.name}</span>
             {option.color && (
               <span
-                className="w-4 h-4 rounded-full border border-gray-300"
+                className="w-3.5 h-3.5 rounded-full border border-zinc-600"
                 style={{ backgroundColor: option.color }}
               />
             )}
@@ -162,7 +162,7 @@ export function MultiSelectFilter({ label, options, selectedIds, onChange }: Mul
         ))}
       </div>
       {selectedIds.length > 0 && (
-        <div className="mt-2 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-zinc-500">
           {selectedIds.length} selected
         </div>
       )}
@@ -179,13 +179,13 @@ interface SearchFilterProps {
 export function SearchFilter({ value, onChange, placeholder = 'Search...' }: SearchFilterProps) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+      <label className="block text-sm font-medium text-zinc-400 mb-1">Search</label>
       <input
         type="text"
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full px-3 py-2 border border-zinc-700 rounded-xl bg-zinc-800/50 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
       />
     </div>
   );
@@ -203,13 +203,13 @@ export function ActiveFilters({ filters }: ActiveFiltersProps) {
       {filters.map((filter, index) => (
         <span
           key={index}
-          className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-sm px-3 py-1 rounded-full"
+          className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-sm px-3 py-1 rounded-full border border-emerald-500/20"
         >
           <span className="font-medium">{filter.label}:</span>
           <span>{filter.value}</span>
           <button
             onClick={filter.onRemove}
-            className="ml-1 hover:bg-blue-100 rounded-full p-0.5"
+            className="ml-1 hover:bg-emerald-500/20 rounded-full p-0.5 transition-colors"
           >
             <X size={14} />
           </button>

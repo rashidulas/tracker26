@@ -96,7 +96,7 @@ function DebtForm({ debt, onSuccess, onCancel }: {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
           {error}
         </div>
       )}
@@ -212,7 +212,7 @@ function PaymentForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
           {error}
         </div>
       )}
@@ -240,10 +240,10 @@ function PaymentForm({
       />
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
+        <label className="block text-sm font-medium text-zinc-400 mb-1">Notes (Optional)</label>
         <textarea
           {...register('notes')}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
           rows={3}
         />
       </div>
@@ -321,7 +321,7 @@ export default function DebtsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-zinc-500">Loading...</div>
       </div>
     );
   }
@@ -332,8 +332,8 @@ export default function DebtsPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Debts</h1>
-          <p className="text-gray-600 mt-1">Track and manage your debts</p>
+          <h1 className="text-3xl font-bold text-white">Debts</h1>
+          <p className="text-zinc-400 mt-1">Track and manage your debts</p>
         </div>
         <Button onClick={() => setIsDebtModalOpen(true)}>
           <Plus size={20} className="inline mr-2" />
@@ -341,26 +341,26 @@ export default function DebtsPage() {
         </Button>
       </div>
 
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 mb-6">
         <div className="flex justify-between items-center">
-          <span className="text-gray-700 font-medium">Total Debt</span>
-          <span className="text-3xl font-bold text-red-600">{formatCurrency(totalDebt)}</span>
+          <span className="text-zinc-300 font-medium">Total Debt</span>
+          <span className="text-3xl font-bold text-red-400">{formatCurrency(totalDebt)}</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {debts.map((debt) => (
-          <div key={debt.id} className="bg-white rounded-lg shadow p-6">
+          <div key={debt.id} className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">{debt.name}</h3>
-                <p className="text-sm text-gray-500">{debt.type.replace('_', ' ')}</p>
+                <h3 className="text-lg font-semibold text-white">{debt.name}</h3>
+                <p className="text-sm text-zinc-500">{debt.type.replace('_', ' ')}</p>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => { setEditingDebt(debt); setIsDebtModalOpen(true); }} className="text-blue-600">
+                <button onClick={() => { setEditingDebt(debt); setIsDebtModalOpen(true); }} className="text-emerald-400 hover:text-emerald-300">
                   <Edit2 size={16} />
                 </button>
-                <button onClick={() => handleDelete(debt.id)} className="text-red-600">
+                <button onClick={() => handleDelete(debt.id)} className="text-red-400">
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -368,25 +368,25 @@ export default function DebtsPage() {
 
             <div className="space-y-3 mb-4">
               <div className="flex justify-between">
-                <span className="text-gray-600">Balance</span>
-                <span className="font-bold text-red-600">{formatCurrency(debt.currentBalance)}</span>
+                <span className="text-zinc-400">Balance</span>
+                <span className="font-bold text-red-400">{formatCurrency(debt.currentBalance)}</span>
               </div>
               {debt.apr && (
                 <div className="flex justify-between">
-                  <span className="text-gray-600">APR</span>
-                  <span className="text-gray-900">{debt.apr}%</span>
+                  <span className="text-zinc-400">APR</span>
+                  <span className="text-white">{debt.apr}%</span>
                 </div>
               )}
               {debt.minPayment && (
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Min Payment</span>
-                  <span className="text-gray-900">{formatCurrency(debt.minPayment)}</span>
+                  <span className="text-zinc-400">Min Payment</span>
+                  <span className="text-white">{formatCurrency(debt.minPayment)}</span>
                 </div>
               )}
               {debt.dueDay && (
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Due Day</span>
-                  <span className="text-gray-900">{debt.dueDay}</span>
+                  <span className="text-zinc-400">Due Day</span>
+                  <span className="text-white">{debt.dueDay}</span>
                 </div>
               )}
             </div>
@@ -402,12 +402,12 @@ export default function DebtsPage() {
             </Button>
 
             {debt.payments.length > 0 && (
-              <div className="mt-4 pt-4 border-t">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Recent Payments</h4>
+              <div className="mt-4 pt-4 border-t border-zinc-800">
+                <h4 className="text-sm font-medium text-zinc-400 mb-2">Recent Payments</h4>
                 {debt.payments.map((payment) => (
                   <div key={payment.id} className="flex justify-between text-sm py-1">
-                    <span className="text-gray-600">{format(new Date(payment.date), 'MMM dd')}</span>
-                    <span className="text-green-600">{formatCurrency(payment.amount)}</span>
+                    <span className="text-zinc-400">{format(new Date(payment.date), 'MMM dd')}</span>
+                    <span className="text-emerald-400">{formatCurrency(payment.amount)}</span>
                   </div>
                 ))}
               </div>
@@ -417,8 +417,8 @@ export default function DebtsPage() {
       </div>
 
       {debts.length === 0 && (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500">No debts tracked. Add your first debt!</p>
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-12 text-center">
+          <p className="text-zinc-500">No debts tracked. Add your first debt!</p>
         </div>
       )}
 

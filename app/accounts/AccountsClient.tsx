@@ -87,8 +87,8 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
     <div>
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Accounts</h1>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">Manage your financial accounts</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white">Accounts</h1>
+          <p className="text-sm sm:text-base text-zinc-500 mt-1">Manage your financial accounts</p>
         </div>
         <Button onClick={handleAdd} className="w-full sm:w-auto">
           <Plus size={20} className="inline mr-2" />
@@ -97,13 +97,13 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
       </div>
 
       {deleteError && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">
           {deleteError}
         </div>
       )}
 
       {/* Total Balance Card */}
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 mb-6 text-white">
+      <div className="bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-2xl p-6 mb-6 text-white">
         <div className="flex items-center gap-3 mb-2">
           <Wallet size={24} />
           <h2 className="text-lg font-medium">Total Balance</h2>
@@ -115,25 +115,28 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
       {/* Accounts Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {accounts.map((account) => (
-          <div key={account.id} className="bg-white rounded-lg shadow p-6 hover:shadow-md transition-shadow">
+          <div
+            key={account.id}
+            className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 hover:border-zinc-700/60 transition-colors"
+          >
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <span className="text-3xl">{getTypeIcon(account.type)}</span>
                 <div>
-                  <h3 className="font-semibold text-gray-900">{account.name}</h3>
-                  <p className="text-sm text-gray-500">{account.type.replace('_', ' ')}</p>
+                  <h3 className="font-semibold text-white">{account.name}</h3>
+                  <p className="text-sm text-zinc-500">{account.type.replace('_', ' ')}</p>
                 </div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => handleEdit(account)}
-                  className="text-blue-600 hover:text-blue-800"
+                  className="text-emerald-400 hover:text-emerald-300"
                 >
                   <Edit2 size={16} />
                 </button>
                 <button
                   onClick={() => handleDelete(account.id)}
-                  className="text-red-600 hover:text-red-800"
+                  className="text-red-400 hover:text-red-300"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -141,23 +144,23 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
             </div>
 
             {account.institution && (
-              <p className="text-sm text-gray-600 mb-3">{account.institution}</p>
+              <p className="text-sm text-zinc-400 mb-3">{account.institution}</p>
             )}
 
-            <div className="border-t pt-3">
+            <div className="border-t border-zinc-800 pt-3">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-600">Current Balance</span>
-                <span className="text-lg font-bold text-gray-900">
+                <span className="text-sm text-zinc-400">Current Balance</span>
+                <span className="text-lg font-bold text-white">
                   {formatCurrency(account.currentBalance)}
                 </span>
               </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600">Starting</span>
-                <span className="text-gray-700">{formatCurrency(account.startingBalance)}</span>
+                <span className="text-zinc-400">Starting</span>
+                <span className="text-zinc-300">{formatCurrency(account.startingBalance)}</span>
               </div>
               <div className="flex justify-between items-center text-sm mt-1">
-                <span className="text-gray-600">Transactions</span>
-                <span className="text-gray-700">{account.transactionCount}</span>
+                <span className="text-zinc-400">Transactions</span>
+                <span className="text-zinc-300">{account.transactionCount}</span>
               </div>
             </div>
           </div>
@@ -165,9 +168,9 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
       </div>
 
       {accounts.length === 0 && (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <Wallet size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-500">No accounts yet. Add your first account!</p>
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-12 text-center">
+          <Wallet size={48} className="mx-auto text-zinc-600 mb-4" />
+          <p className="text-zinc-500">No accounts yet. Add your first account!</p>
         </div>
       )}
 

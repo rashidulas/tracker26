@@ -1,43 +1,68 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { startOfMonth, endOfMonth, startOfYear, subMonths } from 'date-fns';
+import { startOfMonth, endOfMonth, startOfYear, subMonths, eachDayOfInterval, format } from 'date-fns';
 
 export async function getDashboardData() {
   try {
     const now = new Date();
     const monthStart = startOfMonth(now);
     const monthEnd = endOfMonth(now);
-    const yearStart = startOfYear(now);
 
-    // Get current month income
-    const monthIncome = await prisma.transaction.aggregate({
-      where: {
-        kind: 'INCOME',
-        date: { gte: monthStart, lte: monthEnd },
-      },
-      _sum: { amount: true },
-    });
-
-    // Get current month expenses
-    const monthExpenses = await prisma.transaction.aggregate({
-      where: {
-        kind: 'EXPENSE',
-        date: { gte: monthStart, lte: monthEnd },
-      },
-      _sum: { amount: true },
-    });
-
-    // Get expenses by category (current month)
-    const expensesByCategory = await prisma.transaction.groupBy({
-      by: ['categoryId'],
-      where: {
-        kind: 'EXPENSE',
-        date: { gte: monthStart, lte: monthEnd },
-        categoryId: { not: null },
-      },
-      _sum: { amount: true },
-    });
+    const [
+      monthIncomeAgg,
+      monthExpensesAgg,
+      expensesByCategory,
+      debts,
+      goals,
+      recentTransactions,
+      accounts,
+      budgets,
+      dailyTransactions,
+    ] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: { kind: 'INCOME', date: { gte: monthStart, lte: monthEnd } },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { kind: 'EXPENSE', date: { gte: monthStart, lte: monthEnd } },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.groupBy({
+        by: ['categoryId'],
+        where: {
+          kind: 'EXPENSE',
+          date: { gte: monthStart, lte: monthEnd },
+          categoryId: { not: null },
+        },
+        _sum: { amount: true },
+      }),
+      prisma.debt.findMany(),
+      prisma.goal.findMany({ include: { contributions: true } }),
+      prisma.transaction.findMany({
+        take: 10,
+        orderBy: { date: 'desc' },
+        include: { category: true, account: true },
+      }),
+      prisma.account.findMany({
+        include: {
+          transactionsFrom: { select: { amount: true, kind: true } },
+          transactionsTo: { select: { amount: true } },
+        },
+      }),
+      prisma.budget.findMany({
+        where: { month: monthStart },
+        include: { category: true },
+      }),
+      prisma.transaction.findMany({
+        where: {
+          kind: 'EXPENSE',
+          date: { gte: monthStart, lte: monthEnd },
+        },
+        select: { date: true, amount: true },
+        orderBy: { date: 'asc' },
+      }),
+    ]);
 
     const categoriesMap = await prisma.category.findMany({
       where: {
@@ -54,7 +79,7 @@ export async function getDashboardData() {
       };
     });
 
-    // Get monthly trend for the year
+    // Monthly trend (12 months)
     const monthlyTrend = [];
     for (let i = 11; i >= 0; i--) {
       const date = subMonths(now, i);
@@ -79,40 +104,12 @@ export async function getDashboardData() {
       });
     }
 
-    // Get total debt
-    const debts = await prisma.debt.findMany();
     const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
 
-    // Get total savings (goals)
-    const goals = await prisma.goal.findMany({
-      include: { contributions: true },
-    });
     const totalSavings = goals.reduce((sum, goal) => {
       const contributions = goal.contributions.reduce((s, c) => s + c.amount, 0);
       return sum + contributions;
     }, 0);
-
-    // Get recent transactions
-    const recentTransactions = await prisma.transaction.findMany({
-      take: 10,
-      orderBy: { date: 'desc' },
-      include: {
-        category: true,
-        account: true,
-      },
-    });
-
-    // Calculate accounts total
-    const accounts = await prisma.account.findMany({
-      include: {
-        transactionsFrom: {
-          select: { amount: true, kind: true },
-        },
-        transactionsTo: {
-          select: { amount: true },
-        },
-      },
-    });
 
     const totalBalance = accounts.reduce((sum, account) => {
       const transactionTotal = account.transactionsFrom.reduce((s, t) => {
@@ -124,17 +121,47 @@ export async function getDashboardData() {
       return sum + account.startingBalance + transactionTotal + transfersIn;
     }, 0);
 
+    // Build spending-per-category lookup for budget progress
+    const spendingByCategory = new Map<string, number>();
+    for (const e of expensesByCategory) {
+      if (e.categoryId) {
+        spendingByCategory.set(e.categoryId, e._sum.amount || 0);
+      }
+    }
+
+    const budgetProgress = budgets.map((b) => ({
+      id: b.id,
+      categoryName: b.category.name,
+      categoryColor: b.category.color,
+      budgeted: b.amount,
+      spent: spendingByCategory.get(b.categoryId) || 0,
+    }));
+
+    // Daily spending trend for area chart
+    const days = eachDayOfInterval({ start: monthStart, end: now > monthEnd ? monthEnd : now });
+    const dailyMap = new Map<string, number>();
+    for (const t of dailyTransactions) {
+      const key = format(new Date(t.date), 'MMM dd');
+      dailyMap.set(key, (dailyMap.get(key) || 0) + t.amount);
+    }
+    const dailySpending = days.map((d) => {
+      const key = format(d, 'MMM dd');
+      return { date: key, amount: dailyMap.get(key) || 0 };
+    });
+
     return {
       success: true,
       data: {
-        monthIncome: monthIncome._sum.amount || 0,
-        monthExpenses: monthExpenses._sum.amount || 0,
+        monthIncome: monthIncomeAgg._sum.amount || 0,
+        monthExpenses: monthExpensesAgg._sum.amount || 0,
         totalDebt,
         totalSavings,
         totalBalance,
         categoryData,
         monthlyTrend,
         recentTransactions,
+        budgetProgress,
+        dailySpending,
       },
     };
   } catch (error) {

@@ -9,7 +9,7 @@ interface ResponsiveTableProps {
 
 export default function ResponsiveTable({ children, className = '' }: ResponsiveTableProps) {
   return (
-    <div className={`bg-white rounded-lg shadow overflow-hidden ${className}`}>
+    <div className={`bg-zinc-900/50 border border-zinc-800/60 rounded-2xl overflow-hidden ${className}`}>
       <div className="overflow-x-auto">
         {children}
       </div>

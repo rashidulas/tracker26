@@ -9,7 +9,7 @@ export default async function AccountsPage() {
 
   if (!result.success) {
     return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
         Error: {result.error}
       </div>
     );
