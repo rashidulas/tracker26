@@ -141,7 +141,15 @@ export async function getDashboardData() {
     const days = eachDayOfInterval({ start: monthStart, end: now > monthEnd ? monthEnd : now });
     const dailyMap = new Map<string, number>();
     for (const t of dailyTransactions) {
-      const key = format(new Date(t.date), 'MMM dd');
+      const utcDate = new Date(
+        t.date.getUTCFullYear(),
+        t.date.getUTCMonth(),
+        t.date.getUTCDate(),
+        t.date.getUTCHours(),
+        t.date.getUTCMinutes(),
+        t.date.getUTCSeconds()
+      );
+      const key = format(utcDate, 'MMM dd');
       dailyMap.set(key, (dailyMap.get(key) || 0) + t.amount);
     }
     const dailySpending = days.map((d) => {

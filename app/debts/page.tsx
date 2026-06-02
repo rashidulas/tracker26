@@ -406,7 +406,9 @@ export default function DebtsPage() {
                 <h4 className="text-sm font-medium text-zinc-400 mb-2">Recent Payments</h4>
                 {debt.payments.map((payment) => (
                   <div key={payment.id} className="flex justify-between text-sm py-1">
-                    <span className="text-zinc-400">{format(new Date(payment.date), 'MMM dd')}</span>
+                    <span className="text-zinc-400">
+                      {new Date(payment.date).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: '2-digit' })}
+                    </span>
                     <span className="text-emerald-400">{formatCurrency(payment.amount)}</span>
                   </div>
                 ))}

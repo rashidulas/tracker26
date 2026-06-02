@@ -8,6 +8,7 @@ import Select from '@/components/Select';
 import Button from '@/components/Button';
 import { createExpense, updateExpense } from './actions';
 import { useState } from 'react';
+import { formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
 
 const expenseSchema = z.object({
   date: z.string().min(1, 'Date is required'),
@@ -56,8 +57,8 @@ export default function ExpenseForm({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       date: expense?.date
-        ? new Date(expense.date).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0],
+        ? formatDateForInput(expense.date)
+        : getLocalTodayForInput(),
       amount: expense?.amount.toString() || '',
       categoryId: expense?.categoryId || '',
       accountId: expense?.accountId || '',

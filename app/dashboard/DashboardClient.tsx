@@ -28,6 +28,7 @@ import {
   Line,
 } from 'recharts';
 import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 
 interface BudgetItem {
   id: string;
@@ -347,7 +348,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                         {tx.category?.name || (isIncome ? 'Income' : 'Expense')}
                       </p>
                       <p className="text-xs text-zinc-500">
-                        {format(new Date(tx.date), 'MMM dd, yyyy')}
+                        {formatDate(tx.date)}
                         {tx.account ? ` · ${tx.account.name}` : ''}
                       </p>
                     </div>

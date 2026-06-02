@@ -10,6 +10,8 @@ import { deleteExpense } from './actions';
 import ReceiptScanner from './ReceiptScanner';
 import { Plus, Edit2, Trash2, Filter, X, Camera } from 'lucide-react';
 import { format } from 'date-fns';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { formatDate } from '@/lib/utils';
 
 interface Expense {
   id: string;
@@ -35,6 +37,14 @@ export default function ExpensesClient({
   categories,
   accounts,
 }: ExpensesClientProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const selectedMonth = searchParams.get('month') || currentMonthKey;
+
   const [expenses, setExpenses] = useState(initialExpenses);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -46,6 +56,40 @@ export default function ExpensesClient({
     categoryId: '',
     search: '',
   });
+
+  const getMonthOptions = () => {
+    const monthsMap = new Map<string, string>();
+    
+    // Add current month by default
+    const currentMonthLabel = format(now, 'MMMM yyyy');
+    monthsMap.set(currentMonthKey, currentMonthLabel);
+    
+    // Add months from initialExpenses (using UTC to prevent timezone shifts)
+    initialExpenses.forEach(expense => {
+      const d = new Date(expense.date);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      const utcDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), 1);
+      const label = format(utcDate, 'MMMM yyyy');
+      monthsMap.set(key, label);
+    });
+    
+    // Sort keys descending (most recent first)
+    const sortedKeys = Array.from(monthsMap.keys()).sort((a, b) => b.localeCompare(a));
+    
+    return [
+      { value: 'all', label: 'All Months' },
+      ...sortedKeys.map(key => ({ value: key, label: monthsMap.get(key)! }))
+    ];
+  };
+
+  const monthOptions = getMonthOptions();
+
+  const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('month', value);
+    router.push(`${pathname}?${params.toString()}`);
+  };
 
   const handleSuccess = () => {
     setIsModalOpen(false);
@@ -80,6 +124,11 @@ export default function ExpensesClient({
   };
 
   const filteredExpenses = expenses.filter((expense) => {
+    if (selectedMonth && selectedMonth !== 'all') {
+      const d = new Date(expense.date);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      if (key !== selectedMonth) return false;
+    }
     if (filters.startDate && new Date(expense.date) < new Date(filters.startDate)) return false;
     if (filters.endDate && new Date(expense.date) > new Date(filters.endDate)) return false;
     if (filters.categoryId && expense.categoryId !== filters.categoryId) return false;
@@ -96,21 +145,31 @@ export default function ExpensesClient({
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">Expenses</h1>
-          <p className="text-sm sm:text-base text-zinc-400 mt-1">Track and manage your expenses</p>
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">Expenses</h1>
+            <p className="text-sm sm:text-base text-zinc-400 mt-1">Track and manage your expenses</p>
+          </div>
+          <div className="w-full sm:w-48 sm:mt-2">
+            <Select
+              options={monthOptions}
+              value={selectedMonth}
+              onChange={handleMonthChange}
+              className="!py-2 text-sm"
+            />
+          </div>
         </div>
-        <div className="flex gap-3">
-          <Button variant="secondary" onClick={() => setShowFilters(!showFilters)} className="flex-1 sm:flex-none">
+        <div className="flex gap-3 w-full md:w-auto">
+          <Button variant="secondary" onClick={() => setShowFilters(!showFilters)} className="flex-1 md:flex-none">
             <Filter size={20} className="inline mr-2" />
             Filters
           </Button>
-          <Button variant="secondary" onClick={() => setIsScannerOpen(true)} className="flex-1 sm:flex-none">
+          <Button variant="secondary" onClick={() => setIsScannerOpen(true)} className="flex-1 md:flex-none">
             <Camera size={20} className="inline mr-2" />
             Scan Receipt
           </Button>
-          <Button onClick={handleAdd} className="flex-1 sm:flex-none">
+          <Button onClick={handleAdd} className="flex-1 md:flex-none">
             <Plus size={20} className="inline mr-2" />
             Add Expense
           </Button>
@@ -193,7 +252,7 @@ export default function ExpensesClient({
             {filteredExpenses.map((expense) => (
               <tr key={expense.id} className="hover:bg-zinc-800/30">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
-                  {format(new Date(expense.date), 'MMM dd, yyyy')}
+                  {formatDate(expense.date)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">

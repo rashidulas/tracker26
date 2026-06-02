@@ -11,6 +11,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format } from 'date-fns';
+import { formatDate, formatDateForInput } from '@/lib/utils';
 
 const goalSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -53,7 +54,7 @@ function GoalForm({ goal, onSuccess, onCancel }: any) {
     defaultValues: {
       name: goal?.name || '',
       targetAmount: goal?.targetAmount.toString() || '',
-      dueDate: goal?.dueDate ? new Date(goal.dueDate).toISOString().split('T')[0] : '',
+      dueDate: goal?.dueDate ? formatDateForInput(goal.dueDate) : '',
     },
   });
 
@@ -247,7 +248,7 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                 <div className="min-w-0">
                   <h3 className="text-base sm:text-lg font-semibold text-white truncate">{goal.name}</h3>
                   {goal.dueDate && (
-                    <p className="text-xs sm:text-sm text-zinc-500">Due: {format(new Date(goal.dueDate), 'MMM dd, yyyy')}</p>
+                    <p className="text-xs sm:text-sm text-zinc-500">Due: {formatDate(goal.dueDate)}</p>
                   )}
                 </div>
               </div>

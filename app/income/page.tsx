@@ -8,6 +8,7 @@ import Select from '@/components/Select';
 import { deleteIncome, createIncome, updateIncome, getIncome, getCategoriesForSelect, getAccountsForSelect } from './actions';
 import { Plus, Edit2, Trash2, Filter, X } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatDate, formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -71,8 +72,8 @@ function IncomeForm({
     resolver: zodResolver(incomeSchema),
     defaultValues: {
       date: income?.date
-        ? new Date(income.date).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0],
+        ? formatDateForInput(income.date)
+        : getLocalTodayForInput(),
       amount: income?.amount.toString() || '',
       categoryId: income?.categoryId || '',
       accountId: income?.accountId || '',
@@ -376,7 +377,7 @@ export default function IncomePage() {
               {income.map((item) => (
                 <tr key={item.id} className="hover:bg-zinc-800/30">
                   <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-white">
-                    {format(new Date(item.date), 'MMM dd, yyyy')}
+                    {formatDate(item.date)}
                   </td>
                   <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
