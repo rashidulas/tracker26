@@ -129,12 +129,13 @@ export async function getExpenseChartData(filter: ExpenseFilter) {
     const expenses = await getFilteredExpenses(filter);
 
     // Category breakdown for pie chart
-    const categoryData: { [key: string]: { name: string; value: number; color: string } } = {};
+    const categoryData: { [key: string]: { id: string; name: string; value: number; color: string } } = {};
     expenses.forEach(exp => {
       if (exp.category) {
         const catId = exp.category.id;
         if (!categoryData[catId]) {
           categoryData[catId] = {
+            id: catId,
             name: exp.category.name,
             value: 0,
             color: exp.category.color || '#6b7280',

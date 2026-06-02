@@ -201,6 +201,14 @@ export default function ExpenseDashboardPage() {
     }
   }
 
+  function handleCategorySelect(categoryId: string | null | undefined) {
+    if (!categoryId) return;
+    setFilters(prev => ({
+      ...prev,
+      categoryIds: [categoryId]
+    }));
+  }
+
   const sortedExpenses = getSortedExpenses();
   const activeFilters = getActiveFilters();
 
@@ -307,6 +315,12 @@ export default function ExpenseDashboardPage() {
                     cy="50%"
                     outerRadius={100}
                     label={(entry) => `${entry.name}: ${formatCurrency(entry.value)}`}
+                    onClick={(data) => {
+                      if (data && data.payload) {
+                        handleCategorySelect(data.payload.id);
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
                   >
                     {chartData.pieData.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
@@ -347,12 +361,17 @@ export default function ExpenseDashboardPage() {
           <h2 className="text-lg font-semibold text-white mb-4">Top 5 Categories</h2>
           <div className="space-y-3">
             {summary.topCategories.map((cat: any, index: number) => (
-              <div key={cat.id} className="flex items-center gap-3">
+              <div 
+                key={cat.id} 
+                className="flex items-center gap-3 cursor-pointer hover:bg-zinc-800/50 p-2 -mx-2 rounded-xl transition-all group"
+                onClick={() => handleCategorySelect(cat.id)}
+                title={`Filter by ${cat.name}`}
+              >
                 <span className="text-zinc-500 font-medium w-6">{index + 1}</span>
                 {cat.color && (
                   <span className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }} />
                 )}
-                <span className="flex-1 text-zinc-200">{cat.name}</span>
+                <span className="flex-1 text-zinc-200 group-hover:text-red-400 group-hover:underline transition-all">{cat.name}</span>
                 <span className="font-semibold text-red-400">{formatCurrency(cat.amount)}</span>
                 <span className="text-sm text-zinc-500">
                   ({((cat.amount / summary.total) * 100).toFixed(1)}%)
@@ -422,15 +441,23 @@ export default function ExpenseDashboardPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
                       {expense.merchantOrSource || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className="flex items-center gap-2">
+                    <td 
+                      className="px-6 py-4 whitespace-nowrap text-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCategorySelect(expense.category?.id);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 group cursor-pointer" title={`Filter by ${expense.category?.name || 'Uncategorized'}`}>
                         {expense.category?.color && (
                           <span
                             className="w-3 h-3 rounded-full"
                             style={{ backgroundColor: expense.category.color }}
                           />
                         )}
-                        <span className="text-white">{expense.category?.name || 'Uncategorized'}</span>
+                        <span className="text-white group-hover:text-red-400 group-hover:underline transition-all">
+                          {expense.category?.name || 'Uncategorized'}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">

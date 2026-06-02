@@ -29,12 +29,12 @@ interface Income {
   date: Date;
   amount: number;
   categoryId: string | null;
-  accountId: string;
+  accountId: string | null;
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
   category: { id: string; name: string; icon: string | null } | null;
-  account: { id: string; name: string };
+  account: { id: string; name: string } | null;
 }
 
 interface Category {

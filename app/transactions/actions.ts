@@ -259,7 +259,7 @@ export async function exportTransactionsToCSV(filter?: TransactionFilter) {
       Type: tx.kind,
       Amount: tx.amount.toFixed(2),
       Category: tx.category?.name || (tx.kind === 'TRANSFER' ? 'Transfer' : 'Split'),
-      Account: tx.account.name,
+      Account: tx.account?.name || '',
       ToAccount: tx.toAccount?.name || '',
       Merchant: tx.merchantOrSource || '',
       Notes: tx.notes || '',
