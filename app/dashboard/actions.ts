@@ -137,6 +137,18 @@ export async function getDashboardData() {
         };
       });
 
+    const cashBalance = accounts
+      .filter((a) => a.type !== 'CREDIT_CARD')
+      .reduce((sum, a) => {
+        const transactionTotal = a.transactionsFrom.reduce((s, t) => {
+          if (t.kind === 'INCOME') return s + t.amount;
+          if (t.kind === 'EXPENSE') return s - t.amount;
+          return s;
+        }, 0);
+        const transfersIn = a.transactionsTo.reduce((s, t) => s + t.amount, 0);
+        return sum + a.startingBalance + transactionTotal + transfersIn;
+      }, 0);
+
     const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
 
     const totalSavings = goals.reduce((sum, goal) => {
@@ -198,6 +210,7 @@ export async function getDashboardData() {
         totalDebt,
         totalSavings,
         totalBalance,
+        cashBalance,
         creditCards,
         categoryData,
         monthlyTrend,

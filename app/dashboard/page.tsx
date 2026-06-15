@@ -10,6 +10,7 @@ const emptyData = {
   totalDebt: 0,
   totalSavings: 0,
   totalBalance: 0,
+  cashBalance: 0,
   creditCards: [],
   categoryData: [],
   monthlyTrend: [],

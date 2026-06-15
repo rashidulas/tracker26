@@ -53,6 +53,7 @@ interface DashboardClientProps {
     totalDebt: number;
     totalSavings: number;
     totalBalance: number;
+    cashBalance: number;
     creditCards: CreditCardItem[];
     categoryData: Array<{ name: string; value: number; color: string }>;
     monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
@@ -238,6 +239,28 @@ export default function DashboardClient({ data }: DashboardClientProps) {
           );
         })}
       </div>
+
+      {/* Cash Balance */}
+      <motion.div
+        custom={3}
+        initial="hidden"
+        animate="visible"
+        variants={fadeUp}
+        className="rounded-2xl border border-zinc-800/60 bg-zinc-900/50 backdrop-blur-xl px-5 py-4 flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+            <Wallet size={16} className="text-emerald-400" />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Cash &amp; Accounts</p>
+            <p className="text-[10px] text-zinc-600">Checking, savings &amp; other</p>
+          </div>
+        </div>
+        <p className={`text-xl font-bold tabular-nums ${data.cashBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+          {formatCurrency(data.cashBalance)}
+        </p>
+      </motion.div>
 
       {/* Credit Card Debt */}
       {data.creditCards.length > 0 && (
