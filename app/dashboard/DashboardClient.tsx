@@ -38,6 +38,14 @@ interface BudgetItem {
   spent: number;
 }
 
+interface CreditCardItem {
+  id: string;
+  name: string;
+  institution: string | null;
+  currentBalance: number;
+  balanceAtMonthStart: number;
+}
+
 interface DashboardClientProps {
   data: {
     monthIncome: number;
@@ -45,6 +53,7 @@ interface DashboardClientProps {
     totalDebt: number;
     totalSavings: number;
     totalBalance: number;
+    creditCards: CreditCardItem[];
     categoryData: Array<{ name: string; value: number; color: string }>;
     monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
     recentTransactions: Array<{
@@ -229,6 +238,118 @@ export default function DashboardClient({ data }: DashboardClientProps) {
           );
         })}
       </div>
+
+      {/* Credit Card Debt */}
+      {data.creditCards.length > 0 && (
+        <motion.div
+          custom={3}
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="rounded-2xl border border-zinc-800/60 bg-zinc-900/50 backdrop-blur-xl p-5 sm:p-6"
+        >
+          <div className="flex items-start justify-between mb-6">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+                  <CreditCard size={16} className="text-red-400" />
+                </div>
+                <h2 className="text-lg font-semibold text-white">Credit Card Debt</h2>
+              </div>
+              <p className="text-xs text-zinc-500 pl-[42px]">Outstanding balances across your cards</p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-2xl sm:text-3xl font-bold text-red-400 tabular-nums">
+                {formatCurrency(data.creditCards.reduce((s, c) => s + Math.abs(c.currentBalance), 0))}
+              </p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                {data.creditCards.length} card{data.creditCards.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {data.creditCards.map((card, i) => {
+              const debt = Math.abs(card.currentBalance);
+              const startDebt = Math.abs(card.balanceAtMonthStart);
+              const limit = 10000;
+              const pct = Math.min((debt / limit) * 100, 100);
+              const startPct = Math.min((startDebt / limit) * 100, 100);
+              const delta = debt - startDebt;
+              const barColor =
+                pct > 80
+                  ? 'linear-gradient(90deg, #b91c1c, #ef4444)'
+                  : pct > 50
+                  ? 'linear-gradient(90deg, #c2410c, #f97316)'
+                  : 'linear-gradient(90deg, #a16207, #eab308)';
+
+              return (
+                <div key={card.id}>
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-zinc-100 truncate">{card.name}</p>
+                      {card.institution && (
+                        <p className="text-xs text-zinc-500 truncate">{card.institution}</p>
+                      )}
+                    </div>
+                    <div className="text-right pl-4 flex-shrink-0">
+                      <p className="text-sm font-bold text-red-400 tabular-nums">{formatCurrencyFull(debt)}</p>
+                      <p className="text-[10px] text-zinc-600">of $10,000</p>
+                    </div>
+                  </div>
+
+                  {/* Bar with month-start marker */}
+                  <div className="relative pt-4">
+                    {/* Month-start tick marker above the bar */}
+                    {startPct > 0 && (
+                      <div
+                        className="absolute top-0 flex flex-col items-center"
+                        style={{ left: `${startPct}%`, transform: 'translateX(-50%)' }}
+                      >
+                        <span className="text-[9px] text-zinc-500 whitespace-nowrap leading-none mb-0.5">
+                          {new Date().toLocaleDateString('en-US', { month: 'short' })} 1
+                        </span>
+                        <div className="w-px h-2 bg-zinc-500" />
+                      </div>
+                    )}
+
+                    {/* Bar track */}
+                    <div className="relative h-2.5 rounded-full bg-zinc-800 overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ delay: 0.4 + i * 0.12, duration: 1, ease: [0.25, 0.46, 0.45, 0.94] }}
+                        className="h-full rounded-full"
+                        style={{ background: barColor }}
+                      />
+                    </div>
+
+                    {/* Marker line on the track */}
+                    {startPct > 0 && (
+                      <div
+                        className="absolute top-4 bottom-0 w-0.5 rounded-full bg-white/40 z-10"
+                        style={{ left: `${startPct}%`, transform: 'translateX(-50%)' }}
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-zinc-600 tabular-nums">{pct.toFixed(1)}% used</span>
+                    {delta !== 0 && (
+                      <span className={`text-[10px] font-medium tabular-nums ${delta > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {delta > 0 ? '↑' : '↓'} {formatCurrencyFull(Math.abs(delta))} this month
+                      </span>
+                    )}
+                    <span className="text-[10px] text-zinc-600 tabular-nums">
+                      {formatCurrency(Math.max(limit - debt, 0))} avail.
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* Main Chart — Spending Over Time */}
       <motion.div

@@ -46,8 +46,8 @@ export async function getDashboardData() {
       }),
       prisma.account.findMany({
         include: {
-          transactionsFrom: { select: { amount: true, kind: true } },
-          transactionsTo: { select: { amount: true } },
+          transactionsFrom: { select: { amount: true, kind: true, date: true } },
+          transactionsTo: { select: { amount: true, date: true } },
         },
       }),
       prisma.budget.findMany({
@@ -103,6 +103,39 @@ export async function getDashboardData() {
         expenses: expenses._sum.amount || 0,
       });
     }
+
+    const creditCards = accounts
+      .filter((a) => a.type === 'CREDIT_CARD')
+      .map((a) => {
+        const transactionTotal = a.transactionsFrom.reduce((s, t) => {
+          if (t.kind === 'INCOME') return s + t.amount;
+          if (t.kind === 'EXPENSE') return s - t.amount;
+          return s;
+        }, 0);
+        const transfersIn = a.transactionsTo.reduce((s, t) => s + t.amount, 0);
+        const currentBalance = a.startingBalance + transactionTotal + transfersIn;
+
+        // Balance at the very start of this month (before any this-month transactions)
+        const priorTransactionTotal = a.transactionsFrom
+          .filter((t) => new Date(t.date) < monthStart)
+          .reduce((s, t) => {
+            if (t.kind === 'INCOME') return s + t.amount;
+            if (t.kind === 'EXPENSE') return s - t.amount;
+            return s;
+          }, 0);
+        const priorTransfersIn = a.transactionsTo
+          .filter((t) => new Date(t.date) < monthStart)
+          .reduce((s, t) => s + t.amount, 0);
+        const balanceAtMonthStart = a.startingBalance + priorTransactionTotal + priorTransfersIn;
+
+        return {
+          id: a.id,
+          name: a.name,
+          institution: a.institution,
+          currentBalance,
+          balanceAtMonthStart,
+        };
+      });
 
     const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
 
@@ -165,6 +198,7 @@ export async function getDashboardData() {
         totalDebt,
         totalSavings,
         totalBalance,
+        creditCards,
         categoryData,
         monthlyTrend,
         recentTransactions,
