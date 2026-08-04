@@ -184,3 +184,111 @@ export async function getAccountsForSelect() {
     return { success: false, error: 'Failed to fetch accounts' };
   }
 }
+
+/**
+ * Payment Transfer:
+ *  - Deducts `amount` from `fromAccountId`
+ *  - Credits `amount` to `toAccountId`
+ *  Creates a single TRANSFER transaction tagged as a payment between accounts.
+ */
+export async function createPaymentTransfer(formData: FormData) {
+  try {
+    const amount = parseFloat(formData.get('amount') as string);
+    const fromAccountId = formData.get('fromAccountId') as string;
+    const toAccountId = formData.get('toAccountId') as string;
+    const date = formData.get('date') as string;
+    const notes = formData.get('notes') as string;
+
+    if (!amount || amount <= 0) return { success: false, error: 'Amount must be positive' };
+    if (!fromAccountId) return { success: false, error: 'Please select the account to pay from' };
+    if (!toAccountId) return { success: false, error: 'Please select the account to pay to' };
+    if (fromAccountId === toAccountId) return { success: false, error: 'From and To accounts cannot be the same' };
+
+    // Find or create "Payment" category for labelling
+    let paymentCategory = await prisma.category.findFirst({
+      where: { name: 'Payment', type: 'EXPENSE' },
+    });
+    if (!paymentCategory) {
+      paymentCategory = await prisma.category.create({
+        data: { name: 'Payment', type: 'EXPENSE', color: '#3b82f6', icon: '💸' },
+      });
+    }
+
+    await prisma.transaction.create({
+      data: {
+        date: new Date(date),
+        amount,
+        kind: 'TRANSFER',
+        categoryId: paymentCategory.id,
+        accountId: fromAccountId,
+        toAccountId: toAccountId,
+        merchantOrSource: 'Payment',
+        notes: notes || 'Account payment transfer',
+        tags: ['payment'],
+      },
+    });
+
+    revalidatePath('/expenses');
+    revalidatePath('/accounts');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    console.error('Error creating payment transfer:', error);
+    return { success: false, error: 'Failed to record payment' };
+  }
+}
+
+/**
+ * Debt Payment Transfer:
+ *  - Deducts `amount` from `fromAccountId` (e.g. Checking)
+ *  - Credits `amount` to `toAccountId` (e.g. AMEX credit card account)
+ *  Creates a single TRANSFER transaction that links both accounts.
+ */
+export async function createDebtPaymentTransfer(formData: FormData) {
+  try {
+    const amount = parseFloat(formData.get('amount') as string);
+    const fromAccountId = formData.get('fromAccountId') as string;
+    const toAccountId = formData.get('toAccountId') as string;
+    const date = formData.get('date') as string;
+    const notes = formData.get('notes') as string;
+
+    if (!amount || amount <= 0) return { success: false, error: 'Amount must be positive' };
+    if (!fromAccountId) return { success: false, error: 'Please select the account to pay from' };
+    if (!toAccountId) return { success: false, error: 'Please select the credit card / debt account' };
+    if (fromAccountId === toAccountId) return { success: false, error: 'From and To accounts cannot be the same' };
+
+    // Find or create "Debt Payment" category for labelling
+    let debtCategory = await prisma.category.findFirst({
+      where: { name: 'Debt Payment', type: 'EXPENSE' },
+    });
+    if (!debtCategory) {
+      debtCategory = await prisma.category.create({
+        data: { name: 'Debt Payment', type: 'EXPENSE', color: '#8b5cf6', icon: '💳' },
+      });
+    }
+
+    // Create a TRANSFER transaction: money moves from checking → credit card
+    await prisma.transaction.create({
+      data: {
+        date: new Date(date),
+        amount,
+        kind: 'TRANSFER',
+        categoryId: debtCategory.id,
+        accountId: fromAccountId,      // money leaves here
+        toAccountId: toAccountId,      // money arrives here (credit card)
+        merchantOrSource: 'Debt Payment',
+        notes: notes || 'Debt payment transfer',
+        tags: ['debt-payment'],
+      },
+    });
+
+    revalidatePath('/expenses');
+    revalidatePath('/accounts');
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    console.error('Error creating debt payment transfer:', error);
+    return { success: false, error: 'Failed to record debt payment' };
+  }
+}
+
