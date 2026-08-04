@@ -13,7 +13,7 @@ import { CreditCard, ArrowRight, Banknote } from 'lucide-react';
 
 const expenseSchema = z.object({
   date: z.string().min(1, 'Date is required'),
-  amount: z.string().min(1, 'Amount is required'),
+  amount: z.string().optional(),
   categoryId: z.string().min(1, 'Category is required'),
   accountId: z.string().optional(),
   merchantOrSource: z.string().optional(),
@@ -148,6 +148,10 @@ export default function ExpenseForm({
         }
       } else {
         // Regular expense
+        if (!data.amount || parseFloat(data.amount) <= 0) {
+          setError('Please enter a valid amount.');
+          return;
+        }
         const formData = new FormData();
         formData.append('date', data.date);
         formData.append('amount', data.amount);
@@ -391,7 +395,6 @@ export default function ExpenseForm({
             type="number"
             step="0.01"
             {...register('amount')}
-            error={errors.amount?.message}
             placeholder="0.00"
           />
 

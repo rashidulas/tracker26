@@ -23,36 +23,46 @@ export async function getExpenses(filters?: {
   search?: string;
 }) {
   try {
-    const where: any = { kind: 'EXPENSE' };
+    const baseWhere: any = {
+      OR: [
+        { kind: 'EXPENSE' },
+        { kind: 'TRANSFER', tags: { has: 'payment' } },
+      ],
+    };
 
     if (filters?.startDate || filters?.endDate) {
-      where.date = {};
-      if (filters.startDate) where.date.gte = new Date(filters.startDate);
-      if (filters.endDate) where.date.lte = new Date(filters.endDate);
+      baseWhere.date = {};
+      if (filters.startDate) baseWhere.date.gte = new Date(filters.startDate);
+      if (filters.endDate) baseWhere.date.lte = new Date(filters.endDate);
     }
 
     if (filters?.categoryId) {
-      where.categoryId = filters.categoryId;
+      baseWhere.categoryId = filters.categoryId;
     }
 
     if (filters?.minAmount !== undefined || filters?.maxAmount !== undefined) {
-      where.amount = {};
-      if (filters.minAmount !== undefined) where.amount.gte = filters.minAmount;
-      if (filters.maxAmount !== undefined) where.amount.lte = filters.maxAmount;
+      baseWhere.amount = {};
+      if (filters.minAmount !== undefined) baseWhere.amount.gte = filters.minAmount;
+      if (filters.maxAmount !== undefined) baseWhere.amount.lte = filters.maxAmount;
     }
 
     if (filters?.search) {
-      where.OR = [
-        { merchantOrSource: { contains: filters.search, mode: 'insensitive' } },
-        { notes: { contains: filters.search, mode: 'insensitive' } },
+      baseWhere.AND = [
+        {
+          OR: [
+            { merchantOrSource: { contains: filters.search, mode: 'insensitive' } },
+            { notes: { contains: filters.search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
     const expenses = await prisma.transaction.findMany({
-      where,
+      where: baseWhere,
       include: {
         category: true,
         account: true,
+        toAccount: true,
       },
       orderBy: { date: 'desc' },
     });

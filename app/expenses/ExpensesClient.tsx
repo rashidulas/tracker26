@@ -17,6 +17,7 @@ interface Expense {
   id: string;
   date: Date;
   amount: number;
+  kind: string;
   categoryId: string | null;
   accountId: string | null;
   merchantOrSource: string | null;
@@ -24,6 +25,7 @@ interface Expense {
   tags: string[];
   category: { id: string; name: string; icon: string | null } | null;
   account: { id: string; name: string } | null;
+  toAccount: { id: string; name: string } | null;
 }
 
 interface Debt {
@@ -272,10 +274,20 @@ export default function ExpensesClient({
                   {expense.merchantOrSource || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">
-                  {expense.account?.name || '-'}
+                  {expense.toAccount ? (
+                    <span className="flex items-center gap-1">
+                      <span>{expense.account?.name || '-'}</span>
+                      <span className="text-zinc-600">→</span>
+                      <span>{expense.toAccount.name}</span>
+                    </span>
+                  ) : (
+                    expense.account?.name || '-'
+                  )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-red-400">
-                  {formatCurrency(expense.amount)}
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <span className={expense.kind === 'TRANSFER' ? 'text-blue-400' : 'text-red-400'}>
+                    {formatCurrency(expense.amount)}
+                  </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                   <button
