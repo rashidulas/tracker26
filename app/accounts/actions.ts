@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
+import { computeAccountBalance } from '@/lib/accountBalance';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -30,27 +31,15 @@ export async function getAccounts() {
       },
     });
 
-    // Calculate current balance for each account
-    const accountsWithBalance = accounts.map((account) => {
-      // Regular transactions (income and expense)
-      const transactionTotal = account.transactionsFrom.reduce((sum, transaction) => {
-        if (transaction.kind === 'INCOME') {
-          return sum + transaction.amount;
-        } else if (transaction.kind === 'EXPENSE') {
-          return sum - transaction.amount;
-        }
-        return sum;
-      }, 0);
-
-      // Transfers in (to this account)
-      const transfersIn = account.transactionsTo.reduce((sum, transfer) => sum + transfer.amount, 0);
-
-      return {
-        ...account,
-        currentBalance: account.startingBalance + transactionTotal + transfersIn,
-        transactionCount: account.transactionsFrom.length + account.transactionsTo.length,
-      };
-    });
+    const accountsWithBalance = accounts.map((account) => ({
+      ...account,
+      currentBalance: computeAccountBalance(
+        account.startingBalance,
+        account.transactionsFrom,
+        account.transactionsTo
+      ),
+      transactionCount: account.transactionsFrom.length + account.transactionsTo.length,
+    }));
 
     return { success: true, data: accountsWithBalance };
   } catch (error) {

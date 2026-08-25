@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
+import { computeAccountBalance } from '@/lib/accountBalance';
 import { startOfMonth, endOfMonth, startOfYear, subMonths, eachDayOfInterval, format } from 'date-fns';
 
 export async function getDashboardData() {
@@ -107,26 +108,16 @@ export async function getDashboardData() {
     const creditCards = accounts
       .filter((a) => a.type === 'CREDIT_CARD')
       .map((a) => {
-        const transactionTotal = a.transactionsFrom.reduce((s, t) => {
-          if (t.kind === 'INCOME') return s + t.amount;
-          if (t.kind === 'EXPENSE') return s - t.amount;
-          return s;
-        }, 0);
-        const transfersIn = a.transactionsTo.reduce((s, t) => s + t.amount, 0);
-        const currentBalance = a.startingBalance + transactionTotal + transfersIn;
-
-        // Balance at the very start of this month (before any this-month transactions)
-        const priorTransactionTotal = a.transactionsFrom
-          .filter((t) => new Date(t.date) < monthStart)
-          .reduce((s, t) => {
-            if (t.kind === 'INCOME') return s + t.amount;
-            if (t.kind === 'EXPENSE') return s - t.amount;
-            return s;
-          }, 0);
-        const priorTransfersIn = a.transactionsTo
-          .filter((t) => new Date(t.date) < monthStart)
-          .reduce((s, t) => s + t.amount, 0);
-        const balanceAtMonthStart = a.startingBalance + priorTransactionTotal + priorTransfersIn;
+        const currentBalance = computeAccountBalance(
+          a.startingBalance,
+          a.transactionsFrom,
+          a.transactionsTo
+        );
+        const balanceAtMonthStart = computeAccountBalance(
+          a.startingBalance,
+          a.transactionsFrom.filter((t) => new Date(t.date) < monthStart),
+          a.transactionsTo.filter((t) => new Date(t.date) < monthStart)
+        );
 
         return {
           id: a.id,
@@ -139,15 +130,11 @@ export async function getDashboardData() {
 
     const cashBalance = accounts
       .filter((a) => a.type !== 'CREDIT_CARD')
-      .reduce((sum, a) => {
-        const transactionTotal = a.transactionsFrom.reduce((s, t) => {
-          if (t.kind === 'INCOME') return s + t.amount;
-          if (t.kind === 'EXPENSE') return s - t.amount;
-          return s;
-        }, 0);
-        const transfersIn = a.transactionsTo.reduce((s, t) => s + t.amount, 0);
-        return sum + a.startingBalance + transactionTotal + transfersIn;
-      }, 0);
+      .reduce(
+        (sum, a) =>
+          sum + computeAccountBalance(a.startingBalance, a.transactionsFrom, a.transactionsTo),
+        0
+      );
 
     const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
 
@@ -156,15 +143,12 @@ export async function getDashboardData() {
       return sum + contributions;
     }, 0);
 
-    const totalBalance = accounts.reduce((sum, account) => {
-      const transactionTotal = account.transactionsFrom.reduce((s, t) => {
-        if (t.kind === 'INCOME') return s + t.amount;
-        if (t.kind === 'EXPENSE') return s - t.amount;
-        return s;
-      }, 0);
-      const transfersIn = account.transactionsTo.reduce((s, t) => s + t.amount, 0);
-      return sum + account.startingBalance + transactionTotal + transfersIn;
-    }, 0);
+    const totalBalance = accounts.reduce(
+      (sum, account) =>
+        sum +
+        computeAccountBalance(account.startingBalance, account.transactionsFrom, account.transactionsTo),
+      0
+    );
 
     // Build spending-per-category lookup for budget progress
     const spendingByCategory = new Map<string, number>();
