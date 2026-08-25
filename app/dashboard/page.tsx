@@ -7,7 +7,6 @@ export const revalidate = 0;
 const emptyData = {
   monthIncome: 0,
   monthExpenses: 0,
-  totalDebt: 0,
   totalSavings: 0,
   totalBalance: 0,
   cashBalance: 0,

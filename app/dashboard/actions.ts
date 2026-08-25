@@ -14,7 +14,6 @@ export async function getDashboardData() {
       monthIncomeAgg,
       monthExpensesAgg,
       expensesByCategory,
-      debts,
       goals,
       recentTransactions,
       accounts,
@@ -38,7 +37,6 @@ export async function getDashboardData() {
         },
         _sum: { amount: true },
       }),
-      prisma.debt.findMany(),
       prisma.goal.findMany({ include: { contributions: true } }),
       prisma.transaction.findMany({
         take: 10,
@@ -136,8 +134,6 @@ export async function getDashboardData() {
         0
       );
 
-    const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
-
     const totalSavings = goals.reduce((sum, goal) => {
       const contributions = goal.contributions.reduce((s, c) => s + c.amount, 0);
       return sum + contributions;
@@ -191,7 +187,6 @@ export async function getDashboardData() {
       data: {
         monthIncome: monthIncomeAgg._sum.amount || 0,
         monthExpenses: monthExpensesAgg._sum.amount || 0,
-        totalDebt,
         totalSavings,
         totalBalance,
         cashBalance,

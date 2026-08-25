@@ -39,7 +39,6 @@ interface ExpenseFormProps {
   };
   categories: Array<{ id: string; name: string }>;
   accounts: Array<{ id: string; name: string; type?: string }>;
-  debts: Array<{ id: string; name: string; currentBalance: number }>; // kept for compatibility, unused in this mode
   onSuccess: () => void;
   onCancel: () => void;
 }

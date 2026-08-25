@@ -11,7 +11,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Tracker26 - Personal Finance Manager",
-  description: "Manage your finances, budgets, investments, and goals",
+  description: "Manage your finances, budgets, and goals",
 };
 
 export const viewport: Viewport = {

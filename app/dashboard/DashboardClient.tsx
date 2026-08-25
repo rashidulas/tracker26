@@ -50,7 +50,6 @@ interface DashboardClientProps {
   data: {
     monthIncome: number;
     monthExpenses: number;
-    totalDebt: number;
     totalSavings: number;
     totalBalance: number;
     cashBalance: number;
@@ -567,10 +566,6 @@ export default function DashboardClient({ data }: DashboardClientProps) {
 
           {/* Quick Stats */}
           <div className="mt-6 pt-5 border-t border-zinc-800/60 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-zinc-500">Total Debt</span>
-              <span className="text-sm font-semibold text-red-400">{formatCurrency(data.totalDebt)}</span>
-            </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-zinc-500">Savings Goals</span>
               <span className="text-sm font-semibold text-emerald-400">{formatCurrency(data.totalSavings)}</span>

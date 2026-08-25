@@ -3,8 +3,6 @@
 export type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 export type CategoryType = 'INCOME' | 'EXPENSE';
 export type AccountType = 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT';
-export type DebtType = 'CREDIT_CARD' | 'PERSONAL_LOAN' | 'STUDENT_LOAN' | 'MORTGAGE' | 'AUTO_LOAN' | 'OTHER';
-export type InvestmentTransactionType = 'BUY' | 'SELL' | 'CONTRIBUTION' | 'WITHDRAWAL' | 'DIVIDEND';
 
 export interface Category {
   id: string;
@@ -40,18 +38,6 @@ export interface Transaction {
   updatedAt: Date;
 }
 
-export interface Debt {
-  id: string;
-  name: string;
-  type: DebtType;
-  currentBalance: number;
-  apr?: number | null;
-  minPayment?: number | null;
-  dueDay?: number | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export interface Goal {
   id: string;
   name: string;
@@ -64,7 +50,6 @@ export interface Goal {
 export interface DashboardData {
   monthIncome: number;
   monthExpenses: number;
-  totalDebt: number;
   totalSavings: number;
   totalBalance: number;
   categoryData: Array<{ name: string; value: number; color: string }>;

@@ -28,24 +28,16 @@ interface Expense {
   toAccount: { id: string; name: string } | null;
 }
 
-interface Debt {
-  id: string;
-  name: string;
-  currentBalance: number;
-}
-
 interface ExpensesClientProps {
   initialExpenses: Expense[];
   categories: Array<{ id: string; name: string }>;
   accounts: Array<{ id: string; name: string }>;
-  debts: Debt[];
 }
 
 export default function ExpensesClient({
   initialExpenses,
   categories,
   accounts,
-  debts,
 }: ExpensesClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -328,7 +320,6 @@ export default function ExpensesClient({
           expense={editingExpense || undefined}
           categories={categories}
           accounts={accounts}
-          debts={debts}
           onSuccess={handleSuccess}
           onCancel={() => {
             setIsModalOpen(false);

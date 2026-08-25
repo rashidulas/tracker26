@@ -53,20 +53,6 @@ async function main() {
   }
   console.log(`✅ Created ${accountsData.length} accounts`)
 
-  // Seed a sample debt
-  console.log('Creating sample debt...')
-  await prisma.debt.create({
-    data: {
-      name: 'Student Loan',
-      type: 'STUDENT_LOAN' as const,
-      currentBalance: 15000,
-      apr: 4.5,
-      minPayment: 250,
-      dueDay: 15,
-    },
-  })
-  console.log('✅ Created sample debt')
-
   // Seed a sample goal
   console.log('Creating sample goal...')
   await prisma.goal.create({

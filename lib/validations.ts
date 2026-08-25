@@ -72,59 +72,6 @@ export type ExpenseInput = z.infer<typeof expenseSchema>;
 export type TransferInput = z.infer<typeof transferSchema>;
 export type TransactionInput = z.infer<typeof transactionSchema>;
 
-// ==================== DEBT SCHEMAS ====================
-export const debtSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  type: z.enum(['CREDIT_CARD', 'PERSONAL_LOAN', 'STUDENT_LOAN', 'MORTGAGE', 'AUTO_LOAN', 'OTHER']),
-  currentBalance: z.number().nonnegative('Balance cannot be negative'),
-  apr: z.number().nonnegative().max(100).optional(),
-  minPayment: z.number().positive().optional(),
-  dueDay: z.number().int().min(1).max(31).optional(),
-});
-
-export const debtPaymentSchema = z.object({
-  date: z.date(),
-  amount: z.number().positive('Amount must be positive'),
-  debtId: z.string().min(1, 'Debt is required'),
-  fromAccountId: z.string().min(1, 'Account is required'),
-  notes: z.string().max(500).optional(),
-});
-
-export type DebtInput = z.infer<typeof debtSchema>;
-export type DebtPaymentInput = z.infer<typeof debtPaymentSchema>;
-
-// ==================== INVESTMENT SCHEMAS ====================
-export const investmentHoldingSchema = z.object({
-  symbol: z.string().min(1).max(10).toUpperCase(),
-  name: z.string().min(1).max(100),
-  quantity: z.number().nonnegative(),
-  avgCostBasis: z.number().nonnegative(),
-  lastPrice: z.number().nonnegative(),
-  accountId: z.string().min(1, 'Account is required'),
-});
-
-export const investmentTransactionSchema = z.object({
-  type: z.enum(['BUY', 'SELL', 'CONTRIBUTION', 'WITHDRAWAL', 'DIVIDEND']),
-  date: z.date(),
-  amount: z.number().positive('Amount must be positive'),
-  quantity: z.number().positive().optional(),
-  price: z.number().positive().optional(),
-  symbol: z.string().max(10).optional(),
-  holdingId: z.string().optional(),
-  accountId: z.string().min(1, 'Account is required'),
-  notes: z.string().max(500).optional(),
-}).refine((data) => {
-  if (data.type === 'BUY' || data.type === 'SELL') {
-    return data.quantity && data.price && data.symbol;
-  }
-  return true;
-}, {
-  message: 'BUY/SELL transactions require quantity, price, and symbol',
-});
-
-export type InvestmentHoldingInput = z.infer<typeof investmentHoldingSchema>;
-export type InvestmentTransactionInput = z.infer<typeof investmentTransactionSchema>;
-
 // ==================== GOAL SCHEMAS ====================
 export const goalSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
