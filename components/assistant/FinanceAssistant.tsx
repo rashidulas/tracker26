@@ -317,7 +317,7 @@ export default function FinanceAssistant() {
 
       <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 p-4 sm:p-5">
         {/* Siri-style orb */}
-        <div className="flex flex-col items-center justify-center gap-2 sm:min-w-[140px]">
+        <div className="flex flex-col items-center justify-center gap-2 sm:min-w-[140px] py-1">
           <button
             type="button"
             onPointerDown={onOrbPointerDown}
@@ -327,7 +327,7 @@ export default function FinanceAssistant() {
               if (holdStartedRef.current) onOrbPointerUp(e);
             }}
             disabled={isSending || isTranscribing}
-            className={`siri-orb touch-none select-none ${
+            className={`siri-orb siri-orb--mobile touch-none select-none ${
               isRecording ? 'siri-orb--listening' : ''
             } ${isTranscribing || isSending ? 'siri-orb--busy' : ''}`}
             aria-label="Hold to talk"
@@ -343,7 +343,7 @@ export default function FinanceAssistant() {
 
         {/* Chat column */}
         <div className="flex flex-col min-w-0">
-          <div className="h-[180px] sm:h-[200px] overflow-y-auto rounded-xl border border-graphite-border-subtle bg-graphite-elevated/50 px-3 py-3 space-y-2.5 mb-3">
+          <div className="h-[150px] sm:h-[200px] overflow-y-auto rounded-xl border border-graphite-border-subtle bg-graphite-elevated/50 px-3 py-3 space-y-2.5 mb-3">
             {messages.map((m) => (
               <div
                 key={m.id}
