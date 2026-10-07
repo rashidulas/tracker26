@@ -1,5 +1,6 @@
 import { getDashboardData } from './actions';
 import DashboardClient from './DashboardClient';
+import FinanceAssistant from '@/components/assistant/FinanceAssistant';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -32,9 +33,15 @@ export default async function DashboardPage() {
           </p>
         </div>
         <DashboardClient data={emptyData} />
+        <FinanceAssistant />
       </div>
     );
   }
 
-  return <DashboardClient data={result.data!} />;
+  return (
+    <>
+      <DashboardClient data={result.data!} />
+      <FinanceAssistant />
+    </>
+  );
 }
