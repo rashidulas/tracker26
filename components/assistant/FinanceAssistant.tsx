@@ -1,17 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Camera,
-  Check,
-  ImagePlus,
-  Loader2,
-  Mic,
-  Send,
-  Sparkles,
-  Square,
-  X,
-} from 'lucide-react';
+import { Check, ImagePlus, Loader2, Send, X } from 'lucide-react';
 import Button from '@/components/Button';
 import { confirmAssistantDraft } from '@/app/dashboard/assistantActions';
 import type { AssistantDraft } from '@/lib/assistant';
@@ -39,14 +29,13 @@ function formatMoney(amount: number) {
 
 export default function FinanceAssistant() {
   const { success, error: toastError } = useToast();
-  const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([
     {
       id: 'welcome',
       role: 'assistant',
       content:
-        'Hi — tap the mic and say something like “I spent $42 on groceries today,” or upload a receipt. I’ll draft it for you to confirm.',
+        'Hold the orb and say something like “I spent $42 on groceries,” or type below. Nothing saves until you confirm.',
     },
   ]);
   const [pendingImage, setPendingImage] = useState<{
@@ -62,10 +51,19 @@ export default function FinanceAssistant() {
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const holdStartedRef = useRef(false);
+  const pendingImageRef = useRef(pendingImage);
+  const sendRef = useRef<(payload: { text: string; image?: { dataUrl: string; mimeType: string } | null }) => Promise<void>>(
+    async () => {}
+  );
 
   useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, open, isSending]);
+    pendingImageRef.current = pendingImage;
+  }, [pendingImage]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isSending]);
 
   const stopRecording = useCallback(() => {
     const recorder = mediaRecorderRef.current;
@@ -82,89 +80,88 @@ export default function FinanceAssistant() {
     };
   }, [stopRecording]);
 
-  const sendToAssistant = async (payload: {
-    text: string;
-    image?: { dataUrl: string; mimeType: string } | null;
-  }) => {
-    const text = payload.text.trim();
-    if (!text && !payload.image) return;
+  const sendToAssistant = useCallback(
+    async (payload: {
+      text: string;
+      image?: { dataUrl: string; mimeType: string } | null;
+    }) => {
+      const text = payload.text.trim();
+      if (!text && !payload.image) return;
 
-    const userMessage: UiMessage = {
-      id: `u-${Date.now()}`,
-      role: 'user',
-      content: text || 'Please review this image.',
-      imagePreview: payload.image?.dataUrl,
-    };
+      const userMessage: UiMessage = {
+        id: `u-${Date.now()}`,
+        role: 'user',
+        content: text || 'Please review this image.',
+        imagePreview: payload.image?.dataUrl,
+      };
 
-    const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
-    setInput('');
-    setPendingImage(null);
-    setIsSending(true);
+      let nextMessages: UiMessage[] = [];
+      setMessages((prev) => {
+        nextMessages = [...prev, userMessage];
+        return nextMessages;
+      });
+      setInput('');
+      setPendingImage(null);
+      setIsSending(true);
 
-    try {
-      const history = nextMessages
-        .filter((m) => m.id !== 'welcome')
-        .map((m) => ({
-          role: m.role,
-          content: m.content,
-          ...(m.role === 'user' && m.imagePreview
-            ? {
-                image: {
-                  dataUrl: m.imagePreview,
-                  mimeType: payload.image?.mimeType || 'image/jpeg',
-                },
-              }
-            : {}),
-        }));
-
-      // Only attach image on the latest user turn to keep payload smaller
-      const apiMessages = history.map((m, i) => {
-        if (i === history.length - 1 && payload.image) {
-          return {
+      try {
+        const history = nextMessages
+          .filter((m) => m.id !== 'welcome')
+          .map((m) => ({
             role: m.role,
             content: m.content,
-            image: payload.image,
-          };
+          }));
+
+        const apiMessages = history.map((m, i) => {
+          if (i === history.length - 1 && payload.image) {
+            return {
+              role: m.role,
+              content: m.content,
+              image: payload.image,
+            };
+          }
+          return { role: m.role, content: m.content };
+        });
+
+        const res = await fetch('/api/assistant/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: apiMessages }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || 'Assistant failed');
         }
-        return { role: m.role, content: m.content };
-      });
 
-      const res = await fetch('/api/assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Assistant failed');
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            content: data.data.message,
+            draft: data.data.draft,
+          },
+        ]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Something went wrong';
+        toastError(msg);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-err-${Date.now()}`,
+            role: 'assistant',
+            content: `I hit a snag: ${msg}`,
+          },
+        ]);
+      } finally {
+        setIsSending(false);
       }
+    },
+    [toastError]
+  );
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content: data.data.message,
-          draft: data.data.draft,
-        },
-      ]);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Something went wrong';
-      toastError(msg);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-err-${Date.now()}`,
-          role: 'assistant',
-          content: `I hit a snag: ${msg}`,
-        },
-      ]);
-    } finally {
-      setIsSending(false);
-    }
-  };
+  sendRef.current = sendToAssistant;
 
   const startRecording = async () => {
     try {
@@ -191,7 +188,11 @@ export default function FinanceAssistant() {
         setIsTranscribing(true);
         try {
           const formData = new FormData();
-          formData.append('audio', blob, `speech.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`);
+          formData.append(
+            'audio',
+            blob,
+            `speech.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`
+          );
           const res = await fetch('/api/assistant/transcribe', {
             method: 'POST',
             body: formData,
@@ -200,7 +201,8 @@ export default function FinanceAssistant() {
           if (!res.ok || !data.success) {
             throw new Error(data.error || 'Transcription failed');
           }
-          setInput((prev) => (prev ? `${prev} ${data.text}` : data.text));
+          // Hold-to-talk: auto-send after speech, Siri-style
+          await sendRef.current({ text: data.text, image: pendingImageRef.current });
         } catch (err) {
           toastError(err instanceof Error ? err.message : 'Could not transcribe audio');
         } finally {
@@ -212,12 +214,27 @@ export default function FinanceAssistant() {
       setIsRecording(true);
     } catch {
       toastError('Microphone permission is required for voice input');
+      setIsRecording(false);
     }
   };
 
-  const toggleMic = () => {
-    if (isRecording) stopRecording();
-    else void startRecording();
+  const onOrbPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    if (isSending || isTranscribing) return;
+    holdStartedRef.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    void startRecording();
+  };
+
+  const onOrbPointerUp = (e: React.PointerEvent) => {
+    if (!holdStartedRef.current) return;
+    holdStartedRef.current = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    stopRecording();
   };
 
   const onPickImage = (file: File | null) => {
@@ -273,242 +290,210 @@ export default function FinanceAssistant() {
     );
   };
 
+  const statusLabel = isRecording
+    ? 'Listening… release to send'
+    : isTranscribing
+      ? 'Transcribing…'
+      : isSending
+        ? 'Thinking…'
+        : 'Hold to talk';
+
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={`fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-mint text-graphite font-semibold pl-4 pr-5 py-3.5 shadow-glow transition-all duration-200 hover:bg-mint-bright active:scale-[0.98] ${
-          open ? 'opacity-0 pointer-events-none scale-90' : 'opacity-100'
-        }`}
-        aria-label="Open finance assistant"
-      >
-        <Sparkles size={18} />
-        <span className="text-sm">Ask</span>
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
-          <div
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
-            onClick={() => {
-              stopRecording();
-              setOpen(false);
-            }}
-          />
-
-          <div className="relative w-full sm:max-w-md h-[min(88vh,680px)] sm:h-[680px] bg-graphite-surface border border-graphite-border sm:rounded-2xl rounded-t-2xl shadow-panel flex flex-col animate-fade-up overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-graphite-border-subtle">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-mint-dim border border-mint/20 flex items-center justify-center">
-                  <Sparkles size={16} className="text-mint" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-semibold text-ink font-display">Assistant</h2>
-                  <p className="text-[11px] text-ink-muted">Voice · text · receipts</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  stopRecording();
-                  setOpen(false);
-                }}
-                className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-2"
-                aria-label="Close assistant"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-                      m.role === 'user'
-                        ? 'bg-mint-dim text-ink border border-mint/20'
-                        : 'bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle'
-                    }`}
-                  >
-                    {m.imagePreview && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={m.imagePreview}
-                        alt="Uploaded"
-                        className="mb-2 rounded-xl max-h-36 object-cover w-full"
-                      />
-                    )}
-                    <p className="whitespace-pre-wrap">{m.content}</p>
-
-                    {m.draft && (
-                      <div className="mt-3 rounded-xl border border-graphite-border bg-graphite-elevated/80 p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                              m.draft.kind === 'INCOME' ? 'text-mint' : 'text-danger'
-                            }`}
-                          >
-                            {m.draft.kind} draft
-                          </span>
-                          {m.draft.confidence && (
-                            <span className="text-[10px] text-ink-muted capitalize">
-                              {m.draft.confidence} confidence
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xl font-semibold text-ink money">
-                          {formatMoney(m.draft.amount)}
-                        </p>
-                        <div className="text-xs text-ink-muted space-y-1">
-                          <p>
-                            {m.draft.categoryName || 'Category'} · {m.draft.date}
-                          </p>
-                          {(m.draft.accountName || m.draft.merchantOrSource) && (
-                            <p>
-                              {[m.draft.accountName, m.draft.merchantOrSource]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            className="flex-1"
-                            disabled={confirmingId === m.id}
-                            onClick={() => handleConfirm(m.id, m.draft!)}
-                          >
-                            {confirmingId === m.id ? (
-                              <Loader2 size={14} className="animate-spin" />
-                            ) : (
-                              <Check size={14} />
-                            )}
-                            Confirm
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="flex-1"
-                            onClick={() => handleDiscard(m.id)}
-                            disabled={confirmingId === m.id}
-                          >
-                            Discard
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {(isSending || isTranscribing) && (
-                <div className="flex items-center gap-2 text-xs text-ink-muted px-1">
-                  <Loader2 size={14} className="animate-spin text-mint" />
-                  {isTranscribing ? 'Transcribing…' : 'Thinking…'}
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-
-            <div className="border-t border-graphite-border-subtle p-3 space-y-2">
-              {pendingImage && (
-                <div className="relative inline-block">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={pendingImage.dataUrl}
-                    alt="Pending upload"
-                    className="h-16 w-16 rounded-xl object-cover border border-graphite-border"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setPendingImage(null)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-graphite-surface-2 border border-graphite-border text-ink-muted flex items-center justify-center"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              )}
-
-              <div className="flex items-end gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => onPickImage(e.target.files?.[0] || null)}
-                />
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2.5 rounded-xl text-ink-secondary hover:text-ink hover:bg-graphite-surface-2 border border-transparent"
-                  aria-label="Upload receipt"
-                  title="Upload receipt"
-                >
-                  <ImagePlus size={18} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="hidden"
-                  aria-hidden
-                >
-                  <Camera size={18} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={toggleMic}
-                  disabled={isTranscribing || isSending}
-                  className={`p-2.5 rounded-xl border transition-colors ${
-                    isRecording
-                      ? 'bg-danger-dim text-danger border-danger/30 animate-pulse'
-                      : 'text-ink-secondary hover:text-ink hover:bg-graphite-surface-2 border-transparent'
-                  }`}
-                  aria-label={isRecording ? 'Stop recording' : 'Start voice input'}
-                >
-                  {isRecording ? <Square size={18} /> : <Mic size={18} />}
-                </button>
-
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendToAssistant({ text: input, image: pendingImage });
-                    }
-                  }}
-                  rows={1}
-                  placeholder={
-                    isRecording ? 'Listening… tap stop when done' : 'Say or type an expense…'
-                  }
-                  className="flex-1 resize-none max-h-28 px-3.5 py-2.5 rounded-xl border border-graphite-border bg-[var(--surface-2)] text-sm text-ink placeholder-ink-muted focus:outline-none focus:ring-2 focus:ring-mint/30 focus:border-mint/50"
-                />
-
-                <button
-                  type="button"
-                  disabled={isSending || isTranscribing || (!input.trim() && !pendingImage)}
-                  onClick={() => sendToAssistant({ text: input, image: pendingImage })}
-                  className="p-2.5 rounded-xl bg-mint text-graphite disabled:opacity-40 hover:bg-mint-bright transition-colors"
-                  aria-label="Send"
-                >
-                  {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                </button>
-              </div>
-              <p className="text-[10px] text-ink-muted text-center">
-                Nothing is saved until you tap Confirm
-              </p>
-            </div>
+    <section className="panel shadow-panel overflow-hidden">
+      <div className="relative px-4 sm:px-5 pt-4 pb-3 border-b border-graphite-border-subtle">
+        <div className="absolute inset-0 bg-gradient-to-br from-mint/[0.06] via-transparent to-info/[0.04] pointer-events-none" />
+        <div className="relative flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-medium text-mint uppercase tracking-[0.16em]">
+              Assistant
+            </p>
+            <h2 className="text-lg font-semibold text-ink font-display mt-0.5">
+              What do you want to log?
+            </h2>
+            <p className="text-xs text-ink-muted mt-1">{statusLabel}</p>
           </div>
         </div>
-      )}
-    </>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 p-4 sm:p-5">
+        {/* Siri-style orb */}
+        <div className="flex flex-col items-center justify-center gap-2 sm:min-w-[140px]">
+          <button
+            type="button"
+            onPointerDown={onOrbPointerDown}
+            onPointerUp={onOrbPointerUp}
+            onPointerCancel={onOrbPointerUp}
+            onPointerLeave={(e) => {
+              if (holdStartedRef.current) onOrbPointerUp(e);
+            }}
+            disabled={isSending || isTranscribing}
+            className={`siri-orb touch-none select-none ${
+              isRecording ? 'siri-orb--listening' : ''
+            } ${isTranscribing || isSending ? 'siri-orb--busy' : ''}`}
+            aria-label="Hold to talk"
+          >
+            <span className="siri-orb__ring siri-orb__ring--a" />
+            <span className="siri-orb__ring siri-orb__ring--b" />
+            <span className="siri-orb__core" />
+          </button>
+          <p className="text-[11px] text-ink-muted text-center leading-snug max-w-[9rem]">
+            {isRecording ? 'Release to send' : 'Hold & speak'}
+          </p>
+        </div>
+
+        {/* Chat column */}
+        <div className="flex flex-col min-w-0">
+          <div className="h-[180px] sm:h-[200px] overflow-y-auto rounded-xl border border-graphite-border-subtle bg-graphite-elevated/50 px-3 py-3 space-y-2.5 mb-3">
+            {messages.map((m) => (
+              <div
+                key={m.id}
+                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[92%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${
+                    m.role === 'user'
+                      ? 'bg-mint-dim text-ink border border-mint/20'
+                      : 'bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle'
+                  }`}
+                >
+                  {m.imagePreview && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={m.imagePreview}
+                      alt="Uploaded"
+                      className="mb-2 rounded-lg max-h-28 object-cover w-full"
+                    />
+                  )}
+                  <p className="whitespace-pre-wrap">{m.content}</p>
+
+                  {m.draft && (
+                    <div className="mt-2.5 rounded-xl border border-graphite-border bg-graphite-elevated/90 p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                            m.draft.kind === 'INCOME' ? 'text-mint' : 'text-danger'
+                          }`}
+                        >
+                          {m.draft.kind} draft
+                        </span>
+                        {m.draft.confidence && (
+                          <span className="text-[10px] text-ink-muted capitalize">
+                            {m.draft.confidence}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-lg font-semibold text-ink money">
+                        {formatMoney(m.draft.amount)}
+                      </p>
+                      <p className="text-[11px] text-ink-muted">
+                        {m.draft.categoryName || 'Category'} · {m.draft.date}
+                        {m.draft.accountName || m.draft.merchantOrSource
+                          ? ` · ${[m.draft.accountName, m.draft.merchantOrSource]
+                              .filter(Boolean)
+                              .join(' · ')}`
+                          : ''}
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        <Button
+                          size="sm"
+                          className="flex-1"
+                          disabled={confirmingId === m.id}
+                          onClick={() => handleConfirm(m.id, m.draft!)}
+                        >
+                          {confirmingId === m.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Check size={14} />
+                          )}
+                          Confirm
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="flex-1"
+                          onClick={() => handleDiscard(m.id)}
+                          disabled={confirmingId === m.id}
+                        >
+                          Discard
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {(isSending || isTranscribing) && (
+              <div className="flex items-center gap-2 text-xs text-ink-muted px-1">
+                <Loader2 size={13} className="animate-spin text-mint" />
+                {isTranscribing ? 'Transcribing…' : 'Thinking…'}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {pendingImage && (
+            <div className="relative inline-block mb-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pendingImage.dataUrl}
+                alt="Pending upload"
+                className="h-14 w-14 rounded-xl object-cover border border-graphite-border"
+              />
+              <button
+                type="button"
+                onClick={() => setPendingImage(null)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-graphite-surface-2 border border-graphite-border text-ink-muted flex items-center justify-center"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => onPickImage(e.target.files?.[0] || null)}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2.5 rounded-xl text-ink-secondary hover:text-ink hover:bg-graphite-surface-2"
+              aria-label="Upload receipt"
+              title="Upload receipt"
+            >
+              <ImagePlus size={18} />
+            </button>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void sendToAssistant({ text: input, image: pendingImage });
+                }
+              }}
+              placeholder="Or type an expense / income…"
+              disabled={isSending || isTranscribing || isRecording}
+              className="flex-1 px-3.5 py-2.5 rounded-xl border border-graphite-border bg-[var(--surface-2)] text-sm text-ink placeholder-ink-muted focus:outline-none focus:ring-2 focus:ring-mint/30 focus:border-mint/50 disabled:opacity-50"
+            />
+            <button
+              type="button"
+              disabled={
+                isSending || isTranscribing || isRecording || (!input.trim() && !pendingImage)
+              }
+              onClick={() => sendToAssistant({ text: input, image: pendingImage })}
+              className="p-2.5 rounded-xl bg-mint text-graphite disabled:opacity-40 hover:bg-mint-bright transition-colors"
+              aria-label="Send"
+            >
+              {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
