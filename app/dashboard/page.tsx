@@ -23,11 +23,11 @@ export default async function DashboardPage() {
 
   if (!result.success) {
     return (
-      <div className="p-8">
-        <div className="mb-6 p-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/5">
-          <h3 className="font-semibold text-yellow-400 mb-1">Database Connection Issue</h3>
-          <p className="text-sm text-yellow-400/70">{result.error}</p>
-          <p className="text-xs text-yellow-400/50 mt-2">
+      <div className="page-shell">
+        <div className="mb-6 p-4 rounded-2xl border border-warning/25 bg-warning-dim">
+          <h3 className="font-semibold text-warning mb-1 font-display">Database Connection Issue</h3>
+          <p className="text-sm text-warning/80">{result.error}</p>
+          <p className="text-xs text-warning/60 mt-2">
             Please check: 1) DATABASE_URL in environment variables, 2) MongoDB Atlas network access, 3) Database credentials.
           </p>
         </div>

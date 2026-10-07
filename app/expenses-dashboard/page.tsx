@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { TrendingDown, DollarSign, Calendar, BarChart3 } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
 import SummaryCard from '@/components/SummaryCard';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ToastProvider';
@@ -213,11 +214,11 @@ export default function ExpenseDashboardPage() {
   const activeFilters = getActiveFilters();
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-white">Expense Dashboard</h1>
-        <p className="text-zinc-500 mt-1">Analyze your spending patterns with powerful filters</p>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        title="Expense Dashboard"
+        subtitle="Analyze your spending patterns with powerful filters"
+      />
 
       {/* Filters */}
       <FilterPanel
@@ -302,8 +303,8 @@ export default function ExpenseDashboardPage() {
       {chartData && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* Pie Chart */}
-          <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Expenses by Category</h2>
+          <div className="panel shadow-panel p-6">
+            <h2 className="text-lg font-semibold text-ink font-display mb-4">Expenses by Category</h2>
             {chartData.pieData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -326,30 +327,36 @@ export default function ExpenseDashboardPage() {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip
+                    formatter={(value: number) => formatCurrency(value)}
+                    contentStyle={{ backgroundColor: '#12151b', border: '1px solid #262b36', borderRadius: 12, color: '#f0f2f5' }} labelStyle={{ color: '#9aa1ad' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-zinc-500 py-12">No data to display</div>
+              <div className="text-center text-ink-muted py-12">No data to display</div>
             )}
           </div>
 
           {/* Line Chart */}
-          <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Daily Expense Trend</h2>
+          <div className="panel shadow-panel p-6">
+            <h2 className="text-lg font-semibold text-ink font-display mb-4">Daily Expense Trend</h2>
             {chartData.trendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData.trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Legend />
-                  <Line type="monotone" dataKey="amount" stroke="#ef4444" name="Expenses" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#262b36" />
+                  <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 12 }} stroke="#262b36" />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} stroke="#262b36" />
+                  <Tooltip
+                    formatter={(value: number) => formatCurrency(value)}
+                    contentStyle={{ backgroundColor: '#12151b', border: '1px solid #262b36', borderRadius: 12, color: '#f0f2f5' }} labelStyle={{ color: '#9aa1ad' }}
+                  />
+                  <Legend wrapperStyle={{ color: '#9aa1ad' }} />
+                  <Line type="monotone" dataKey="amount" stroke="#f07178" name="Expenses" />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-zinc-500 py-12">No data to display</div>
+              <div className="text-center text-ink-muted py-12">No data to display</div>
             )}
           </div>
         </div>
@@ -357,23 +364,23 @@ export default function ExpenseDashboardPage() {
 
       {/* Top Categories */}
       {summary?.topCategories && summary.topCategories.length > 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Top 5 Categories</h2>
+        <div className="panel shadow-panel p-6 mb-6">
+          <h2 className="text-lg font-semibold text-ink font-display mb-4">Top 5 Categories</h2>
           <div className="space-y-3">
             {summary.topCategories.map((cat: any, index: number) => (
               <div 
                 key={cat.id} 
-                className="flex items-center gap-3 cursor-pointer hover:bg-zinc-800/50 p-2 -mx-2 rounded-xl transition-all group"
+                className="flex items-center gap-3 cursor-pointer hover:bg-graphite-surface-hover p-2 -mx-2 rounded-xl transition-all group"
                 onClick={() => handleCategorySelect(cat.id)}
                 title={`Filter by ${cat.name}`}
               >
-                <span className="text-zinc-500 font-medium w-6">{index + 1}</span>
+                <span className="text-ink-muted font-medium w-6">{index + 1}</span>
                 {cat.color && (
                   <span className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }} />
                 )}
-                <span className="flex-1 text-zinc-200 group-hover:text-red-400 group-hover:underline transition-all">{cat.name}</span>
-                <span className="font-semibold text-red-400">{formatCurrency(cat.amount)}</span>
-                <span className="text-sm text-zinc-500">
+                <span className="flex-1 text-ink group-hover:text-danger group-hover:underline transition-all">{cat.name}</span>
+                <span className="font-semibold text-danger money">{formatCurrency(cat.amount)}</span>
+                <span className="text-sm text-ink-muted">
                   ({((cat.amount / summary.total) * 100).toFixed(1)}%)
                 </span>
               </div>
@@ -383,62 +390,62 @@ export default function ExpenseDashboardPage() {
       )}
 
       {/* Expense Table */}
-      <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl">
-        <div className="px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-white">Expense Transactions</h2>
+      <div className="panel shadow-panel">
+        <div className="px-6 py-4 border-b border-graphite-border-subtle">
+          <h2 className="text-lg font-semibold text-ink font-display">Expense Transactions</h2>
         </div>
         <div className="overflow-x-auto">
           {isLoading ? (
-            <div className="text-center py-12 text-zinc-500">Loading...</div>
+            <div className="text-center py-12 text-ink-muted">Loading...</div>
           ) : sortedExpenses.length === 0 ? (
             <div className="text-center py-12">
-              <TrendingDown className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
-              <p className="text-zinc-500">No expenses found with current filters</p>
+              <TrendingDown className="w-16 h-16 text-ink-muted mx-auto mb-4" />
+              <p className="text-ink-muted">No expenses found with current filters</p>
             </div>
           ) : (
             <table className="w-full">
-              <thead className="bg-zinc-800/50 border-b border-zinc-800">
+              <thead className="bg-graphite-surface-2/60 border-b border-graphite-border-subtle">
                 <tr>
                   <th
                     onClick={() => handleSort('date')}
-                    className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
+                    className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider cursor-pointer hover:bg-graphite-surface-hover"
                   >
                     Date {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Merchant
                   </th>
                   <th
                     onClick={() => handleSort('category')}
-                    className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
+                    className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider cursor-pointer hover:bg-graphite-surface-hover"
                   >
                     Category {sortBy === 'category' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Account
                   </th>
                   <th
                     onClick={() => handleSort('amount')}
-                    className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
+                    className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider cursor-pointer hover:bg-graphite-surface-hover"
                   >
                     Amount {sortBy === 'amount' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Notes
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800">
+              <tbody className="divide-y divide-graphite-border-subtle">
                 {sortedExpenses.map((expense) => (
                   <tr
                     key={expense.id}
                     onClick={() => handleRowClick(expense)}
-                    className="hover:bg-zinc-800/30 cursor-pointer"
+                    className="hover:bg-graphite-surface-hover transition-colors cursor-pointer"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {formatDate(expense.date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {expense.merchantOrSource || '-'}
                     </td>
                     <td 
@@ -455,18 +462,18 @@ export default function ExpenseDashboardPage() {
                             style={{ backgroundColor: expense.category.color }}
                           />
                         )}
-                        <span className="text-white group-hover:text-red-400 group-hover:underline transition-all">
+                        <span className="text-ink group-hover:text-danger group-hover:underline transition-all">
                           {expense.category?.name || 'Uncategorized'}
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink-muted">
                       {expense.account?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-400 text-right">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-danger text-right money">
                       {formatCurrency(expense.amount)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-zinc-500 max-w-xs truncate">
+                    <td className="px-6 py-4 text-sm text-ink-muted max-w-xs truncate">
                       {expense.notes || '-'}
                     </td>
                   </tr>
@@ -481,31 +488,31 @@ export default function ExpenseDashboardPage() {
       {editingExpense && (
         <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Expense Details">
           <div className="space-y-4">
-            <div className="bg-zinc-800/50 p-4 rounded-xl space-y-2">
+            <div className="bg-graphite-surface-2/60 p-4 rounded-xl space-y-2">
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Date:</span>
-                <span className="text-sm font-medium text-zinc-200">{formatDate(editingExpense.date)}</span>
+                <span className="text-sm text-ink-muted">Date:</span>
+                <span className="text-sm font-medium text-ink">{formatDate(editingExpense.date)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Amount:</span>
-                <span className="text-lg font-bold text-red-400">{formatCurrency(editingExpense.amount)}</span>
+                <span className="text-sm text-ink-muted">Amount:</span>
+                <span className="text-lg font-semibold text-danger money">{formatCurrency(editingExpense.amount)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Category:</span>
-                <span className="text-sm font-medium text-zinc-200">{editingExpense.category?.name || 'Uncategorized'}</span>
+                <span className="text-sm text-ink-muted">Category:</span>
+                <span className="text-sm font-medium text-ink">{editingExpense.category?.name || 'Uncategorized'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Account:</span>
-                <span className="text-sm font-medium text-zinc-200">{editingExpense.account?.name || '-'}</span>
+                <span className="text-sm text-ink-muted">Account:</span>
+                <span className="text-sm font-medium text-ink">{editingExpense.account?.name || '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Merchant:</span>
-                <span className="text-sm font-medium text-zinc-200">{editingExpense.merchantOrSource || '-'}</span>
+                <span className="text-sm text-ink-muted">Merchant:</span>
+                <span className="text-sm font-medium text-ink">{editingExpense.merchantOrSource || '-'}</span>
               </div>
               {editingExpense.notes && (
                 <div>
-                  <span className="text-sm text-zinc-500 block mb-1">Notes:</span>
-                  <span className="text-sm text-zinc-300">{editingExpense.notes}</span>
+                  <span className="text-sm text-ink-muted block mb-1">Notes:</span>
+                  <span className="text-sm text-ink-secondary">{editingExpense.notes}</span>
                 </div>
               )}
             </div>

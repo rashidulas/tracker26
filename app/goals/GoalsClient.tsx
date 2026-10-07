@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import PageHeader from '@/components/PageHeader';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -83,7 +84,7 @@ function GoalForm({ goal, onSuccess, onCancel }: any) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+        <div className="p-3 bg-danger-dim border border-danger/25 rounded-xl text-danger text-sm">
           {error}
         </div>
       )}
@@ -148,7 +149,7 @@ function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+        <div className="p-3 bg-danger-dim border border-danger/25 rounded-xl text-danger text-sm">
           {error}
         </div>
       )}
@@ -176,10 +177,10 @@ function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
       />
 
       <div>
-        <label className="block text-sm font-medium text-zinc-400 mb-1">Notes (Optional)</label>
+        <label className="block text-sm font-medium text-ink-secondary mb-1.5">Notes (Optional)</label>
         <textarea
           {...register('notes')}
-          className="w-full px-3 py-2 border border-zinc-700 rounded-lg bg-zinc-800/50 text-zinc-100 focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
+          className="w-full px-3 py-2 border border-graphite-border rounded-xl bg-graphite-surface-2/80 text-ink focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
           rows={3}
         />
       </div>
@@ -227,28 +228,28 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
   };
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">Goals</h1>
-          <p className="text-sm sm:text-base text-zinc-400 mt-1">Track your savings goals</p>
-        </div>
-        <Button onClick={() => setIsGoalModalOpen(true)} className="w-full sm:w-auto">
-          <Plus size={20} className="inline mr-2" />
-          Add Goal
-        </Button>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        title="Goals"
+        subtitle="Track your savings goals"
+        actions={
+          <Button onClick={() => setIsGoalModalOpen(true)} className="w-full sm:w-auto">
+            <Plus size={18} />
+            Add Goal
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
         {goals.map((goal) => (
-          <div key={goal.id} className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-4 sm:p-6">
+          <div key={goal.id} className="panel-hover shadow-panel p-4 sm:p-6">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                <TargetIcon size={20} className="sm:w-6 sm:h-6 text-emerald-400 flex-shrink-0" />
+                <TargetIcon size={20} className="sm:w-6 sm:h-6 text-mint flex-shrink-0" />
                 <div className="min-w-0">
-                  <h3 className="text-base sm:text-lg font-semibold text-white truncate">{goal.name}</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-ink font-display truncate">{goal.name}</h3>
                   {goal.dueDate && (
-                    <p className="text-xs sm:text-sm text-zinc-500">Due: {formatDate(goal.dueDate)}</p>
+                    <p className="text-xs sm:text-sm text-ink-muted">Due: {formatDate(goal.dueDate)}</p>
                   )}
                 </div>
               </div>
@@ -258,11 +259,14 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                     setEditingGoal(goal);
                     setIsGoalModalOpen(true);
                   }}
-                  className="text-emerald-400 hover:text-emerald-300"
+                  className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
                 >
                   <Edit2 size={16} />
                 </button>
-                <button onClick={() => handleDelete(goal.id)} className="text-red-400">
+                <button
+                  onClick={() => handleDelete(goal.id)}
+                  className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                >
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -270,30 +274,30 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
 
             <div className="space-y-3 mb-4">
               <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">Progress</span>
-                <span className="font-medium text-white">{goal.progress.toFixed(1)}%</span>
+                <span className="text-ink-secondary">Progress</span>
+                <span className="font-medium text-ink">{goal.progress.toFixed(1)}%</span>
               </div>
 
-              <div className="w-full bg-zinc-800 rounded-full h-3">
+              <div className="w-full bg-graphite-surface-2 border border-graphite-border-subtle rounded-full h-3">
                 <div
-                  className="bg-emerald-500 h-3 rounded-full transition-all"
+                  className="bg-mint h-3 rounded-full transition-all"
                   style={{ width: `${goal.progress}%` }}
                 />
               </div>
 
               <div className="flex justify-between">
                 <div>
-                  <p className="text-xs text-zinc-500">Saved</p>
-                  <p className="font-bold text-emerald-400">{formatCurrency(goal.totalContributions)}</p>
+                  <p className="text-xs text-ink-muted">Saved</p>
+                  <p className="font-semibold text-mint money">{formatCurrency(goal.totalContributions)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xs text-zinc-500">Target</p>
-                  <p className="font-bold text-white">{formatCurrency(goal.targetAmount)}</p>
+                  <p className="text-xs text-ink-muted">Target</p>
+                  <p className="font-semibold text-ink money">{formatCurrency(goal.targetAmount)}</p>
                 </div>
               </div>
 
               <div className="text-center pt-2">
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-ink-secondary">
                   {formatCurrency(goal.targetAmount - goal.totalContributions)} remaining
                 </p>
               </div>
@@ -308,7 +312,7 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                 setIsContributionModalOpen(true);
               }}
             >
-              <DollarSign size={16} className="inline mr-2" />
+              <DollarSign size={16} />
               Add Contribution
             </Button>
           </div>
@@ -316,9 +320,9 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
       </div>
 
       {goals.length === 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-12 text-center">
-          <TargetIcon size={64} className="mx-auto text-zinc-600 mb-4" />
-          <p className="text-zinc-500">No goals yet. Add your first savings goal!</p>
+        <div className="panel shadow-panel p-12 text-center">
+          <TargetIcon size={64} className="mx-auto text-ink-muted mb-4" />
+          <p className="text-ink-muted">No goals yet. Add your first savings goal!</p>
         </div>
       )}
 

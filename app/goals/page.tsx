@@ -12,8 +12,10 @@ export default async function GoalsPage() {
 
   if (!goalsResult.success || !accountsResult.success) {
     return (
-      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
-        Error loading data
+      <div className="page-shell">
+        <div className="p-4 bg-danger-dim border border-danger/25 rounded-2xl text-danger">
+          Error loading data
+        </div>
       </div>
     );
   }

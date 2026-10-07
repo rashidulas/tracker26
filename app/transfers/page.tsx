@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeftRight, Plus, Pencil, Trash2, ArrowRight } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -115,95 +116,97 @@ export default function TransfersPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-zinc-500">Loading transfers...</div>
+      <div className="page-shell">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-ink-muted">Loading transfers...</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Transfers</h1>
-          <p className="text-zinc-500 mt-1">Move money between accounts</p>
-        </div>
-        <Button onClick={handleAdd}>
-          <Plus size={20} />
-          Add Transfer
-        </Button>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        title="Transfers"
+        subtitle="Move money between accounts"
+        actions={
+          <Button onClick={handleAdd}>
+            <Plus size={18} />
+            Add Transfer
+          </Button>
+        }
+      />
 
       {transfers.length === 0 ? (
-        <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800/60 p-12 text-center">
-          <ArrowLeftRight className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-white mb-2">No transfers yet</h3>
-          <p className="text-zinc-500 mb-6">Start by creating your first transfer between accounts</p>
+        <div className="panel shadow-panel p-12 text-center">
+          <ArrowLeftRight className="w-16 h-16 text-ink-muted mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-ink font-display mb-2">No transfers yet</h3>
+          <p className="text-ink-muted mb-6">Start by creating your first transfer between accounts</p>
           <Button onClick={handleAdd}>
             <Plus size={20} />
             Add Transfer
           </Button>
         </div>
       ) : (
-        <div className="bg-zinc-900/50 rounded-2xl border border-zinc-800/60 overflow-hidden">
+        <div className="panel shadow-panel overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full divide-y divide-zinc-800">
-              <thead className="bg-zinc-800/50 border-b border-zinc-800">
+            <table className="w-full divide-y divide-graphite-border-subtle">
+              <thead className="bg-graphite-surface-2/60 border-b border-graphite-border-subtle">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     From Account
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-ink-muted uppercase tracking-wider">
                     
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     To Account
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Amount
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Notes
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800">
+              <tbody className="divide-y divide-graphite-border-subtle">
                 {transfers.map((transfer) => (
-                  <tr key={transfer.id} className="hover:bg-zinc-800/30">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                  <tr key={transfer.id} className="hover:bg-graphite-surface-hover transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {formatDate(transfer.date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {transfer.account?.name || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <ArrowRight size={16} className="text-emerald-400 mx-auto" />
+                      <ArrowRight size={16} className="text-mint mx-auto" />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {transfer.toAccount?.name}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-emerald-400 font-medium text-right">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-mint font-medium text-right money">
                       {formatCurrency(transfer.amount)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-zinc-500">
+                    <td className="px-6 py-4 text-sm text-ink-muted">
                       {transfer.notes || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
                         onClick={() => handleEdit(transfer)}
-                        className="text-emerald-400 hover:text-emerald-300 mr-3"
+                        className="rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors mr-2 p-1.5"
                       >
                         <Pencil size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(transfer.id)}
-                        className="text-red-400 hover:text-red-300"
+                        className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                       >
                         <Trash2 size={16} />
                       </button>

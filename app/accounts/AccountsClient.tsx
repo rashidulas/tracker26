@@ -5,7 +5,20 @@ import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import AccountForm from './AccountForm';
 import { deleteAccount } from './actions';
-import { Plus, Edit2, Trash2, Wallet } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  Wallet,
+  Landmark,
+  PiggyBank,
+  Banknote,
+  CreditCard,
+  TrendingUp,
+  Briefcase,
+  type LucideIcon,
+} from 'lucide-react';
 
 interface Account {
   id: string;
@@ -57,20 +70,20 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
     }
   };
 
-  const getTypeIcon = (type: string) => {
+  const getTypeIcon = (type: string): LucideIcon => {
     switch (type) {
       case 'CHECKING':
-        return '🏦';
+        return Landmark;
       case 'SAVINGS':
-        return '💰';
+        return PiggyBank;
       case 'CASH':
-        return '💵';
+        return Banknote;
       case 'CREDIT_CARD':
-        return '💳';
+        return CreditCard;
       case 'INVESTMENT':
-        return '📈';
+        return TrendingUp;
       default:
-        return '💼';
+        return Briefcase;
     }
   };
 
@@ -84,93 +97,104 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
   const totalBalance = accounts.reduce((sum, account) => sum + account.currentBalance, 0);
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">Accounts</h1>
-          <p className="text-sm sm:text-base text-zinc-500 mt-1">Manage your financial accounts</p>
-        </div>
-        <Button onClick={handleAdd} className="w-full sm:w-auto">
-          <Plus size={20} className="inline mr-2" />
-          Add Account
-        </Button>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        title="Accounts"
+        subtitle="Manage your financial accounts"
+        actions={
+          <Button onClick={handleAdd} className="w-full sm:w-auto">
+            <Plus size={18} />
+            Add Account
+          </Button>
+        }
+      />
 
       {deleteError && (
-        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">
+        <div className="mb-4 p-3 bg-danger-dim border border-danger/25 rounded-2xl text-danger text-sm">
           {deleteError}
         </div>
       )}
 
       {/* Total Balance Card */}
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-2xl p-6 mb-6 text-white">
-        <div className="flex items-center gap-3 mb-2">
-          <Wallet size={24} />
-          <h2 className="text-lg font-medium">Total Balance</h2>
+      <div className="panel shadow-panel p-6 mb-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-mint-dim via-transparent to-transparent pointer-events-none" />
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2.5 rounded-xl bg-mint-dim text-mint">
+              <Wallet size={20} />
+            </div>
+            <h2 className="text-sm font-medium text-ink-secondary">Total Balance</h2>
+          </div>
+          <p className="text-3xl sm:text-4xl font-semibold text-ink money">
+            {formatCurrency(totalBalance)}
+          </p>
+          <p className="text-sm text-ink-muted mt-2">Across {accounts.length} account(s)</p>
         </div>
-        <p className="text-4xl font-bold">{formatCurrency(totalBalance)}</p>
-        <p className="text-sm opacity-90 mt-2">Across {accounts.length} account(s)</p>
       </div>
 
       {/* Accounts Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {accounts.map((account) => (
-          <div
-            key={account.id}
-            className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 hover:border-zinc-700/60 transition-colors"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">{getTypeIcon(account.type)}</span>
-                <div>
-                  <h3 className="font-semibold text-white">{account.name}</h3>
-                  <p className="text-sm text-zinc-500">{account.type.replace('_', ' ')}</p>
+        {accounts.map((account) => {
+          const TypeIcon = getTypeIcon(account.type);
+          return (
+            <div key={account.id} className="panel-hover shadow-panel p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-graphite-surface-2 border border-graphite-border-subtle text-mint">
+                    <TypeIcon size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-ink font-display">{account.name}</h3>
+                    <p className="text-sm text-ink-muted">{account.type.replace('_', ' ')}</p>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleEdit(account)}
+                    className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(account.id)}
+                    className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(account)}
-                  className="text-emerald-400 hover:text-emerald-300"
-                >
-                  <Edit2 size={16} />
-                </button>
-                <button
-                  onClick={() => handleDelete(account.id)}
-                  className="text-red-400 hover:text-red-300"
-                >
-                  <Trash2 size={16} />
-                </button>
+
+              {account.institution && (
+                <p className="text-sm text-ink-secondary mb-3">{account.institution}</p>
+              )}
+
+              <div className="border-t border-graphite-border-subtle pt-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-ink-secondary">Current Balance</span>
+                  <span className="text-lg font-semibold text-ink money">
+                    {formatCurrency(account.currentBalance)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-ink-secondary">Starting</span>
+                  <span className="text-ink-secondary money">
+                    {formatCurrency(account.startingBalance)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-sm mt-1">
+                  <span className="text-ink-secondary">Transactions</span>
+                  <span className="text-ink-secondary">{account.transactionCount}</span>
+                </div>
               </div>
             </div>
-
-            {account.institution && (
-              <p className="text-sm text-zinc-400 mb-3">{account.institution}</p>
-            )}
-
-            <div className="border-t border-zinc-800 pt-3">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-zinc-400">Current Balance</span>
-                <span className="text-lg font-bold text-white">
-                  {formatCurrency(account.currentBalance)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-zinc-400">Starting</span>
-                <span className="text-zinc-300">{formatCurrency(account.startingBalance)}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm mt-1">
-                <span className="text-zinc-400">Transactions</span>
-                <span className="text-zinc-300">{account.transactionCount}</span>
-              </div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {accounts.length === 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-12 text-center">
-          <Wallet size={48} className="mx-auto text-zinc-600 mb-4" />
-          <p className="text-zinc-500">No accounts yet. Add your first account!</p>
+        <div className="panel shadow-panel p-12 text-center">
+          <Wallet size={48} className="mx-auto text-ink-muted mb-4" />
+          <p className="text-ink-muted">No accounts yet. Add your first account!</p>
         </div>
       )}
 

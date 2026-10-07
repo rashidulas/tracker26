@@ -8,6 +8,7 @@ import Select from '@/components/Select';
 import ExpenseForm from './ExpenseForm';
 import { deleteExpense } from './actions';
 import ReceiptScanner from './ReceiptScanner';
+import PageHeader from '@/components/PageHeader';
 import { Plus, Edit2, Trash2, Filter, X, Camera } from 'lucide-react';
 import { format } from 'date-fns';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
@@ -146,44 +147,42 @@ export default function ExpensesClient({
   const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   return (
-    <div>
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">Expenses</h1>
-            <p className="text-sm sm:text-base text-zinc-400 mt-1">Track and manage your expenses</p>
-          </div>
-          <div className="w-full sm:w-48 sm:mt-2">
-            <Select
-              options={monthOptions}
-              value={selectedMonth}
-              onChange={handleMonthChange}
-              className="!py-2 text-sm"
-            />
-          </div>
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          <Button variant="secondary" onClick={() => setShowFilters(!showFilters)} className="flex-1 md:flex-none">
-            <Filter size={20} className="inline mr-2" />
-            Filters
-          </Button>
-          <Button variant="secondary" onClick={() => setIsScannerOpen(true)} className="flex-1 md:flex-none">
-            <Camera size={20} className="inline mr-2" />
-            Scan Receipt
-          </Button>
-          <Button onClick={handleAdd} className="flex-1 md:flex-none">
-            <Plus size={20} className="inline mr-2" />
-            Add Expense
-          </Button>
-        </div>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        title="Expenses"
+        subtitle="Track and manage your expenses"
+        actions={
+          <>
+            <div className="w-full sm:w-48">
+              <Select
+                options={monthOptions}
+                value={selectedMonth}
+                onChange={handleMonthChange}
+                className="!py-2 text-sm"
+              />
+            </div>
+            <Button variant="secondary" onClick={() => setShowFilters(!showFilters)}>
+              <Filter size={18} />
+              Filters
+            </Button>
+            <Button variant="secondary" onClick={() => setIsScannerOpen(true)}>
+              <Camera size={18} />
+              Scan Receipt
+            </Button>
+            <Button onClick={handleAdd}>
+              <Plus size={18} />
+              Add Expense
+            </Button>
+          </>
+        }
+      />
 
       {/* Filters Panel */}
       {showFilters && (
-        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 mb-6">
+        <div className="panel shadow-panel p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold text-white">Filters</h3>
-            <button onClick={() => setShowFilters(false)} className="text-zinc-500 hover:text-zinc-300">
+            <h3 className="font-semibold text-ink font-display">Filters</h3>
+            <button onClick={() => setShowFilters(false)} className="text-ink-muted hover:text-ink transition-colors">
               <X size={20} />
             </button>
           </div>
@@ -229,68 +228,68 @@ export default function ExpensesClient({
       )}
 
       {/* Summary */}
-      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 mb-6">
+      <div className="bg-danger-dim border border-danger/25 rounded-2xl p-4 mb-6">
         <div className="flex justify-between items-center">
-          <span className="text-zinc-300 font-medium">Total Expenses</span>
-          <span className="text-2xl font-bold text-red-400">{formatCurrency(totalExpenses)}</span>
+          <span className="text-ink-secondary font-medium">Total Expenses</span>
+          <span className="text-2xl font-semibold text-danger money">{formatCurrency(totalExpenses)}</span>
         </div>
-        <p className="text-sm text-zinc-400 mt-1">{filteredExpenses.length} transaction(s)</p>
+        <p className="text-sm text-ink-secondary mt-1">{filteredExpenses.length} transaction(s)</p>
       </div>
 
       {/* Expenses Table */}
-      <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl overflow-hidden">
-        <table className="min-w-full divide-y divide-zinc-800">
-          <thead className="bg-zinc-800/50">
+      <div className="panel shadow-panel overflow-hidden">
+        <table className="min-w-full divide-y divide-graphite-border-subtle">
+          <thead className="bg-graphite-surface-2/60">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Merchant</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">Account</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Amount</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Actions</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Date</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Category</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Merchant</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Account</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider">Amount</th>
+              <th className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
-          <tbody className="bg-zinc-900/50 divide-y divide-zinc-800">
+          <tbody className="divide-y divide-graphite-border-subtle">
             {filteredExpenses.map((expense) => (
-              <tr key={expense.id} className="hover:bg-zinc-800/30">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+              <tr key={expense.id} className="hover:bg-graphite-surface-hover transition-colors">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                   {formatDate(expense.date)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     {expense.category?.icon && <span>{expense.category.icon}</span>}
-                    <span className="text-sm text-white">{expense.category?.name || 'Uncategorized'}</span>
+                    <span className="text-sm text-ink">{expense.category?.name || 'Uncategorized'}</span>
                   </div>
                 </td>
-                <td className="px-6 py-4 text-sm text-zinc-400">
+                <td className="px-6 py-4 text-sm text-ink-secondary">
                   {expense.merchantOrSource || '-'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-ink-secondary">
                   {expense.toAccount ? (
                     <span className="flex items-center gap-1">
                       <span>{expense.account?.name || '-'}</span>
-                      <span className="text-zinc-600">→</span>
+                      <span className="text-ink-muted">→</span>
                       <span>{expense.toAccount.name}</span>
                     </span>
                   ) : (
                     expense.account?.name || '-'
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <span className={expense.kind === 'TRANSFER' ? 'text-blue-400' : 'text-red-400'}>
+                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium money">
+                  <span className={expense.kind === 'TRANSFER' ? 'text-info' : 'text-danger'}>
                     {formatCurrency(expense.amount)}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                   <button
                     onClick={() => handleEdit(expense)}
-                    className="text-emerald-400 hover:text-emerald-300 mr-4"
+                    className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors mr-2"
                   >
                     <Edit2 size={18} />
                   </button>
                   <button
                     onClick={() => handleDelete(expense.id)}
-                    className="text-red-400 hover:text-red-300"
+                    className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -302,7 +301,7 @@ export default function ExpensesClient({
 
         {filteredExpenses.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-zinc-500">No expenses found</p>
+            <p className="text-ink-muted">No expenses found</p>
           </div>
         )}
       </div>

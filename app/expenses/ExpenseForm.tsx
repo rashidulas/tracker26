@@ -183,7 +183,7 @@ export default function ExpenseForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 sm:space-y-4">
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+        <div className="p-3 bg-danger-dim border border-danger/25 rounded-xl text-danger text-sm">
           {error}
         </div>
       )}
@@ -214,20 +214,20 @@ export default function ExpenseForm({
       {/* ── PAYMENT MODE ─────────────────────────────────── */}
       {isPayment && (
         <>
-          <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/25 rounded-xl">
-            <Banknote size={18} className="text-blue-400 mt-0.5 shrink-0" />
-            <p className="text-sm text-blue-300">
+          <div className="flex items-start gap-3 p-3 bg-info-dim border border-info/25 rounded-xl">
+            <Banknote size={18} className="text-info mt-0.5 shrink-0" />
+            <p className="text-sm text-info">
               Money will be deducted from <strong>Pay From</strong> and added to <strong>Pay To</strong>.
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
-              Pay From <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
+              Pay From <span className="text-danger">*</span>
             </label>
             <select
               {...register('accountId')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-blue-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
             >
               <option value="">Select account...</option>
               {fromAccountOptions.map((a) => (
@@ -239,12 +239,12 @@ export default function ExpenseForm({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
-              Pay To <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
+              Pay To <span className="text-danger">*</span>
             </label>
             <select
               {...register('toAccountId')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-blue-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
             >
               <option value="">Select account...</option>
               {toAccountOptions.map((a) => (
@@ -264,17 +264,17 @@ export default function ExpenseForm({
           />
 
           {fromAccount && toAccount && payAmountVal && parseFloat(payAmountVal) > 0 && (
-            <div className="flex items-center gap-3 p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl text-sm">
+            <div className="flex items-center gap-3 p-3 bg-graphite-surface-2/70 border border-graphite-border-subtle rounded-xl text-sm">
               <div className="flex-1 text-center">
-                <p className="text-zinc-500 text-xs mb-1">{fromAccount.name}</p>
-                <p className="text-red-400 font-medium">
+                <p className="text-ink-muted text-xs mb-1">{fromAccount.name}</p>
+                <p className="text-danger font-medium">
                   − ${parseFloat(payAmountVal).toFixed(2)}
                 </p>
               </div>
-              <ArrowRight size={16} className="text-zinc-500 shrink-0" />
+              <ArrowRight size={16} className="text-ink-muted shrink-0" />
               <div className="flex-1 text-center">
-                <p className="text-zinc-500 text-xs mb-1">{toAccount.name}</p>
-                <p className="text-emerald-400 font-medium">
+                <p className="text-ink-muted text-xs mb-1">{toAccount.name}</p>
+                <p className="text-mint font-medium">
                   + ${parseFloat(payAmountVal).toFixed(2)}
                 </p>
               </div>
@@ -282,12 +282,12 @@ export default function ExpenseForm({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
               Notes (Optional)
             </label>
             <textarea
               {...register('notes')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-blue-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
               rows={2}
               placeholder="e.g., Monthly transfer to savings"
             />
@@ -299,9 +299,9 @@ export default function ExpenseForm({
       {isDebtPayment && (
         <>
           {/* Info banner */}
-          <div className="flex items-start gap-3 p-3 bg-violet-500/10 border border-violet-500/25 rounded-xl">
-            <CreditCard size={18} className="text-violet-400 mt-0.5 shrink-0" />
-            <p className="text-sm text-violet-300">
+          <div className="flex items-start gap-3 p-3 bg-mint-dim border border-mint/25 rounded-xl">
+            <CreditCard size={18} className="text-mint mt-0.5 shrink-0" />
+            <p className="text-sm text-mint">
               Money will be deducted from <strong>Pay From Account</strong> and
               credited to the <strong>Debt / Card</strong> account.
             </p>
@@ -309,12 +309,12 @@ export default function ExpenseForm({
 
           {/* Debt/Card to Pay — from accounts */}
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
-              Debt / Card to Pay <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
+              Debt / Card to Pay <span className="text-danger">*</span>
             </label>
             <select
               {...register('toAccountId')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-violet-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
             >
               <option value="">Select account...</option>
               {toAccountOptions.map((a) => (
@@ -327,12 +327,12 @@ export default function ExpenseForm({
 
           {/* Pay From Account — from accounts */}
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
-              Pay From Account <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
+              Pay From Account <span className="text-danger">*</span>
             </label>
             <select
               {...register('accountId')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-violet-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
             >
               <option value="">Select account...</option>
               {fromAccountOptions.map((a) => (
@@ -354,17 +354,17 @@ export default function ExpenseForm({
 
           {/* Live preview */}
           {fromAccount && toAccount && payAmountVal && parseFloat(payAmountVal) > 0 && (
-            <div className="flex items-center gap-3 p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl text-sm">
+            <div className="flex items-center gap-3 p-3 bg-graphite-surface-2/70 border border-graphite-border-subtle rounded-xl text-sm">
               <div className="flex-1 text-center">
-                <p className="text-zinc-500 text-xs mb-1">{fromAccount.name}</p>
-                <p className="text-red-400 font-medium">
+                <p className="text-ink-muted text-xs mb-1">{fromAccount.name}</p>
+                <p className="text-danger font-medium">
                   − ${parseFloat(payAmountVal).toFixed(2)}
                 </p>
               </div>
-              <ArrowRight size={16} className="text-zinc-500 shrink-0" />
+              <ArrowRight size={16} className="text-ink-muted shrink-0" />
               <div className="flex-1 text-center">
-                <p className="text-zinc-500 text-xs mb-1">{toAccount.name}</p>
-                <p className="text-emerald-400 font-medium">
+                <p className="text-ink-muted text-xs mb-1">{toAccount.name}</p>
+                <p className="text-mint font-medium">
                   + ${parseFloat(payAmountVal).toFixed(2)}
                 </p>
               </div>
@@ -373,12 +373,12 @@ export default function ExpenseForm({
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
               Notes (Optional)
             </label>
             <textarea
               {...register('notes')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-violet-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
               rows={2}
               placeholder="e.g., Monthly minimum payment"
             />
@@ -415,12 +415,12 @@ export default function ExpenseForm({
           />
 
           <div>
-            <label className="block text-sm font-medium text-zinc-400 mb-1">
+            <label className="block text-sm font-medium text-ink-secondary mb-1">
               Notes (Optional)
             </label>
             <textarea
               {...register('notes')}
-              className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:outline-none"
+              className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
               rows={3}
               placeholder="Add notes..."
             />

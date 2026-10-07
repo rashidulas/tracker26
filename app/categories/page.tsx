@@ -9,8 +9,10 @@ export default async function CategoriesPage() {
 
   if (!result.success) {
     return (
-      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400">
-        Error: {result.error}
+      <div className="page-shell">
+        <div className="p-4 bg-danger-dim border border-danger/25 rounded-2xl text-danger">
+          Error: {result.error}
+        </div>
       </div>
     );
   }

@@ -9,10 +9,8 @@ interface ResponsiveTableProps {
 
 export default function ResponsiveTable({ children, className = '' }: ResponsiveTableProps) {
   return (
-    <div className={`bg-zinc-900/50 border border-zinc-800/60 rounded-2xl overflow-hidden ${className}`}>
-      <div className="overflow-x-auto">
-        {children}
-      </div>
+    <div className={`panel shadow-panel overflow-hidden ${className}`}>
+      <div className="overflow-x-auto mobile-table-scroll">{children}</div>
     </div>
   );
 }

@@ -3,13 +3,94 @@
 @tailwind utilities;
 
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  --bg: #0a0b0d;
+  --bg-elevated: #0f1115;
+  --surface: #12151b;
+  --surface-hover: #181c24;
+  --surface-2: #1a1f28;
+  --border: #262b36;
+  --border-subtle: #1c212b;
+  --text: #f0f2f5;
+  --text-secondary: #9aa1ad;
+  --text-muted: #6b7280;
+  --mint: #3dcea6;
+  --mint-bright: #5ee0b8;
+  --mint-dim: rgba(61, 206, 166, 0.12);
+  --mint-glow: rgba(61, 206, 166, 0.18);
+  --danger: #f07178;
+  --danger-dim: rgba(240, 113, 120, 0.12);
+  --warning: #e8c468;
+  --warning-dim: rgba(232, 196, 104, 0.12);
+  --info: #7aa2f7;
+  --info-dim: rgba(122, 162, 247, 0.12);
+  --background: var(--bg);
+  --foreground: var(--text);
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--text);
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 100% -20%, rgba(61, 206, 166, 0.07), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 0% 100%, rgba(61, 206, 166, 0.03), transparent 45%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Keep native controls (select, date, color) on the dark theme */
+input,
+select,
+textarea,
+button {
+  color-scheme: dark;
+}
+
+@layer base {
+  ::selection {
+    background: var(--mint-dim);
+    color: var(--mint-bright);
+  }
+}
+
+@layer components {
+  .page-shell {
+    @apply w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8;
+  }
+
+  .page-title {
+    @apply text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--text)];
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-[var(--text-secondary)] mt-1;
+  }
+
+  .panel {
+    @apply bg-[var(--surface)] border border-[var(--border-subtle)] rounded-2xl;
+  }
+
+  .panel-hover {
+    @apply panel transition-colors duration-200 hover:bg-[var(--surface-hover)] hover:border-[var(--border)];
+  }
+
+  .hairline {
+    @apply border-[var(--border-subtle)];
+  }
+
+  .money {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .accent-dot {
+    @apply w-1.5 h-1.5 rounded-full bg-[var(--mint)] shadow-[0_0_8px_var(--mint-glow)];
+  }
 }
 
 @layer utilities {
@@ -27,10 +108,14 @@ body {
   }
 
   .glass {
-    background: rgba(24, 24, 27, 0.5);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(63, 63, 70, 0.4);
+    background: rgba(18, 21, 27, 0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .mint-ring {
+    box-shadow: 0 0 0 3px var(--mint-dim);
   }
 }
 
@@ -47,6 +132,21 @@ body {
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
 }
 
 @keyframes shimmer {
@@ -70,14 +170,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #18181b;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--border);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: #3a4050;
 }

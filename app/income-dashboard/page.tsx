@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, Calendar, BarChart3 } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
 import SummaryCard from '@/components/SummaryCard';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ToastProvider';
@@ -203,11 +204,11 @@ export default function IncomeDashboardPage() {
   const activeFilters = getActiveFilters();
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-white">Income Dashboard</h1>
-        <p className="text-zinc-500 mt-1">Track and analyze your income sources and patterns</p>
-      </div>
+    <div className="page-shell">
+      <PageHeader
+        title="Income Dashboard"
+        subtitle="Track and analyze your income sources and patterns"
+      />
 
       {/* Filters */}
       <FilterPanel
@@ -292,39 +293,45 @@ export default function IncomeDashboardPage() {
       {chartData && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           {/* Bar Chart */}
-          <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Income by Source</h2>
+          <div className="panel shadow-panel p-6">
+            <h2 className="text-lg font-semibold text-ink font-display mb-4">Income by Source</h2>
             {chartData.barData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData.barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Bar dataKey="amount" fill="#10b981" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#262b36" />
+                  <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 12 }} stroke="#262b36" />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} stroke="#262b36" />
+                  <Tooltip
+                    formatter={(value: number) => formatCurrency(value)}
+                    contentStyle={{ backgroundColor: '#12151b', border: '1px solid #262b36', borderRadius: 12, color: '#f0f2f5' }} labelStyle={{ color: '#9aa1ad' }}
+                  />
+                  <Bar dataKey="amount" fill="#3dcea6" />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-zinc-500 py-12">No data to display</div>
+              <div className="text-center text-ink-muted py-12">No data to display</div>
             )}
           </div>
 
           {/* Line Chart */}
-          <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Income Trend</h2>
+          <div className="panel shadow-panel p-6">
+            <h2 className="text-lg font-semibold text-ink font-display mb-4">Income Trend</h2>
             {chartData.trendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData.trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Legend />
-                  <Line type="monotone" dataKey="amount" stroke="#10b981" name="Income" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#262b36" />
+                  <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 12 }} stroke="#262b36" />
+                  <YAxis tick={{ fill: '#6b7280', fontSize: 12 }} stroke="#262b36" />
+                  <Tooltip
+                    formatter={(value: number) => formatCurrency(value)}
+                    contentStyle={{ backgroundColor: '#12151b', border: '1px solid #262b36', borderRadius: 12, color: '#f0f2f5' }} labelStyle={{ color: '#9aa1ad' }}
+                  />
+                  <Legend wrapperStyle={{ color: '#9aa1ad' }} />
+                  <Line type="monotone" dataKey="amount" stroke="#3dcea6" name="Income" />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="text-center text-zinc-500 py-12">No data to display</div>
+              <div className="text-center text-ink-muted py-12">No data to display</div>
             )}
           </div>
         </div>
@@ -332,18 +339,18 @@ export default function IncomeDashboardPage() {
 
       {/* Source Breakdown */}
       {summary?.sourceBreakdown && summary.sourceBreakdown.length > 0 && (
-        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Income Sources Breakdown</h2>
+        <div className="panel shadow-panel p-6 mb-6">
+          <h2 className="text-lg font-semibold text-ink font-display mb-4">Income Sources Breakdown</h2>
           <div className="space-y-3">
             {summary.sourceBreakdown.map((source: any, index: number) => (
               <div key={source.id} className="flex items-center gap-3">
-                <span className="text-zinc-500 font-medium w-6">{index + 1}</span>
+                <span className="text-ink-muted font-medium w-6">{index + 1}</span>
                 {source.color && (
                   <span className="w-4 h-4 rounded-full" style={{ backgroundColor: source.color }} />
                 )}
-                <span className="flex-1 text-zinc-200">{source.name}</span>
-                <span className="font-semibold text-emerald-400">{formatCurrency(source.amount)}</span>
-                <span className="text-sm text-zinc-500">
+                <span className="flex-1 text-ink">{source.name}</span>
+                <span className="font-semibold text-mint money">{formatCurrency(source.amount)}</span>
+                <span className="text-sm text-ink-muted">
                   ({((source.amount / summary.total) * 100).toFixed(1)}%)
                 </span>
               </div>
@@ -353,59 +360,59 @@ export default function IncomeDashboardPage() {
       )}
 
       {/* Income Table */}
-      <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl">
-        <div className="px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-white">Income Transactions</h2>
+      <div className="panel shadow-panel">
+        <div className="px-6 py-4 border-b border-graphite-border-subtle">
+          <h2 className="text-lg font-semibold text-ink font-display">Income Transactions</h2>
         </div>
         <div className="overflow-x-auto">
           {isLoading ? (
-            <div className="text-center py-12 text-zinc-500">Loading...</div>
+            <div className="text-center py-12 text-ink-muted">Loading...</div>
           ) : sortedIncome.length === 0 ? (
             <div className="text-center py-12">
-              <TrendingUp className="w-16 h-16 text-zinc-700 mx-auto mb-4" />
-              <p className="text-zinc-500">No income found with current filters</p>
+              <TrendingUp className="w-16 h-16 text-ink-muted mx-auto mb-4" />
+              <p className="text-ink-muted">No income found with current filters</p>
             </div>
           ) : (
             <table className="w-full">
-              <thead className="bg-zinc-800/50 border-b border-zinc-800">
+              <thead className="bg-graphite-surface-2/60 border-b border-graphite-border-subtle">
                 <tr>
                   <th
                     onClick={() => handleSort('date')}
-                    className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
+                    className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider cursor-pointer hover:bg-graphite-surface-hover"
                   >
                     Date {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
                   <th
                     onClick={() => handleSort('source')}
-                    className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
+                    className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider cursor-pointer hover:bg-graphite-surface-hover"
                   >
                     Income Source {sortBy === 'source' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Description
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Account
                   </th>
                   <th
                     onClick={() => handleSort('amount')}
-                    className="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase cursor-pointer hover:bg-zinc-700/50"
+                    className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider cursor-pointer hover:bg-graphite-surface-hover"
                   >
                     Amount {sortBy === 'amount' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                     Notes
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800">
+              <tbody className="divide-y divide-graphite-border-subtle">
                 {sortedIncome.map((incomeItem) => (
                   <tr
                     key={incomeItem.id}
                     onClick={() => handleRowClick(incomeItem)}
-                    className="hover:bg-zinc-800/30 cursor-pointer"
+                    className="hover:bg-graphite-surface-hover transition-colors cursor-pointer"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {formatDate(incomeItem.date)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -416,19 +423,19 @@ export default function IncomeDashboardPage() {
                             style={{ backgroundColor: incomeItem.category.color }}
                           />
                         )}
-                        <span className="text-white">{incomeItem.category?.name || 'Uncategorized'}</span>
+                        <span className="text-ink">{incomeItem.category?.name || 'Uncategorized'}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-white">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
                       {incomeItem.merchantOrSource || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-ink-muted">
                       {incomeItem.account?.name || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-emerald-400 text-right">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-mint text-right money">
                       {formatCurrency(incomeItem.amount)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-zinc-500 max-w-xs truncate">
+                    <td className="px-6 py-4 text-sm text-ink-muted max-w-xs truncate">
                       {incomeItem.notes || '-'}
                     </td>
                   </tr>
@@ -443,31 +450,31 @@ export default function IncomeDashboardPage() {
       {editingIncome && (
         <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Income Details">
           <div className="space-y-4">
-            <div className="bg-zinc-800/50 p-4 rounded-xl space-y-2">
+            <div className="bg-graphite-surface-2/60 p-4 rounded-xl space-y-2">
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Date:</span>
-                <span className="text-sm font-medium text-zinc-200">{formatDate(editingIncome.date)}</span>
+                <span className="text-sm text-ink-muted">Date:</span>
+                <span className="text-sm font-medium text-ink">{formatDate(editingIncome.date)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Amount:</span>
-                <span className="text-lg font-bold text-emerald-400">{formatCurrency(editingIncome.amount)}</span>
+                <span className="text-sm text-ink-muted">Amount:</span>
+                <span className="text-lg font-semibold text-mint money">{formatCurrency(editingIncome.amount)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Source:</span>
-                <span className="text-sm font-medium text-zinc-200">{editingIncome.category?.name || 'Uncategorized'}</span>
+                <span className="text-sm text-ink-muted">Source:</span>
+                <span className="text-sm font-medium text-ink">{editingIncome.category?.name || 'Uncategorized'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Account:</span>
-                <span className="text-sm font-medium text-zinc-200">{editingIncome.account?.name || '-'}</span>
+                <span className="text-sm text-ink-muted">Account:</span>
+                <span className="text-sm font-medium text-ink">{editingIncome.account?.name || '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-zinc-500">Description:</span>
-                <span className="text-sm font-medium text-zinc-200">{editingIncome.merchantOrSource || '-'}</span>
+                <span className="text-sm text-ink-muted">Description:</span>
+                <span className="text-sm font-medium text-ink">{editingIncome.merchantOrSource || '-'}</span>
               </div>
               {editingIncome.notes && (
                 <div>
-                  <span className="text-sm text-zinc-500 block mb-1">Notes:</span>
-                  <span className="text-sm text-zinc-300">{editingIncome.notes}</span>
+                  <span className="text-sm text-ink-muted block mb-1">Notes:</span>
+                  <span className="text-sm text-ink-secondary">{editingIncome.notes}</span>
                 </div>
               )}
             </div>

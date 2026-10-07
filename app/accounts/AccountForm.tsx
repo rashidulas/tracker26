@@ -74,7 +74,7 @@ export default function AccountForm({ account, onSuccess, onCancel }: AccountFor
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {error && (
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm">
+        <div className="p-3 bg-danger-dim border border-danger/25 rounded-2xl text-danger text-sm">
           {error}
         </div>
       )}

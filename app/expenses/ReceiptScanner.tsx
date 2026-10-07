@@ -239,16 +239,16 @@ export default function ReceiptScanner({
   };
 
   const confidenceColors = {
-    high: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    medium: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-    low: 'bg-red-500/10 text-red-400 border-red-500/20',
+    high: 'bg-mint-dim text-mint border-mint/25',
+    medium: 'bg-warning-dim text-warning border-warning/25',
+    low: 'bg-danger-dim text-danger border-danger/25',
   };
 
   if (step === 'upload') {
     return (
       <div className="space-y-4">
         <div className="text-center mb-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-500/10 text-purple-400 rounded-full text-sm font-medium">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-info-dim text-info rounded-full text-sm font-medium">
             <Sparkles size={16} />
             AI-Powered Receipt Scanner
           </div>
@@ -257,18 +257,18 @@ export default function ReceiptScanner({
         <div
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
-          className="border-2 border-dashed border-zinc-700 rounded-xl p-8 text-center hover:border-emerald-500/50 hover:bg-emerald-500/5 transition-all cursor-pointer"
+          className="border-2 border-dashed border-graphite-border rounded-xl p-8 text-center hover:border-mint/50 hover:bg-mint-dim transition-all cursor-pointer"
           onClick={() => fileInputRef.current?.click()}
         >
           <div className="flex flex-col items-center gap-3">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
-              <ImageIcon size={28} className="text-emerald-400" />
+            <div className="w-16 h-16 rounded-full bg-mint-dim flex items-center justify-center">
+              <ImageIcon size={28} className="text-mint" />
             </div>
             <div>
-              <p className="text-base font-medium text-zinc-300">
+              <p className="text-base font-medium text-ink-secondary">
                 Drop receipt image here or click to browse
               </p>
-              <p className="text-sm text-zinc-500 mt-1">
+              <p className="text-sm text-ink-muted mt-1">
                 Supports JPG, PNG, WEBP up to 10MB
               </p>
             </div>
@@ -296,7 +296,7 @@ export default function ReceiptScanner({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-zinc-700 rounded-xl hover:border-emerald-500/50 hover:bg-zinc-800/50 transition-all text-zinc-300"
+            className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-graphite-border rounded-xl hover:border-mint/50 hover:bg-graphite-surface-2/60 transition-all text-ink-secondary"
           >
             <Upload size={20} />
             <span className="text-sm font-medium">Upload Image</span>
@@ -304,15 +304,15 @@ export default function ReceiptScanner({
           <button
             type="button"
             onClick={() => cameraInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-zinc-700 rounded-xl hover:border-emerald-500/50 hover:bg-zinc-800/50 transition-all text-zinc-300"
+            className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-graphite-border rounded-xl hover:border-mint/50 hover:bg-graphite-surface-2/60 transition-all text-ink-secondary"
           >
             <Camera size={20} />
             <span className="text-sm font-medium">Take Photo</span>
           </button>
         </div>
 
-        <div className="bg-zinc-800/50 rounded-lg p-3">
-          <p className="text-xs text-zinc-400 font-medium mb-1.5">Works with:</p>
+        <div className="bg-graphite-surface-2/60 rounded-lg p-3">
+          <p className="text-xs text-ink-secondary font-medium mb-1.5">Works with:</p>
           <div className="flex flex-wrap gap-1.5">
             {[
               'Store receipts',
@@ -324,7 +324,7 @@ export default function ReceiptScanner({
             ].map((item) => (
               <span
                 key={item}
-                className="inline-block px-2 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-xs text-zinc-400"
+                className="inline-block px-2 py-0.5 bg-graphite-surface-2 border border-graphite-border rounded text-xs text-ink-secondary"
               >
                 {item}
               </span>
@@ -345,7 +345,7 @@ export default function ReceiptScanner({
     return (
       <div className="flex flex-col items-center justify-center py-12 space-y-4">
         {imagePreview && (
-          <div className="w-32 h-32 rounded-lg overflow-hidden border-2 border-zinc-700 mb-2">
+          <div className="w-32 h-32 rounded-lg overflow-hidden border-2 border-graphite-border mb-2">
             <img
               src={imagePreview}
               alt="Receipt"
@@ -354,11 +354,11 @@ export default function ReceiptScanner({
           </div>
         )}
         <div className="relative">
-          <Loader2 size={40} className="text-emerald-400 animate-spin" />
+          <Loader2 size={40} className="text-mint animate-spin" />
         </div>
         <div className="text-center">
-          <p className="text-lg font-medium text-white">Scanning receipt...</p>
-          <p className="text-sm text-zinc-500 mt-1">
+          <p className="text-lg font-medium text-ink font-display">Scanning receipt...</p>
+          <p className="text-sm text-ink-muted mt-1">
             AI is reading and categorizing your expense
           </p>
         </div>
@@ -369,12 +369,12 @@ export default function ReceiptScanner({
   if (step === 'error') {
     return (
       <div className="flex flex-col items-center justify-center py-8 space-y-4">
-        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
-          <AlertCircle size={32} className="text-red-400" />
+        <div className="w-16 h-16 rounded-full bg-danger-dim flex items-center justify-center">
+          <AlertCircle size={32} className="text-danger" />
         </div>
         <div className="text-center">
-          <p className="text-lg font-medium text-white">Scan Failed</p>
-          <p className="text-sm text-zinc-400 mt-1 max-w-sm">{scanError}</p>
+          <p className="text-lg font-medium text-ink font-display">Scan Failed</p>
+          <p className="text-sm text-ink-secondary mt-1 max-w-sm">{scanError}</p>
         </div>
         <div className="flex gap-3 pt-2">
           <Button variant="secondary" onClick={onCancel}>
@@ -396,8 +396,8 @@ export default function ReceiptScanner({
       {scanResult && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CheckCircle2 size={18} className="text-emerald-400" />
-            <span className="text-sm font-medium text-zinc-300">Receipt scanned</span>
+            <CheckCircle2 size={18} className="text-mint" />
+            <span className="text-sm font-medium text-ink-secondary">Receipt scanned</span>
           </div>
           <span
             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
@@ -412,7 +412,7 @@ export default function ReceiptScanner({
       {/* Image + Items Preview */}
       <div className="flex gap-3">
         {imagePreview && (
-          <div className="w-20 h-20 rounded-lg overflow-hidden border border-zinc-700 flex-shrink-0">
+          <div className="w-20 h-20 rounded-lg overflow-hidden border border-graphite-border flex-shrink-0">
             <img
               src={imagePreview}
               alt="Receipt"
@@ -421,11 +421,11 @@ export default function ReceiptScanner({
           </div>
         )}
         {scanResult?.items && scanResult.items.length > 0 && (
-          <div className="flex-1 bg-zinc-800/50 rounded-lg p-2.5 max-h-20 overflow-y-auto">
-            <p className="text-xs font-medium text-zinc-500 mb-1">Detected items:</p>
+          <div className="flex-1 bg-graphite-surface-2/60 rounded-lg p-2.5 max-h-20 overflow-y-auto">
+            <p className="text-xs font-medium text-ink-muted mb-1">Detected items:</p>
             <div className="space-y-0.5">
               {scanResult.items.map((item, i) => (
-                <div key={i} className="flex justify-between text-xs text-zinc-300">
+                <div key={i} className="flex justify-between text-xs text-ink-secondary">
                   <span className="truncate mr-2">{item.name}</span>
                   <span className="font-medium flex-shrink-0">${item.amount.toFixed(2)}</span>
                 </div>
@@ -436,15 +436,15 @@ export default function ReceiptScanner({
       </div>
 
       {submitError && (
-        <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+        <div className="p-3 bg-danger-dim border border-danger/25 rounded-xl text-danger text-sm">
           {submitError}
         </div>
       )}
 
       {/* Editable Form */}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2">
-          <p className="text-xs text-blue-400">
+        <div className="bg-info-dim border border-info/25 rounded-xl px-3 py-2">
+          <p className="text-xs text-info">
             Review the auto-filled fields below. Edit anything that looks incorrect before submitting.
           </p>
         </div>
@@ -494,12 +494,12 @@ export default function ReceiptScanner({
         />
 
         <div>
-          <label className="block text-sm font-medium text-zinc-400 mb-1">
+          <label className="block text-sm font-medium text-ink-secondary mb-1">
             Notes
           </label>
           <textarea
             {...register('notes')}
-            className="w-full px-3 py-2 border border-zinc-700 bg-zinc-800/50 text-zinc-100 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:outline-none text-sm"
+            className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors text-sm"
             rows={2}
             placeholder="Add notes..."
           />
