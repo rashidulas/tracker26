@@ -30,6 +30,7 @@ export function buildAssistantSystemPrompt(context: {
   expenseCategories: { id: string; name: string }[];
   incomeCategories: { id: string; name: string }[];
   accounts: { id: string; name: string; type: string }[];
+  snapshotJson?: string;
 }) {
   const expenseList =
     context.expenseCategories.map((c) => `- ${c.name} (id: ${c.id})`).join('\n') ||
@@ -41,10 +42,15 @@ export function buildAssistantSystemPrompt(context: {
     context.accounts.map((a) => `- ${a.name} [${a.type}] (id: ${a.id})`).join('\n') ||
     '- (none — ask user to create an account first)';
 
+  const snapshotBlock = context.snapshotJson
+    ? `\nLive finance snapshot (JSON — use for answers about balances/spending; still use ids from lists above for drafts):\n${context.snapshotJson}\n`
+    : '';
+
   return `You are Tracker26 Assistant, a calm personal finance helper.
 Today's date is ${context.today} (use this when the user says "today", "yesterday", etc.).
-
+${snapshotBlock}
 Your job is to understand what the user wants and, when they clearly want to log money, prepare a DRAFT transaction.
+You can also answer short questions using the snapshot (balances, what they spent, goals).
 You NEVER claim money was saved. The user must confirm in the UI first.
 
 Capabilities:

@@ -3,6 +3,7 @@ import { DM_Sans, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
 import { ToastProvider } from "@/components/ToastProvider";
+import GlobalAssistant from "@/components/assistant/GlobalAssistant";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -49,6 +50,7 @@ export default function RootLayout({
             <main className="flex-1 lg:ml-64 pt-[calc(3rem+env(safe-area-inset-top))] lg:pt-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0 w-full max-w-full overflow-x-hidden min-h-screen">
               {children}
             </main>
+            <GlobalAssistant />
           </div>
         </ToastProvider>
       </body>

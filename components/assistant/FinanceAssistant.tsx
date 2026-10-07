@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ImagePlus, Loader2, Send, X } from 'lucide-react';
 import Button from '@/components/Button';
-import { confirmAssistantDraft } from '@/app/dashboard/assistantActions';
+import { confirmAssistantDraft } from '@/app/assistant/actions';
 import type { AssistantDraft } from '@/lib/assistant';
 import { useToast } from '@/components/ToastProvider';
 
@@ -27,7 +27,7 @@ function formatMoney(amount: number) {
   }).format(amount);
 }
 
-export default function FinanceAssistant() {
+export default function FinanceAssistant({ embedded = false }: { embedded?: boolean }) {
   const { success, error: toastError } = useToast();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([
@@ -299,23 +299,28 @@ export default function FinanceAssistant() {
         : 'Hold to talk';
 
   return (
-    <section className="panel shadow-panel overflow-hidden">
-      <div className="relative px-4 sm:px-5 pt-4 pb-3 border-b border-graphite-border-subtle">
-        <div className="absolute inset-0 bg-gradient-to-br from-mint/[0.06] via-transparent to-info/[0.04] pointer-events-none" />
-        <div className="relative flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-medium text-mint uppercase tracking-[0.16em]">
-              Assistant
-            </p>
-            <h2 className="text-lg font-semibold text-ink font-display mt-0.5">
-              What do you want to log?
-            </h2>
-            <p className="text-xs text-ink-muted mt-1">{statusLabel}</p>
+    <section className={embedded ? 'overflow-hidden' : 'panel shadow-panel overflow-hidden'}>
+      {!embedded && (
+        <div className="relative px-4 sm:px-5 pt-4 pb-3 border-b border-graphite-border-subtle">
+          <div className="absolute inset-0 bg-gradient-to-br from-mint/[0.06] via-transparent to-info/[0.04] pointer-events-none" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-medium text-mint uppercase tracking-[0.16em]">
+                Assistant
+              </p>
+              <h2 className="text-lg font-semibold text-ink font-display mt-0.5">
+                What do you want to log?
+              </h2>
+              <p className="text-xs text-ink-muted mt-1">{statusLabel}</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+      {embedded && (
+        <p className="text-xs text-ink-muted px-1 pb-2">{statusLabel}</p>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 p-4 sm:p-5">
+      <div className={`grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 ${embedded ? 'p-1' : 'p-4 sm:p-5'}`}>
         {/* Siri-style orb */}
         <div className="flex flex-col items-center justify-center gap-2 sm:min-w-[140px] py-1">
           <button

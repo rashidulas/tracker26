@@ -28,7 +28,6 @@ import {
   Line,
 } from 'recharts';
 import { formatDate } from '@/lib/utils';
-import FinanceAssistant from '@/components/assistant/FinanceAssistant';
 
 interface BudgetItem {
   id: string;
@@ -212,14 +211,6 @@ export default function DashboardClient({ data }: DashboardClientProps) {
       >
         <h1 className="page-title">Dashboard</h1>
         <p className="page-subtitle">Your financial overview at a glance</p>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.05 }}
-      >
-        <FinanceAssistant />
       </motion.div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">

@@ -15,11 +15,13 @@ import {
   ArrowLeftRight,
   BarChart2,
   Grid2x2,
+  Sparkles,
   X,
 } from 'lucide-react';
 
 const desktopNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/analytics', label: 'Analytics', icon: Sparkles },
   { href: '/categories', label: 'Categories', icon: FolderOpen },
   { href: '/accounts', label: 'Accounts', icon: Wallet },
   { href: '/expenses', label: 'Expenses', icon: TrendingDown },
@@ -29,7 +31,6 @@ const desktopNavItems = [
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/budgets', label: 'Budgets', icon: PieChart },
-  { href: '/reports', label: 'Reports', icon: BarChart3 },
 ];
 
 const mobileTabs = [
@@ -39,6 +40,7 @@ const mobileTabs = [
 ] as const;
 
 const moreItems = [
+  { href: '/analytics', label: 'Analytics', icon: Sparkles, hint: 'AI daily money debrief' },
   { href: '/accounts', label: 'Accounts', icon: Wallet, hint: 'Balances & cards' },
   { href: '/categories', label: 'Categories', icon: FolderOpen, hint: 'Income & spend labels' },
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight, hint: 'Move between accounts' },
@@ -46,7 +48,6 @@ const moreItems = [
   { href: '/budgets', label: 'Budgets', icon: PieChart, hint: 'Monthly limits' },
   { href: '/expenses-dashboard', label: 'Expense analytics', icon: BarChart3, hint: 'Charts & filters' },
   { href: '/income-dashboard', label: 'Income analytics', icon: BarChart2, hint: 'Charts & filters' },
-  { href: '/reports', label: 'Reports', icon: BarChart3, hint: 'Summaries' },
 ];
 
 function isActivePath(pathname: string, href: string) {

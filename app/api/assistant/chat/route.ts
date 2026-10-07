@@ -1,11 +1,11 @@
 import OpenAI from 'openai';
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import {
   assistantResponseSchema,
   buildAssistantSystemPrompt,
   type ChatMessage,
 } from '@/lib/assistant';
+import { formatFinanceContextForPrompt, getFinanceContext } from '@/lib/financeContext';
 
 export const runtime = 'nodejs';
 
@@ -39,26 +39,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'messages are required' }, { status: 400 });
     }
 
-    const [categories, accounts] = await Promise.all([
-      prisma.category.findMany({
-        select: { id: true, name: true, type: true },
-        orderBy: { name: 'asc' },
-      }),
-      prisma.account.findMany({
-        select: { id: true, name: true, type: true },
-        orderBy: { name: 'asc' },
-      }),
-    ]);
-
-    const expenseCategories = categories.filter((c) => c.type === 'EXPENSE');
-    const incomeCategories = categories.filter((c) => c.type === 'INCOME');
-    const today = new Date().toISOString().slice(0, 10);
+    const ctx = await getFinanceContext();
 
     const systemPrompt = buildAssistantSystemPrompt({
-      today,
-      expenseCategories,
-      incomeCategories,
-      accounts,
+      today: ctx.today,
+      expenseCategories: ctx.expenseCategories,
+      incomeCategories: ctx.incomeCategories,
+      accounts: ctx.accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })),
+      snapshotJson: formatFinanceContextForPrompt(ctx),
     });
 
     const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -79,7 +67,12 @@ export async function POST(request: NextRequest) {
         openaiMessages.push({
           role: 'user',
           content: [
-            { type: 'text', text: msg.content || 'Please review this image and log the transaction if it is a receipt or payment.' },
+            {
+              type: 'text',
+              text:
+                msg.content ||
+                'Please review this image and log the transaction if it is a receipt or payment.',
+            },
             { type: 'image_url', image_url: { url: dataUrl } },
           ],
         });
@@ -117,6 +110,11 @@ export async function POST(request: NextRequest) {
     }
 
     let draft = validated.data.draft;
+    const categories = [
+      ...ctx.expenseCategories.map((c) => ({ ...c, type: 'EXPENSE' as const })),
+      ...ctx.incomeCategories.map((c) => ({ ...c, type: 'INCOME' as const })),
+    ];
+    const accounts = ctx.accounts;
 
     if (draft) {
       const category = categories.find((c) => c.id === draft!.categoryId);
@@ -140,9 +138,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           data: {
-            message:
-              validated.data.message +
-              ' Which account should this income go into?',
+            message: validated.data.message + ' Which account should this income go into?',
             draft: null,
           },
         });
