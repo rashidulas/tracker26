@@ -17,13 +17,14 @@ import {
   CreditCard,
   TrendingUp,
   Briefcase,
+  HandCoins,
   type LucideIcon,
 } from 'lucide-react';
 
 interface Account {
   id: string;
   name: string;
-  type: 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT';
+  type: 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN';
   institution: string | null;
   startingBalance: number;
   currentBalance: number;
@@ -80,6 +81,8 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
         return Banknote;
       case 'CREDIT_CARD':
         return CreditCard;
+      case 'LOAN':
+        return HandCoins;
       case 'INVESTMENT':
         return TrendingUp;
       default:

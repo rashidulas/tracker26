@@ -137,10 +137,10 @@ export async function getFinanceContext(): Promise<FinanceContext> {
 
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
   const cashBalance = accounts
-    .filter((a) => a.type !== 'CREDIT_CARD')
+    .filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN')
     .reduce((s, a) => s + a.balance, 0);
   const creditCardDebt = accounts
-    .filter((a) => a.type === 'CREDIT_CARD')
+    .filter((a) => a.type === 'CREDIT_CARD' || a.type === 'LOAN')
     .reduce((s, a) => s + Math.abs(Math.min(a.balance, 0)), 0);
 
   const monthIncome = monthIncomeAgg._sum.amount || 0;

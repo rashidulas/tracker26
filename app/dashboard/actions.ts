@@ -127,7 +127,7 @@ export async function getDashboardData() {
       });
 
     const cashBalance = accounts
-      .filter((a) => a.type !== 'CREDIT_CARD')
+      .filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN')
       .reduce(
         (sum, a) =>
           sum + computeAccountBalance(a.startingBalance, a.transactionsFrom, a.transactionsTo),

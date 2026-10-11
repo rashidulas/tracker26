@@ -21,7 +21,7 @@ export type SubcategoryInput = z.infer<typeof subcategorySchema>;
 // ==================== ACCOUNT SCHEMAS ====================
 export const accountSchema = z.object({
   name: z.string().min(1, 'Name is required').max(50, 'Name too long'),
-  type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT']),
+  type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT', 'LOAN']),
   institution: z.string().max(100).optional(),
   startingBalance: z.number().default(0),
 });

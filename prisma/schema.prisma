@@ -20,6 +20,7 @@ enum AccountType {
   CREDIT_CARD
   CASH
   INVESTMENT
+  LOAN
 }
 
 enum TransactionKind {

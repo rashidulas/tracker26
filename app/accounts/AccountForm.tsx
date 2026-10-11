@@ -11,7 +11,7 @@ import { useState } from 'react';
 
 const accountSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT']),
+  type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT', 'LOAN']),
   institution: z.string().optional(),
   startingBalance: z.string().min(1, 'Starting balance is required'),
 });
@@ -22,7 +22,7 @@ interface AccountFormProps {
   account?: {
     id: string;
     name: string;
-    type: 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT';
+    type: 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN';
     institution?: string | null;
     startingBalance: number;
   };
@@ -95,6 +95,7 @@ export default function AccountForm({ account, onSuccess, onCancel }: AccountFor
           { value: 'SAVINGS', label: 'Savings' },
           { value: 'CASH', label: 'Cash' },
           { value: 'CREDIT_CARD', label: 'Credit Card' },
+          { value: 'LOAN', label: 'Loan' },
           { value: 'INVESTMENT', label: 'Investment' },
         ]}
       />

@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 const accountSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT']),
+  type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT', 'LOAN']),
   institution: z.string().optional(),
   startingBalance: z.number(),
 });
@@ -53,7 +53,7 @@ export async function createAccount(formData: FormData) {
   try {
     const data = {
       name: formData.get('name') as string,
-      type: formData.get('type') as 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT',
+      type: formData.get('type') as 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN',
       institution: formData.get('institution') as string,
       startingBalance: parseFloat(formData.get('startingBalance') as string) || 0,
     };
@@ -79,7 +79,7 @@ export async function updateAccount(id: string, formData: FormData) {
   try {
     const data = {
       name: formData.get('name') as string,
-      type: formData.get('type') as 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT',
+      type: formData.get('type') as 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN',
       institution: formData.get('institution') as string,
       startingBalance: parseFloat(formData.get('startingBalance') as string) || 0,
     };
