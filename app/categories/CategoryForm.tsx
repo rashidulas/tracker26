@@ -1,6 +1,6 @@
 'use client';
 
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Input from '@/components/Input';
@@ -8,12 +8,18 @@ import Select from '@/components/Select';
 import Button from '@/components/Button';
 import { createCategory, updateCategory } from './actions';
 import { useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 
 const categorySchema = z.object({
   name: z.string().min(1, 'Name is required'),
   type: z.enum(['INCOME', 'EXPENSE']),
   color: z.string().optional(),
   icon: z.string().optional(),
+  subcategories: z.array(
+    z.object({
+      name: z.string(),
+    })
+  ),
 });
 
 type CategoryFormData = z.infer<typeof categorySchema>;
@@ -38,6 +44,7 @@ interface CategoryFormProps {
     type: 'INCOME' | 'EXPENSE';
     color?: string | null;
     icon?: string | null;
+    subcategories?: Array<{ id: string; name: string }>;
   };
   onSuccess: () => void;
   onCancel: () => void;
@@ -61,7 +68,14 @@ export default function CategoryForm({ category, onSuccess, onCancel }: Category
       type: category?.type || 'EXPENSE',
       color: category?.color || '#3dcea6',
       icon: category?.icon || '📁',
+      subcategories:
+        category?.subcategories?.map((s) => ({ name: s.name })) || [],
     },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'subcategories',
   });
 
   const selectedColor = watch('color') || '#3dcea6';
@@ -76,6 +90,14 @@ export default function CategoryForm({ category, onSuccess, onCancel }: Category
     formData.append('type', data.type);
     if (data.color) formData.append('color', data.color);
     if (data.icon) formData.append('icon', data.icon);
+
+    const subcategoryNames = data.subcategories
+      .map((s) => s.name.trim())
+      .filter(Boolean);
+
+    for (const name of subcategoryNames) {
+      formData.append('subcategories', name);
+    }
 
     const result = category
       ? await updateCategory(category.id, formData)
@@ -117,7 +139,7 @@ export default function CategoryForm({ category, onSuccess, onCancel }: Category
         label="Category Name"
         {...register('name')}
         error={errors.name?.message}
-        placeholder="e.g., Groceries"
+        placeholder="e.g., Car"
       />
 
       <Select
@@ -202,6 +224,54 @@ export default function CategoryForm({ category, onSuccess, onCancel }: Category
         />
         {errors.color?.message && (
           <p className="mt-1.5 text-sm text-danger">{errors.color.message}</p>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <label className="block text-sm font-medium text-ink-secondary">
+              Subcategories
+            </label>
+            <p className="text-xs text-ink-muted mt-0.5">
+              Optional — e.g. Fuel, Maintenance under Car
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => append({ name: '' })}
+          >
+            <Plus size={14} />
+            Add
+          </Button>
+        </div>
+
+        {fields.length === 0 ? (
+          <p className="text-sm text-ink-muted py-2">
+            No subcategories. You can add them now or later.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex items-center gap-2">
+                <input
+                  {...register(`subcategories.${index}.name`)}
+                  className="flex-1 px-3.5 py-2.5 border border-graphite-border rounded-xl text-sm text-ink bg-graphite-surface-2/80 placeholder-ink-muted focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none"
+                  placeholder={`e.g. ${index === 0 ? 'Fuel' : index === 1 ? 'Maintenance' : 'Subcategory'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => remove(index)}
+                  className="p-2 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                  aria-label="Remove subcategory"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

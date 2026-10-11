@@ -8,12 +8,18 @@ import { deleteCategory } from './actions';
 import PageHeader from '@/components/PageHeader';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 
+interface Subcategory {
+  id: string;
+  name: string;
+}
+
 interface Category {
   id: string;
   name: string;
   type: 'INCOME' | 'EXPENSE';
   color: string | null;
   icon: string | null;
+  subcategories: Subcategory[];
   _count: {
     transactions: number;
   };
@@ -97,6 +103,9 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
                 Category
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
+                Subcategories
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
                 Type
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">
@@ -128,6 +137,22 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
                       )}
                     </div>
                   </div>
+                </td>
+                <td className="px-6 py-4">
+                  {category.subcategories?.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {category.subcategories.map((sub) => (
+                        <span
+                          key={sub.id}
+                          className="px-2 py-0.5 text-xs rounded-full bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle"
+                        >
+                          {sub.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-ink-muted">—</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(category.type)}`}>
