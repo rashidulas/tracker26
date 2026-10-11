@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -9,7 +10,16 @@ import ExpenseForm from './ExpenseForm';
 import { deleteExpense } from './actions';
 import ReceiptScanner from './ReceiptScanner';
 import PageHeader from '@/components/PageHeader';
-import { Plus, Edit2, Trash2, Filter, X, Camera } from 'lucide-react';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Filter,
+  X,
+  Camera,
+  Receipt,
+  ArrowRight,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDate } from '@/lib/utils';
@@ -36,6 +46,8 @@ interface ExpensesClientProps {
   categories: Array<{
     id: string;
     name: string;
+    icon?: string | null;
+    color?: string | null;
     subcategories?: Array<{ id: string; name: string }>;
   }>;
   accounts: Array<{ id: string; name: string }>;
@@ -59,6 +71,7 @@ export default function ExpensesClient({
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
@@ -72,26 +85,22 @@ export default function ExpensesClient({
 
   const getMonthOptions = () => {
     const monthsMap = new Map<string, string>();
-    
-    // Add current month by default
     const currentMonthLabel = format(now, 'MMMM yyyy');
     monthsMap.set(currentMonthKey, currentMonthLabel);
-    
-    // Add months from initialExpenses (using UTC to prevent timezone shifts)
-    initialExpenses.forEach(expense => {
+
+    initialExpenses.forEach((expense) => {
       const d = new Date(expense.date);
       const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
       const utcDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), 1);
       const label = format(utcDate, 'MMMM yyyy');
       monthsMap.set(key, label);
     });
-    
-    // Sort keys descending (most recent first)
+
     const sortedKeys = Array.from(monthsMap.keys()).sort((a, b) => b.localeCompare(a));
-    
+
     return [
       { value: 'all', label: 'All Months' },
-      ...sortedKeys.map(key => ({ value: key, label: monthsMap.get(key)! }))
+      ...sortedKeys.map((key) => ({ value: key, label: monthsMap.get(key)! })),
     ];
   };
 
@@ -121,7 +130,7 @@ export default function ExpensesClient({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return;
+    if (!confirm('Delete this expense?')) return;
 
     const result = await deleteExpense(id);
     if (result.success) {
@@ -156,15 +165,22 @@ export default function ExpensesClient({
   });
 
   const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const activeFilterCount = [
+    filters.startDate,
+    filters.endDate,
+    filters.categoryId,
+    filters.subcategoryId,
+    filters.search,
+  ].filter(Boolean).length;
 
   return (
     <div className="page-shell">
       <PageHeader
         title="Expenses"
-        subtitle="Track and manage your expenses"
+        subtitle="Log spending quickly — filter when you need the detail"
         actions={
           <>
-            <div className="w-full sm:w-48">
+            <div className="w-full sm:w-44">
               <Select
                 options={monthOptions}
                 value={selectedMonth}
@@ -172,13 +188,22 @@ export default function ExpensesClient({
                 className="!py-2 text-sm"
               />
             </div>
-            <Button variant="secondary" onClick={() => setShowFilters(!showFilters)}>
+            <Button
+              variant="secondary"
+              onClick={() => setShowFilters(!showFilters)}
+              className="relative"
+            >
               <Filter size={18} />
               Filters
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-mint text-graphite text-[10px] font-bold flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
             </Button>
             <Button variant="secondary" onClick={() => setIsScannerOpen(true)}>
               <Camera size={18} />
-              Scan Receipt
+              Scan
             </Button>
             <Button onClick={handleAdd}>
               <Plus size={18} />
@@ -188,164 +213,211 @@ export default function ExpensesClient({
         }
       />
 
-      {/* Filters Panel */}
-      {showFilters && (
-        <div className="panel shadow-panel p-6 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-semibold text-ink font-display">Filters</h3>
-            <button onClick={() => setShowFilters(false)} className="text-ink-muted hover:text-ink transition-colors">
-              <X size={20} />
-            </button>
+      <AnimatePresence>
+        {showFilters && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-6"
+          >
+            <div className="panel shadow-panel p-5 sm:p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold text-ink font-display">Filters</h3>
+                <button
+                  onClick={() => setShowFilters(false)}
+                  className="text-ink-muted hover:text-ink transition-colors p-1.5 rounded-lg hover:bg-graphite-surface-2"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <Input
+                  label="Start Date"
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                />
+                <Input
+                  label="End Date"
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                />
+                <Select
+                  label="Category"
+                  value={filters.categoryId}
+                  onChange={(e) =>
+                    setFilters({
+                      ...filters,
+                      categoryId: e.target.value,
+                      subcategoryId: '',
+                    })
+                  }
+                  options={[
+                    { value: '', label: 'All Categories' },
+                    ...categories.map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+                <Select
+                  label="Subcategory"
+                  value={filters.subcategoryId}
+                  onChange={(e) => setFilters({ ...filters, subcategoryId: e.target.value })}
+                  options={[
+                    {
+                      value: '',
+                      label: filters.categoryId
+                        ? 'All Subcategories'
+                        : 'Select category first',
+                    },
+                    ...filterSubcategories.map((s) => ({ value: s.id, label: s.name })),
+                  ]}
+                />
+                <Input
+                  label="Search"
+                  placeholder="Merchant or notes…"
+                  value={filters.search}
+                  onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                />
+              </div>
+              <div className="mt-4">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    setFilters({
+                      startDate: '',
+                      endDate: '',
+                      categoryId: '',
+                      subcategoryId: '',
+                      search: '',
+                    })
+                  }
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Summary strip */}
+      <div className="relative overflow-hidden rounded-2xl border border-danger/20 bg-gradient-to-r from-danger-dim/80 to-graphite-surface mb-6 px-5 py-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.16em] text-ink-muted mb-1">
+              Total this view
+            </p>
+            <p className="text-3xl font-semibold text-danger money tracking-tight">
+              {formatCurrency(totalExpenses)}
+            </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            <Input
-              label="Start Date"
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-            />
-            <Input
-              label="End Date"
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-            />
-            <Select
-              label="Category"
-              value={filters.categoryId}
-              onChange={(e) =>
-                setFilters({
-                  ...filters,
-                  categoryId: e.target.value,
-                  subcategoryId: '',
-                })
-              }
-              options={[
-                { value: '', label: 'All Categories' },
-                ...categories.map((c) => ({ value: c.id, label: c.name })),
-              ]}
-            />
-            <Select
-              label="Subcategory"
-              value={filters.subcategoryId}
-              onChange={(e) => setFilters({ ...filters, subcategoryId: e.target.value })}
-              options={[
-                { value: '', label: filters.categoryId ? 'All Subcategories' : 'Select category first' },
-                ...filterSubcategories.map((s) => ({ value: s.id, label: s.name })),
-              ]}
-            />
-            <Input
-              label="Search"
-              placeholder="Merchant or notes..."
-              value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-            />
+          <p className="text-sm text-ink-secondary">
+            {filteredExpenses.length} transaction
+            {filteredExpenses.length === 1 ? '' : 's'}
+          </p>
+        </div>
+      </div>
+
+      {/* Expense list */}
+      {filteredExpenses.length === 0 ? (
+        <div className="panel border-dashed border-graphite-border py-16 px-6 text-center">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-danger-dim flex items-center justify-center mb-4">
+            <Receipt className="text-danger" size={24} />
           </div>
-          <div className="mt-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                setFilters({
-                  startDate: '',
-                  endDate: '',
-                  categoryId: '',
-                  subcategoryId: '',
-                  search: '',
-                })
-              }
-            >
-              Clear Filters
+          <p className="text-ink font-medium font-display text-lg">No expenses found</p>
+          <p className="text-ink-muted text-sm mt-1.5">
+            Add one manually or scan a receipt to get started.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 mt-6">
+            <Button onClick={handleAdd}>
+              <Plus size={18} />
+              Add Expense
+            </Button>
+            <Button variant="secondary" onClick={() => setIsScannerOpen(true)}>
+              <Camera size={18} />
+              Scan Receipt
             </Button>
           </div>
         </div>
-      )}
+      ) : (
+        <div className="space-y-2">
+          {filteredExpenses.map((expense, index) => (
+            <motion.div
+              key={expense.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(index * 0.03, 0.3), duration: 0.35 }}
+              className="group flex items-center gap-3 sm:gap-4 rounded-2xl border border-graphite-border-subtle bg-graphite-surface px-3.5 sm:px-5 py-3.5 hover:border-graphite-border hover:bg-graphite-surface-hover transition-all duration-200"
+            >
+              <div className="w-11 h-11 rounded-xl bg-graphite-surface-2 border border-graphite-border-subtle flex items-center justify-center text-lg shrink-0">
+                {expense.category?.icon || '💸'}
+              </div>
 
-      {/* Summary */}
-      <div className="bg-danger-dim border border-danger/25 rounded-2xl p-4 mb-6">
-        <div className="flex justify-between items-center">
-          <span className="text-ink-secondary font-medium">Total Expenses</span>
-          <span className="text-2xl font-semibold text-danger money">{formatCurrency(totalExpenses)}</span>
-        </div>
-        <p className="text-sm text-ink-secondary mt-1">{filteredExpenses.length} transaction(s)</p>
-      </div>
-
-      {/* Expenses Table */}
-      <div className="panel shadow-panel overflow-hidden">
-        <table className="min-w-full divide-y divide-graphite-border-subtle">
-          <thead className="bg-graphite-surface-2/60">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Date</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Category</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Merchant</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wider">Account</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider">Amount</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-graphite-border-subtle">
-            {filteredExpenses.map((expense) => (
-              <tr key={expense.id} className="hover:bg-graphite-surface-hover transition-colors">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-ink">
-                  {formatDate(expense.date)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center gap-2">
-                    {expense.category?.icon && <span>{expense.category.icon}</span>}
-                    <div>
-                      <span className="text-sm text-ink">
-                        {expense.category?.name || 'Uncategorized'}
-                      </span>
-                      {expense.subcategory?.name && (
-                        <p className="text-xs text-ink-muted">{expense.subcategory.name}</p>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm text-ink-secondary">
-                  {expense.merchantOrSource || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-ink-secondary">
-                  {expense.toAccount ? (
-                    <span className="flex items-center gap-1">
-                      <span>{expense.account?.name || '-'}</span>
-                      <span className="text-ink-muted">→</span>
-                      <span>{expense.toAccount.name}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-ink truncate">
+                    {expense.merchantOrSource ||
+                      expense.category?.name ||
+                      'Untitled expense'}
+                  </p>
+                  {expense.subcategory?.name && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] bg-graphite-surface-2 text-ink-muted border border-graphite-border-subtle">
+                      {expense.subcategory.name}
                     </span>
-                  ) : (
-                    expense.account?.name || '-'
                   )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium money">
-                  <span className={expense.kind === 'TRANSFER' ? 'text-info' : 'text-danger'}>
-                    {formatCurrency(expense.amount)}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-xs text-ink-muted">
+                  <span>{formatDate(expense.date)}</span>
+                  <span className="text-graphite-border">·</span>
+                  <span>{expense.category?.name || 'Uncategorized'}</span>
+                  {(expense.account || expense.toAccount) && (
+                    <>
+                      <span className="text-graphite-border">·</span>
+                      {expense.toAccount ? (
+                        <span className="inline-flex items-center gap-1">
+                          {expense.account?.name || '—'}
+                          <ArrowRight size={10} />
+                          {expense.toAccount.name}
+                        </span>
+                      ) : (
+                        <span>{expense.account?.name}</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                <p
+                  className={`text-sm sm:text-base font-semibold money tabular-nums ${
+                    expense.kind === 'TRANSFER' ? 'text-info' : 'text-danger'
+                  }`}
+                >
+                  {formatCurrency(expense.amount)}
+                </p>
+                <div className="flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ml-1">
                   <button
                     onClick={() => handleEdit(expense)}
-                    className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors mr-2"
+                    className="p-2 rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                    aria-label="Edit expense"
                   >
-                    <Edit2 size={18} />
+                    <Pencil size={15} />
                   </button>
                   <button
                     onClick={() => handleDelete(expense.id)}
-                    className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                    className="p-2 rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                    aria-label="Delete expense"
                   >
-                    <Trash2 size={18} />
+                    <Trash2 size={15} />
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {filteredExpenses.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-ink-muted">No expenses found</p>
-          </div>
-        )}
-      </div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       <Modal
         isOpen={isModalOpen}
@@ -353,8 +425,36 @@ export default function ExpensesClient({
           setIsModalOpen(false);
           setEditingExpense(null);
         }}
-        title={editingExpense ? 'Edit Expense' : 'Add Expense'}
+        title={editingExpense ? 'Edit expense' : 'Add expense'}
+        description="Amount first, then category — details stay optional."
         size="lg"
+        footer={
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setIsModalOpen(false);
+                setEditingExpense(null);
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="expense-form"
+              disabled={isSubmitting}
+              className="flex-1"
+            >
+              {isSubmitting
+                ? 'Saving...'
+                : editingExpense
+                ? 'Save changes'
+                : 'Add Expense'}
+            </Button>
+          </div>
+        }
       >
         <ExpenseForm
           expense={editingExpense || undefined}
@@ -365,13 +465,17 @@ export default function ExpensesClient({
             setIsModalOpen(false);
             setEditingExpense(null);
           }}
+          hideActions
+          onSubmittingChange={setIsSubmitting}
+          formId="expense-form"
         />
       </Modal>
 
       <Modal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
-        title="Scan Receipt"
+        title="Scan receipt"
+        description="Snap a receipt and review the draft before saving."
         size="lg"
       >
         <ReceiptScanner

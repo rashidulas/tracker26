@@ -217,7 +217,11 @@ export async function getCategoriesForSelect() {
       where: {
         type: 'EXPENSE',
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        icon: true,
+        color: true,
         subcategories: {
           orderBy: { name: 'asc' },
           select: { id: true, name: true },
