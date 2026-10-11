@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import {
   Wallet,
   TrendingUp,
@@ -15,6 +16,9 @@ import {
   Zap,
   CreditCard,
   DollarSign,
+  Users,
+  HandCoins,
+  ChevronRight,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -30,15 +34,7 @@ import {
 import { formatDate } from '@/lib/utils';
 import DashboardViewSwitcher from '@/components/DashboardViewSwitcher';
 
-interface BudgetItem {
-  id: string;
-  categoryName: string;
-  categoryColor: string;
-  budgeted: number;
-  spent: number;
-}
-
-interface CreditCardItem {
+interface LiabilityItem {
   id: string;
   name: string;
   institution: string | null;
@@ -46,14 +42,25 @@ interface CreditCardItem {
   balanceAtMonthStart: number;
 }
 
+interface FriendSummary {
+  id: string;
+  name: string;
+  color: string;
+  balance: number;
+  entryCount: number;
+}
+
 interface DashboardClientProps {
   data: {
     monthIncome: number;
     monthExpenses: number;
-    totalSavings: number;
     totalBalance: number;
     cashBalance: number;
-    creditCards: CreditCardItem[];
+    creditCards: LiabilityItem[];
+    loans: LiabilityItem[];
+    friends: FriendSummary[];
+    friendsOwedToYou: number;
+    friendsYouOwe: number;
     categoryData: Array<{ name: string; value: number; color: string }>;
     monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
     recentTransactions: Array<{
@@ -64,7 +71,6 @@ interface DashboardClientProps {
       category: { name: string; icon: string | null; color: string } | null;
       account: { name: string } | null;
     }>;
-    budgetProgress: BudgetItem[];
     dailySpending: Array<{ date: string; amount: number }>;
   };
 }
@@ -414,6 +420,73 @@ export default function DashboardClient({ data }: DashboardClientProps) {
         </motion.div>
       )}
 
+      {data.loans.length > 0 && (
+        <motion.div
+          custom={3}
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="panel shadow-panel p-5 sm:p-6"
+        >
+          <div className="flex items-start justify-between mb-5 gap-3">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-warning-dim border border-warning/15 flex items-center justify-center">
+                  <HandCoins size={15} className="text-warning" />
+                </div>
+                <h2 className="text-lg font-semibold text-ink font-display">Loans</h2>
+              </div>
+              <p className="text-xs text-ink-muted pl-[42px]">Outstanding loan balances</p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-2xl sm:text-3xl font-semibold text-warning money">
+                {formatCurrency(
+                  data.loans.reduce((s, l) => s + Math.abs(Math.min(l.currentBalance, 0)), 0)
+                )}
+              </p>
+              <p className="text-xs text-ink-muted mt-0.5">
+                {data.loans.length} loan{data.loans.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {data.loans.map((loan) => {
+              const debt = Math.abs(Math.min(loan.currentBalance, 0));
+              const startDebt = Math.abs(Math.min(loan.balanceAtMonthStart, 0));
+              const delta = debt - startDebt;
+              return (
+                <div
+                  key={loan.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-graphite-border-subtle bg-graphite-surface-2/40 px-3.5 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink truncate">{loan.name}</p>
+                    {loan.institution && (
+                      <p className="text-xs text-ink-muted truncate">{loan.institution}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold text-warning money">
+                      {formatCurrencyFull(debt)}
+                    </p>
+                    {delta !== 0 && (
+                      <p
+                        className={`text-[10px] font-medium money ${
+                          delta > 0 ? 'text-danger' : 'text-mint'
+                        }`}
+                      >
+                        {delta > 0 ? '↑' : '↓'} {formatCurrencyFull(Math.abs(delta))} this month
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         custom={3}
         initial="hidden"
@@ -555,65 +628,106 @@ export default function DashboardClient({ data }: DashboardClientProps) {
           variants={fadeUp}
           className="panel shadow-panel p-5 sm:p-6"
         >
-          <div className="mb-5">
-            <h2 className="text-lg font-semibold text-ink font-display">Budget Progress</h2>
-            <p className="text-xs text-ink-muted mt-0.5">This month&apos;s spending limits</p>
+          <div className="flex items-start justify-between mb-5 gap-2">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-info-dim border border-info/15 flex items-center justify-center">
+                  <Users size={15} className="text-info" />
+                </div>
+                <h2 className="text-lg font-semibold text-ink font-display">Friends</h2>
+              </div>
+              <p className="text-xs text-ink-muted pl-[42px]">Shared expenses and IOUs</p>
+            </div>
+            <Link
+              href="/friends"
+              className="inline-flex items-center gap-1 text-xs text-mint hover:text-mint-bright transition-colors shrink-0 pt-1"
+            >
+              Open
+              <ChevronRight size={14} />
+            </Link>
           </div>
 
-          {data.budgetProgress.length > 0 ? (
-            <div className="space-y-5">
-              {data.budgetProgress.map((budget) => {
-                const pct =
-                  budget.budgeted > 0
-                    ? Math.min((budget.spent / budget.budgeted) * 100, 100)
-                    : 0;
-                const isOver = budget.spent > budget.budgeted;
+          <div className="grid grid-cols-2 gap-2.5 mb-4">
+            <div className="rounded-xl border border-mint/20 bg-mint-dim/40 p-3">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">
+                Owed to you
+              </p>
+              <p className="text-lg font-semibold text-mint money">
+                {formatCurrency(data.friendsOwedToYou)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-danger/20 bg-danger-dim/40 p-3">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-ink-muted mb-1">
+                You owe
+              </p>
+              <p className="text-lg font-semibold text-danger money">
+                {formatCurrency(data.friendsYouOwe)}
+              </p>
+            </div>
+          </div>
+
+          {data.friends.length > 0 ? (
+            <div className="space-y-2">
+              {data.friends.slice(0, 5).map((friend) => {
+                const settled = Math.abs(friend.balance) < 0.005;
                 return (
-                  <div key={budget.id}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-ink-secondary">
-                        {budget.categoryName}
-                      </span>
-                      <span className="text-xs text-ink-muted money">
-                        {formatCurrency(budget.spent)} / {formatCurrency(budget.budgeted)}
-                      </span>
+                  <div
+                    key={friend.id}
+                    className="flex items-center gap-3 py-2 px-1 rounded-xl"
+                  >
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-semibold text-ink border border-white/10 shrink-0"
+                      style={{ backgroundColor: `${friend.color}28` }}
+                    >
+                      {friend.name
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((p) => p[0]?.toUpperCase())
+                        .join('') || '?'}
                     </div>
-                    <div className="h-2 rounded-full bg-graphite-surface-2 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ delay: 0.5, duration: 0.8, ease: 'easeOut' }}
-                        className="h-full rounded-full"
-                        style={{
-                          backgroundColor: isOver ? DANGER : budget.categoryColor || MINT,
-                        }}
-                      />
-                    </div>
-                    {isOver && (
-                      <p className="text-[10px] text-danger mt-1 money">
-                        Over by {formatCurrency(budget.spent - budget.budgeted)}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink truncate">{friend.name}</p>
+                      <p className="text-[11px] text-ink-muted">
+                        {settled
+                          ? 'Settled up'
+                          : friend.balance > 0
+                          ? 'They owe you'
+                          : 'You owe them'}
                       </p>
-                    )}
+                    </div>
+                    <p
+                      className={`text-sm font-semibold money tabular-nums ${
+                        settled
+                          ? 'text-ink-muted'
+                          : friend.balance > 0
+                          ? 'text-mint'
+                          : 'text-danger'
+                      }`}
+                    >
+                      {settled
+                        ? '$0'
+                        : formatCurrency(Math.abs(friend.balance))}
+                    </p>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-ink-muted">
-              <Zap size={26} className="mb-2 opacity-40" />
-              <p className="text-sm mb-1">No budgets set</p>
-              <p className="text-xs text-ink-muted/70">Create budgets to track spending limits</p>
+            <div className="flex flex-col items-center justify-center py-10 text-ink-muted">
+              <Users size={26} className="mb-2 opacity-40" />
+              <p className="text-sm mb-1">No friends yet</p>
+              <p className="text-xs text-ink-muted/70 text-center px-4">
+                Track shared spends and who owes whom
+              </p>
+              <Link
+                href="/friends"
+                className="mt-4 text-sm text-mint hover:text-mint-bright transition-colors"
+              >
+                Add a friend
+              </Link>
             </div>
           )}
-
-          <div className="mt-6 pt-5 border-t border-graphite-border-subtle space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-ink-muted">Savings Goals</span>
-              <span className="text-sm font-semibold text-mint money">
-                {formatCurrency(data.totalSavings)}
-              </span>
-            </div>
-          </div>
         </motion.div>
       </div>
 

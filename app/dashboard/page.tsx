@@ -7,14 +7,16 @@ export const revalidate = 0;
 const emptyData = {
   monthIncome: 0,
   monthExpenses: 0,
-  totalSavings: 0,
   totalBalance: 0,
   cashBalance: 0,
   creditCards: [],
+  loans: [],
+  friends: [],
+  friendsOwedToYou: 0,
+  friendsYouOwe: 0,
   categoryData: [],
   monthlyTrend: [],
   recentTransactions: [],
-  budgetProgress: [],
   dailySpending: [],
 };
 

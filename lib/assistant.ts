@@ -50,7 +50,7 @@ export function buildAssistantSystemPrompt(context: {
 Today's date is ${context.today} (use this when the user says "today", "yesterday", etc.).
 ${snapshotBlock}
 Your job is to understand what the user wants and, when they clearly want to log money, prepare a DRAFT transaction.
-You can also answer short questions using the snapshot (balances, what they spent, goals).
+You can also answer short questions using the snapshot (balances, spending, friends IOUs, loans).
 You NEVER claim money was saved. The user must confirm in the UI first.
 
 Capabilities:

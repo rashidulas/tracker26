@@ -5,10 +5,11 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  HandCoins,
   Loader2,
   RefreshCw,
   Sparkles,
-  Target,
+  Users,
   Wallet,
 } from 'lucide-react';
 import Button from '@/components/Button';
@@ -29,6 +30,10 @@ type Stats = {
   totalBalance: number;
   cashBalance: number;
   creditCardDebt: number;
+  loanDebt: number;
+  friendsOwedToYou: number;
+  friendsYouOwe: number;
+  friendsNet: number;
   todayIncome: number;
   todayExpenses: number;
   weekExpenses: number;
@@ -125,7 +130,9 @@ export default function AnalyticsClient() {
       {loading && !debrief && (
         <div className="panel shadow-panel p-10 flex flex-col items-center justify-center text-ink-muted gap-3">
           <Loader2 size={28} className="animate-spin text-mint" />
-          <p className="text-sm">Reading your accounts, transactions, and goals…</p>
+          <p className="text-sm text-center px-4">
+            Reading your accounts, friends, loans, and spending…
+          </p>
         </div>
       )}
 
@@ -177,13 +184,7 @@ export default function AnalyticsClient() {
               value={money(stats.totalBalance)}
               icon={Wallet}
               tone={stats.totalBalance >= 0 ? 'mint' : 'danger'}
-            />
-            <StatCard
-              label="Today spent"
-              value={moneyFull(stats.todayExpenses)}
-              icon={ArrowDownRight}
-              tone="danger"
-              sub={`In ${moneyFull(stats.todayIncome)}`}
+              sub={`Cash ${money(stats.cashBalance)}`}
             />
             <StatCard
               label="Month net"
@@ -193,14 +194,21 @@ export default function AnalyticsClient() {
               sub={`${money(stats.monthIncome)} in · ${money(stats.monthExpenses)} out`}
             />
             <StatCard
-              label="7-day spend"
-              value={money(stats.weekExpenses)}
-              icon={Target}
-              tone="neutral"
+              label="Friends net"
+              value={money(stats.friendsNet)}
+              icon={Users}
+              tone={stats.friendsNet >= 0 ? 'mint' : 'danger'}
+              sub={`${money(stats.friendsOwedToYou)} owed to you · ${money(stats.friendsYouOwe)} you owe`}
+            />
+            <StatCard
+              label="Loan debt"
+              value={money(stats.loanDebt)}
+              icon={HandCoins}
+              tone={stats.loanDebt > 0 ? 'danger' : 'neutral'}
               sub={
                 stats.creditCardDebt > 0
-                  ? `Card debt ${money(stats.creditCardDebt)}`
-                  : `Cash ${money(stats.cashBalance)}`
+                  ? `Cards ${money(stats.creditCardDebt)} · 7d ${money(stats.weekExpenses)}`
+                  : `Today ${moneyFull(stats.todayExpenses)} · 7d ${money(stats.weekExpenses)}`
               }
             />
           </div>

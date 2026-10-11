@@ -2,7 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { computeAccountBalance } from '@/lib/accountBalance';
-import { startOfMonth, endOfMonth, startOfYear, subMonths, eachDayOfInterval, format } from 'date-fns';
+import { signedFriendAmount } from '@/lib/friends';
+import { startOfMonth, endOfMonth, subMonths, eachDayOfInterval, format } from 'date-fns';
 
 export async function getDashboardData() {
   try {
@@ -14,11 +15,10 @@ export async function getDashboardData() {
       monthIncomeAgg,
       monthExpensesAgg,
       expensesByCategory,
-      goals,
       recentTransactions,
       accounts,
-      budgets,
       dailyTransactions,
+      friendsRaw,
     ] = await Promise.all([
       prisma.transaction.aggregate({
         where: { kind: 'INCOME', date: { gte: monthStart, lte: monthEnd } },
@@ -37,7 +37,6 @@ export async function getDashboardData() {
         },
         _sum: { amount: true },
       }),
-      prisma.goal.findMany({ include: { contributions: true } }),
       prisma.transaction.findMany({
         take: 10,
         orderBy: { date: 'desc' },
@@ -49,10 +48,6 @@ export async function getDashboardData() {
           transactionsTo: { select: { amount: true, date: true } },
         },
       }),
-      prisma.budget.findMany({
-        where: { month: monthStart },
-        include: { category: true },
-      }),
       prisma.transaction.findMany({
         where: {
           kind: 'EXPENSE',
@@ -60,6 +55,10 @@ export async function getDashboardData() {
         },
         select: { date: true, amount: true },
         orderBy: { date: 'asc' },
+      }),
+      prisma.friend.findMany({
+        include: { entries: true },
+        orderBy: { name: 'asc' },
       }),
     ]);
 
@@ -103,28 +102,29 @@ export async function getDashboardData() {
       });
     }
 
-    const creditCards = accounts
-      .filter((a) => a.type === 'CREDIT_CARD')
-      .map((a) => {
-        const currentBalance = computeAccountBalance(
-          a.startingBalance,
-          a.transactionsFrom,
-          a.transactionsTo
-        );
-        const balanceAtMonthStart = computeAccountBalance(
-          a.startingBalance,
-          a.transactionsFrom.filter((t) => new Date(t.date) < monthStart),
-          a.transactionsTo.filter((t) => new Date(t.date) < monthStart)
-        );
+    const mapLiability = (a: (typeof accounts)[number]) => {
+      const currentBalance = computeAccountBalance(
+        a.startingBalance,
+        a.transactionsFrom,
+        a.transactionsTo
+      );
+      const balanceAtMonthStart = computeAccountBalance(
+        a.startingBalance,
+        a.transactionsFrom.filter((t) => new Date(t.date) < monthStart),
+        a.transactionsTo.filter((t) => new Date(t.date) < monthStart)
+      );
 
-        return {
-          id: a.id,
-          name: a.name,
-          institution: a.institution,
-          currentBalance,
-          balanceAtMonthStart,
-        };
-      });
+      return {
+        id: a.id,
+        name: a.name,
+        institution: a.institution,
+        currentBalance,
+        balanceAtMonthStart,
+      };
+    };
+
+    const creditCards = accounts.filter((a) => a.type === 'CREDIT_CARD').map(mapLiability);
+    const loans = accounts.filter((a) => a.type === 'LOAN').map(mapLiability);
 
     const cashBalance = accounts
       .filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN')
@@ -134,11 +134,6 @@ export async function getDashboardData() {
         0
       );
 
-    const totalSavings = goals.reduce((sum, goal) => {
-      const contributions = goal.contributions.reduce((s, c) => s + c.amount, 0);
-      return sum + contributions;
-    }, 0);
-
     const totalBalance = accounts.reduce(
       (sum, account) =>
         sum +
@@ -146,21 +141,24 @@ export async function getDashboardData() {
       0
     );
 
-    // Build spending-per-category lookup for budget progress
-    const spendingByCategory = new Map<string, number>();
-    for (const e of expensesByCategory) {
-      if (e.categoryId) {
-        spendingByCategory.set(e.categoryId, e._sum.amount || 0);
-      }
-    }
+    const friends = friendsRaw
+      .map((f) => {
+        const balance = f.entries.reduce(
+          (sum, entry) => sum + signedFriendAmount(entry.type, entry.amount),
+          0
+        );
+        return {
+          id: f.id,
+          name: f.name,
+          color: f.color,
+          balance,
+          entryCount: f.entries.length,
+        };
+      })
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
 
-    const budgetProgress = budgets.map((b) => ({
-      id: b.id,
-      categoryName: b.category.name,
-      categoryColor: b.category.color,
-      budgeted: b.amount,
-      spent: spendingByCategory.get(b.categoryId) || 0,
-    }));
+    const friendsOwedToYou = friends.reduce((s, f) => s + Math.max(0, f.balance), 0);
+    const friendsYouOwe = friends.reduce((s, f) => s + Math.max(0, -f.balance), 0);
 
     // Daily spending trend for area chart
     const days = eachDayOfInterval({ start: monthStart, end: now > monthEnd ? monthEnd : now });
@@ -187,14 +185,16 @@ export async function getDashboardData() {
       data: {
         monthIncome: monthIncomeAgg._sum.amount || 0,
         monthExpenses: monthExpensesAgg._sum.amount || 0,
-        totalSavings,
         totalBalance,
         cashBalance,
         creditCards,
+        loans,
+        friends,
+        friendsOwedToYou,
+        friendsYouOwe,
         categoryData,
         monthlyTrend,
         recentTransactions,
-        budgetProgress,
         dailySpending,
       },
     };

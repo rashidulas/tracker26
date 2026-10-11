@@ -60,8 +60,10 @@ export interface Goal {
 export interface DashboardData {
   monthIncome: number;
   monthExpenses: number;
-  totalSavings: number;
   totalBalance: number;
+  cashBalance: number;
+  friendsOwedToYou: number;
+  friendsYouOwe: number;
   categoryData: Array<{ name: string; value: number; color: string }>;
   monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
 }

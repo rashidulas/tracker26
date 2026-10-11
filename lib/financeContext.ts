@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { computeAccountBalance } from '@/lib/accountBalance';
+import { signedFriendAmount } from '@/lib/friends';
 import {
   startOfDay,
   endOfDay,
@@ -23,6 +24,10 @@ export type FinanceContext = {
     totalBalance: number;
     cashBalance: number;
     creditCardDebt: number;
+    loanDebt: number;
+    friendsOwedToYou: number;
+    friendsYouOwe: number;
+    friendsNet: number;
     todayIncome: number;
     todayExpenses: number;
     weekExpenses: number;
@@ -39,16 +44,13 @@ export type FinanceContext = {
     account: string | null;
     merchant: string | null;
   }[];
-  goals: {
+  friends: {
     name: string;
-    target: number;
-    saved: number;
-    progressPct: number;
+    balance: number;
   }[];
-  budgets: {
-    category: string;
-    budgeted: number;
-    spent: number;
+  loans: {
+    name: string;
+    balance: number;
   }[];
 };
 
@@ -71,8 +73,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     monthExpenseAgg,
     expensesByCategory,
     recent,
-    goals,
-    budgets,
+    friendsRaw,
   ] = await Promise.all([
     prisma.account.findMany({
       include: {
@@ -121,10 +122,9 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       orderBy: { date: 'desc' },
       include: { category: true, account: true },
     }),
-    prisma.goal.findMany({ include: { contributions: true } }),
-    prisma.budget.findMany({
-      where: { month: monthStart },
-      include: { category: true },
+    prisma.friend.findMany({
+      include: { entries: true },
+      orderBy: { name: 'asc' },
     }),
   ]);
 
@@ -140,16 +140,32 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     .filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN')
     .reduce((s, a) => s + a.balance, 0);
   const creditCardDebt = accounts
-    .filter((a) => a.type === 'CREDIT_CARD' || a.type === 'LOAN')
+    .filter((a) => a.type === 'CREDIT_CARD')
     .reduce((s, a) => s + Math.abs(Math.min(a.balance, 0)), 0);
+  const loanDebt = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((s, a) => s + Math.abs(Math.min(a.balance, 0)), 0);
+
+  const loans = accounts
+    .filter((a) => a.type === 'LOAN')
+    .map((a) => ({ name: a.name, balance: a.balance }));
+
+  const friends = friendsRaw.map((f) => {
+    const balance = f.entries.reduce(
+      (sum, entry) => sum + signedFriendAmount(entry.type, entry.amount),
+      0
+    );
+    return { name: f.name, balance };
+  });
+
+  const friendsOwedToYou = friends.reduce((s, f) => s + Math.max(0, f.balance), 0);
+  const friendsYouOwe = friends.reduce((s, f) => s + Math.max(0, -f.balance), 0);
+  const friendsNet = friendsOwedToYou - friendsYouOwe;
 
   const monthIncome = monthIncomeAgg._sum.amount || 0;
   const monthExpenses = monthExpenseAgg._sum.amount || 0;
 
   const catMap = new Map(categories.map((c) => [c.id, c.name]));
-  const spendingByCategory = new Map(
-    expensesByCategory.map((e) => [e.categoryId!, e._sum.amount || 0])
-  );
 
   return {
     today,
@@ -164,6 +180,10 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       totalBalance,
       cashBalance,
       creditCardDebt,
+      loanDebt,
+      friendsOwedToYou,
+      friendsYouOwe,
+      friendsNet,
       todayIncome: todayIncomeAgg._sum.amount || 0,
       todayExpenses: todayExpenseAgg._sum.amount || 0,
       weekExpenses: weekExpenseAgg._sum.amount || 0,
@@ -183,20 +203,8 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       account: t.account?.name ?? null,
       merchant: t.merchantOrSource,
     })),
-    goals: goals.map((g) => {
-      const saved = g.contributions.reduce((s, c) => s + c.amount, 0);
-      return {
-        name: g.name,
-        target: g.targetAmount,
-        saved,
-        progressPct: g.targetAmount > 0 ? Math.round((saved / g.targetAmount) * 100) : 0,
-      };
-    }),
-    budgets: budgets.map((b) => ({
-      category: b.category.name,
-      budgeted: b.amount,
-      spent: spendingByCategory.get(b.categoryId) || 0,
-    })),
+    friends,
+    loans,
   };
 }
 

@@ -30,13 +30,13 @@ const desktopNavItems = [
 const mobileTabs = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/expenses', label: 'Expenses', icon: TrendingDown },
-  { href: '/income', label: 'Income', icon: TrendingUp },
+  { href: '/friends', label: 'Friends', icon: Users },
 ] as const;
 
 const moreItems = [
   { href: '/analytics', label: 'Analytics', icon: Sparkles, hint: 'AI daily money debrief' },
-  { href: '/accounts', label: 'Accounts', icon: Wallet, hint: 'Balances & cards' },
-  { href: '/friends', label: 'Friends', icon: Users, hint: 'Shared expenses & IOUs' },
+  { href: '/accounts', label: 'Accounts', icon: Wallet, hint: 'Balances, cards & loans' },
+  { href: '/income', label: 'Income', icon: TrendingUp, hint: 'Log and review income' },
   { href: '/categories', label: 'Categories', icon: FolderOpen, hint: 'Income & spend labels' },
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight, hint: 'Move between accounts' },
 ];
