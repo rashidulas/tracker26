@@ -71,6 +71,13 @@ export async function createAccount(formData: FormData) {
       return { success: false, error: error.errors[0].message };
     }
     console.error('Error creating account:', error);
+    const message = error instanceof Error ? error.message : 'Failed to create account';
+    if (message.includes('Expected AccountType')) {
+      return {
+        success: false,
+        error: 'Account type not recognized yet. Restart the app and try again.',
+      };
+    }
     return { success: false, error: 'Failed to create account' };
   }
 }
