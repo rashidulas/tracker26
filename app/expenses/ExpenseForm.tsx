@@ -12,6 +12,7 @@ import {
   createDebtPaymentTransfer,
   createPaymentTransfer,
 } from './actions';
+import { createCategory } from '@/app/categories/actions';
 import { useEffect, useState } from 'react';
 import { formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
 import {
@@ -20,6 +21,7 @@ import {
   Banknote,
   ChevronDown,
   ChevronUp,
+  Plus,
 } from 'lucide-react';
 
 const expenseSchema = z.object({
@@ -67,6 +69,21 @@ interface ExpenseFormProps {
 const DEBT_PAYMENT_SENTINEL = '__DEBT_PAYMENT__';
 const PAYMENT_SENTINEL = '__PAYMENT__';
 
+const QUICK_COLORS = [
+  '#3dcea6',
+  '#7aa2f7',
+  '#bb9af7',
+  '#f07178',
+  '#e8a05a',
+  '#e8c468',
+  '#7dcfff',
+  '#9aa1ad',
+];
+
+const QUICK_ICONS = ['📁', '🚗', '🛒', '🍽️', '🏠', '💡', '✈️', '💼', '🎬', '🏥', '🛍️', '💰'];
+
+type CategoryOption = ExpenseFormProps['categories'][number];
+
 export default function ExpenseForm({
   expense,
   categories,
@@ -79,6 +96,13 @@ export default function ExpenseForm({
 }: ExpenseFormProps) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localCategories, setLocalCategories] = useState<CategoryOption[]>(categories);
+  const [showNewCategory, setShowNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryIcon, setNewCategoryIcon] = useState('📁');
+  const [newCategoryColor, setNewCategoryColor] = useState('#3dcea6');
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [categoryCreateError, setCategoryCreateError] = useState('');
   const [showDetails, setShowDetails] = useState(
     Boolean(expense?.notes || expense?.tags?.length || expense?.merchantOrSource)
   );
@@ -114,8 +138,12 @@ export default function ExpenseForm({
   const isDebtPayment = selectedCategoryId === DEBT_PAYMENT_SENTINEL;
   const isPayment = selectedCategoryId === PAYMENT_SENTINEL;
 
-  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const selectedCategory = localCategories.find((c) => c.id === selectedCategoryId);
   const availableSubcategories = selectedCategory?.subcategories || [];
+
+  useEffect(() => {
+    setLocalCategories(categories);
+  }, [categories]);
 
   useEffect(() => {
     onSubmittingChange?.(isSubmitting);
@@ -127,14 +155,14 @@ export default function ExpenseForm({
       return;
     }
     const subs =
-      categories.find((c) => c.id === selectedCategoryId)?.subcategories || [];
+      localCategories.find((c) => c.id === selectedCategoryId)?.subcategories || [];
     if (selectedSubcategoryId && !subs.some((s) => s.id === selectedSubcategoryId)) {
       setValue('subcategoryId', '');
     }
   }, [
     selectedCategoryId,
     selectedSubcategoryId,
-    categories,
+    localCategories,
     isDebtPayment,
     isPayment,
     setValue,
@@ -145,9 +173,57 @@ export default function ExpenseForm({
   const toAccountOptions = accounts.filter((a) => a.id !== selectedFromAccountId);
   const fromAccountOptions = accounts.filter((a) => a.id !== selectedToAccountId);
 
-  const regularCategories = categories.filter(
+  const regularCategories = localCategories.filter(
     (c) => c.name !== 'Debt Payment' && c.name !== 'Payment'
   );
+
+  const resetNewCategory = () => {
+    setShowNewCategory(false);
+    setNewCategoryName('');
+    setNewCategoryIcon('📁');
+    setNewCategoryColor('#3dcea6');
+    setCategoryCreateError('');
+  };
+
+  const handleCreateCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      setCategoryCreateError('Name is required');
+      return;
+    }
+
+    setCreatingCategory(true);
+    setCategoryCreateError('');
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('type', 'EXPENSE');
+    formData.append('color', newCategoryColor);
+    formData.append('icon', newCategoryIcon);
+
+    const result = await createCategory(formData);
+    setCreatingCategory(false);
+
+    if (!result.success || !result.data) {
+      setCategoryCreateError(result.error || 'Failed to create category');
+      return;
+    }
+
+    const created = {
+      id: result.data.id,
+      name: result.data.name,
+      icon: result.data.icon,
+      color: result.data.color,
+      subcategories: result.data.subcategories || [],
+    };
+
+    setLocalCategories((prev) =>
+      [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+    );
+    setValue('categoryId', created.id, { shouldValidate: true });
+    setValue('subcategoryId', '');
+    resetNewCategory();
+  };
 
   const onSubmit = async (data: ExpenseFormData) => {
     setIsSubmitting(true);
@@ -318,7 +394,102 @@ export default function ExpenseForm({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              setShowNewCategory((v) => !v);
+              setCategoryCreateError('');
+            }}
+            className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-dashed transition-all duration-200 ${
+              showNewCategory
+                ? 'bg-mint-dim border-mint/40 text-mint'
+                : 'bg-transparent border-graphite-border text-ink-muted hover:border-mint/40 hover:text-mint'
+            }`}
+            aria-label="Create category"
+            title="Create category"
+          >
+            <Plus size={16} />
+            <span className="sm:inline">New</span>
+          </button>
         </div>
+
+        {showNewCategory && (
+          <div className="mt-3 rounded-2xl border border-graphite-border-subtle bg-graphite-surface-2/50 p-3.5 space-y-3">
+            <Input
+              label="Category name"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              placeholder="e.g. Pets"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleCreateCategory();
+                }
+              }}
+            />
+            <div>
+              <p className="text-xs font-medium text-ink-secondary mb-2">Icon</p>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_ICONS.map((icon) => (
+                  <button
+                    key={icon}
+                    type="button"
+                    onClick={() => setNewCategoryIcon(icon)}
+                    className={`w-9 h-9 rounded-lg text-base border transition-all ${
+                      newCategoryIcon === icon
+                        ? 'border-mint/50 bg-mint-dim'
+                        : 'border-graphite-border-subtle hover:border-graphite-border'
+                    }`}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-ink-secondary mb-2">Color</p>
+              <div className="flex flex-wrap gap-2">
+                {QUICK_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => setNewCategoryColor(color)}
+                    className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                      newCategoryColor === color
+                        ? 'border-ink scale-110'
+                        : 'border-transparent hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: color }}
+                    aria-label={`Color ${color}`}
+                  />
+                ))}
+              </div>
+            </div>
+            {categoryCreateError && (
+              <p className="text-sm text-danger">{categoryCreateError}</p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={() => void handleCreateCategory()}
+                disabled={creatingCategory}
+                className="flex-1"
+              >
+                {creatingCategory ? 'Creating…' : 'Create & select'}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={resetNewCategory}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         {errors.categoryId?.message && (
           <p className="mt-1.5 text-sm text-danger">{errors.categoryId.message}</p>
         )}

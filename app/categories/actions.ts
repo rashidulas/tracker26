@@ -64,7 +64,7 @@ export async function createCategory(formData: FormData) {
 
     const validated = categorySchema.parse(data);
 
-    await prisma.category.create({
+    const category = await prisma.category.create({
       data: {
         name: validated.name,
         type: validated.type,
@@ -76,12 +76,17 @@ export async function createCategory(formData: FormData) {
             }
           : undefined,
       },
+      include: {
+        subcategories: {
+          orderBy: { name: 'asc' },
+        },
+      },
     });
 
     revalidatePath('/categories');
     revalidatePath('/expenses');
     revalidatePath('/income');
-    return { success: true };
+    return { success: true, data: category };
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
