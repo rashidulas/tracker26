@@ -150,3 +150,41 @@ model Budget {
   @@unique([month, categoryId])
   @@index([month])
 }
+
+// Friends / shared IOUs
+// Balance from your perspective: positive = they owe you, negative = you owe them
+enum FriendEntryType {
+  THEY_OWE_ME
+  I_OWE_THEM
+  THEY_PAID_ME
+  I_PAID_THEM
+}
+
+model Friend {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  notes     String?
+  color     String   @default("#7aa2f7")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries FriendEntry[]
+}
+
+model FriendEntry {
+  id          String          @id @default(auto()) @map("_id") @db.ObjectId
+  friendId    String          @db.ObjectId
+  date        DateTime
+  amount      Float
+  type        FriendEntryType
+  description String?
+  notes       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  friend Friend @relation(fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@index([friendId])
+  @@index([date])
+  @@index([friendId, date])
+}

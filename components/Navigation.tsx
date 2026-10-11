@@ -16,6 +16,7 @@ import {
   BarChart2,
   Grid2x2,
   Sparkles,
+  Users,
   X,
 } from 'lucide-react';
 
@@ -24,6 +25,7 @@ const desktopNavItems = [
   { href: '/analytics', label: 'Analytics', icon: Sparkles },
   { href: '/categories', label: 'Categories', icon: FolderOpen },
   { href: '/accounts', label: 'Accounts', icon: Wallet },
+  { href: '/friends', label: 'Friends', icon: Users },
   { href: '/expenses', label: 'Expenses', icon: TrendingDown },
   { href: '/income', label: 'Income', icon: TrendingUp },
   { href: '/expenses-dashboard', label: 'Expense Dashboard', icon: BarChart3 },
@@ -42,6 +44,7 @@ const mobileTabs = [
 const moreItems = [
   { href: '/analytics', label: 'Analytics', icon: Sparkles, hint: 'AI daily money debrief' },
   { href: '/accounts', label: 'Accounts', icon: Wallet, hint: 'Balances & cards' },
+  { href: '/friends', label: 'Friends', icon: Users, hint: 'Shared expenses & IOUs' },
   { href: '/categories', label: 'Categories', icon: FolderOpen, hint: 'Income & spend labels' },
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight, hint: 'Move between accounts' },
   { href: '/goals', label: 'Goals', icon: Target, hint: 'Savings targets' },

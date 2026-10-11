@@ -65,3 +65,30 @@ export interface DashboardData {
   categoryData: Array<{ name: string; value: number; color: string }>;
   monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
 }
+
+export type FriendEntryType =
+  | 'THEY_OWE_ME'
+  | 'I_OWE_THEM'
+  | 'THEY_PAID_ME'
+  | 'I_PAID_THEM';
+
+export interface Friend {
+  id: string;
+  name: string;
+  notes?: string | null;
+  color: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FriendEntry {
+  id: string;
+  friendId: string;
+  date: Date;
+  amount: number;
+  type: FriendEntryType;
+  description?: string | null;
+  notes?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
