@@ -4,12 +4,21 @@ export type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 export type CategoryType = 'INCOME' | 'EXPENSE';
 export type AccountType = 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT';
 
+export interface Subcategory {
+  id: string;
+  name: string;
+  categoryId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Category {
   id: string;
   name: string;
   type: CategoryType;
   color?: string | null;
   icon?: string | null;
+  subcategories?: Subcategory[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +39,7 @@ export interface Transaction {
   amount: number;
   kind: TransactionKind;
   categoryId?: string | null;
+  subcategoryId?: string | null;
   accountId: string;
   merchantOrSource?: string | null;
   notes?: string | null;

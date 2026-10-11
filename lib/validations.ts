@@ -6,9 +6,17 @@ export const categorySchema = z.object({
   type: z.enum(['INCOME', 'EXPENSE']),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   icon: z.string().max(10).optional(),
+  subcategories: z.array(z.string().min(1).max(50)).optional(),
 });
 
 export type CategoryInput = z.infer<typeof categorySchema>;
+
+export const subcategorySchema = z.object({
+  name: z.string().min(1, 'Name is required').max(50, 'Name too long'),
+  categoryId: z.string().min(1, 'Category is required'),
+});
+
+export type SubcategoryInput = z.infer<typeof subcategorySchema>;
 
 // ==================== ACCOUNT SCHEMAS ====================
 export const accountSchema = z.object({
@@ -31,6 +39,7 @@ export const baseTransactionSchema = z.object({
 export const incomeSchema = baseTransactionSchema.extend({
   kind: z.literal('INCOME'),
   categoryId: z.string().min(1, 'Category is required'),
+  subcategoryId: z.string().optional(),
   accountId: z.string().min(1, 'Account is required'),
   merchantOrSource: z.string().max(100).optional(),
 });
@@ -38,6 +47,7 @@ export const incomeSchema = baseTransactionSchema.extend({
 export const expenseSchema = baseTransactionSchema.extend({
   kind: z.literal('EXPENSE'),
   categoryId: z.string().min(1, 'Category is required'),
+  subcategoryId: z.string().optional(),
   accountId: z.string().optional(),
   merchantOrSource: z.string().max(100).optional(),
   splitItems: z.array(z.object({
@@ -105,6 +115,7 @@ export const transactionFilterSchema = z.object({
   startDate: z.date().optional(),
   endDate: z.date().optional(),
   categoryId: z.string().optional(),
+  subcategoryId: z.string().optional(),
   accountId: z.string().optional(),
   kind: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
   minAmount: z.number().nonnegative().optional(),
