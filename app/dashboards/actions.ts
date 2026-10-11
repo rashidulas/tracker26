@@ -10,6 +10,7 @@ export type ExpenseFilter = {
   minAmount?: number;
   maxAmount?: number;
   categoryIds?: string[];
+  subcategoryIds?: string[];
   accountIds?: string[];
   search?: string;
 };
@@ -20,6 +21,7 @@ export type IncomeFilter = {
   minAmount?: number;
   maxAmount?: number;
   sourceIds?: string[]; // category IDs for income sources
+  subcategoryIds?: string[];
   accountIds?: string[];
   search?: string;
 };
@@ -50,6 +52,11 @@ export async function getFilteredExpenses(filter: ExpenseFilter) {
       where.categoryId = { in: filter.categoryIds };
     }
 
+    // Subcategory filter (multi-select)
+    if (filter.subcategoryIds && filter.subcategoryIds.length > 0) {
+      where.subcategoryId = { in: filter.subcategoryIds };
+    }
+
     // Account filter
     if (filter.accountIds && filter.accountIds.length > 0) {
       where.accountId = { in: filter.accountIds };
@@ -67,6 +74,7 @@ export async function getFilteredExpenses(filter: ExpenseFilter) {
       where,
       include: {
         category: { select: { id: true, name: true, color: true } },
+        subcategory: { select: { id: true, name: true } },
         account: { select: { id: true, name: true } },
       },
       orderBy: { date: 'desc' },
@@ -189,6 +197,10 @@ export async function getFilteredIncome(filter: IncomeFilter) {
     // Source filter (categoryIds)
     if (filter.sourceIds && filter.sourceIds.length > 0) {
       where.categoryId = { in: filter.sourceIds };
+    }
+
+    if (filter.subcategoryIds && filter.subcategoryIds.length > 0) {
+      where.subcategoryId = { in: filter.subcategoryIds };
     }
 
     // Account filter

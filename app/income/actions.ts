@@ -8,16 +8,36 @@ const incomeSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.number().positive('Amount must be positive'),
   categoryId: z.string().min(1, 'Category is required'),
+  subcategoryId: z.string().optional(),
   accountId: z.string().min(1, 'Account is required'),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
 
+async function resolveSubcategoryId(
+  categoryId: string,
+  subcategoryId?: string
+): Promise<{ ok: true; subcategoryId: string | null } | { ok: false; error: string }> {
+  if (!subcategoryId) return { ok: true, subcategoryId: null };
+
+  const sub = await prisma.subcategory.findFirst({
+    where: { id: subcategoryId, categoryId },
+    select: { id: true },
+  });
+
+  if (!sub) {
+    return { ok: false, error: 'Subcategory does not belong to the selected category' };
+  }
+
+  return { ok: true, subcategoryId: sub.id };
+}
+
 export async function getIncome(filters?: {
   startDate?: string;
   endDate?: string;
   categoryId?: string;
+  subcategoryId?: string;
   search?: string;
 }) {
   try {
@@ -33,6 +53,10 @@ export async function getIncome(filters?: {
       where.categoryId = filters.categoryId;
     }
 
+    if (filters?.subcategoryId) {
+      where.subcategoryId = filters.subcategoryId;
+    }
+
     if (filters?.search) {
       where.OR = [
         { merchantOrSource: { contains: filters.search, mode: 'insensitive' } },
@@ -44,6 +68,7 @@ export async function getIncome(filters?: {
       where,
       include: {
         category: true,
+        subcategory: true,
         account: true,
       },
       orderBy: { date: 'desc' },
@@ -59,10 +84,12 @@ export async function getIncome(filters?: {
 export async function createIncome(formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
+    const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
     const data = {
       date: formData.get('date') as string,
       amount: parseFloat(formData.get('amount') as string),
       categoryId: formData.get('categoryId') as string,
+      subcategoryId: rawSubcategoryId || undefined,
       accountId: formData.get('accountId') as string,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
@@ -70,12 +97,23 @@ export async function createIncome(formData: FormData) {
     };
 
     const validated = incomeSchema.parse(data);
+    const subResult = await resolveSubcategoryId(
+      validated.categoryId,
+      validated.subcategoryId
+    );
+    if (!subResult.ok) return { success: false, error: subResult.error };
 
     await prisma.transaction.create({
       data: {
-        ...validated,
         date: new Date(validated.date),
+        amount: validated.amount,
         kind: 'INCOME',
+        categoryId: validated.categoryId,
+        subcategoryId: subResult.subcategoryId,
+        accountId: validated.accountId,
+        merchantOrSource: validated.merchantOrSource,
+        notes: validated.notes,
+        tags: validated.tags || [],
       },
     });
 
@@ -93,10 +131,12 @@ export async function createIncome(formData: FormData) {
 export async function updateIncome(id: string, formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
+    const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
     const data = {
       date: formData.get('date') as string,
       amount: parseFloat(formData.get('amount') as string),
       categoryId: formData.get('categoryId') as string,
+      subcategoryId: rawSubcategoryId || undefined,
       accountId: formData.get('accountId') as string,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
@@ -104,13 +144,24 @@ export async function updateIncome(id: string, formData: FormData) {
     };
 
     const validated = incomeSchema.parse(data);
+    const subResult = await resolveSubcategoryId(
+      validated.categoryId,
+      validated.subcategoryId
+    );
+    if (!subResult.ok) return { success: false, error: subResult.error };
 
     await prisma.transaction.update({
       where: { id },
       data: {
-        ...validated,
         date: new Date(validated.date),
+        amount: validated.amount,
         kind: 'INCOME',
+        categoryId: validated.categoryId,
+        subcategoryId: subResult.subcategoryId,
+        accountId: validated.accountId,
+        merchantOrSource: validated.merchantOrSource,
+        notes: validated.notes,
+        tags: validated.tags || [],
       },
     });
 
@@ -144,6 +195,12 @@ export async function getCategoriesForSelect() {
     const categories = await prisma.category.findMany({
       where: {
         type: 'INCOME',
+      },
+      include: {
+        subcategories: {
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true },
+        },
       },
       orderBy: { name: 'asc' },
     });

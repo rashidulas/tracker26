@@ -10,7 +10,7 @@ import PageHeader from '@/components/PageHeader';
 import { Plus, Edit2, Trash2, Filter, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatDate, formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
@@ -18,6 +18,7 @@ const incomeSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.string().min(1, 'Amount is required'),
   categoryId: z.string().min(1, 'Category is required'),
+  subcategoryId: z.string().optional(),
   accountId: z.string().min(1, 'Account is required'),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
@@ -31,17 +32,20 @@ interface Income {
   date: Date;
   amount: number;
   categoryId: string | null;
+  subcategoryId?: string | null;
   accountId: string | null;
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
   category: { id: string; name: string; icon: string | null } | null;
+  subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
 }
 
 interface Category {
   id: string;
   name: string;
+  subcategories?: Array<{ id: string; name: string }>;
 }
 
 interface Account {
@@ -68,6 +72,8 @@ function IncomeForm({
   const {
     register,
     handleSubmit,
+    control,
+    setValue,
     formState: { errors },
   } = useForm<IncomeFormData>({
     resolver: zodResolver(incomeSchema),
@@ -77,12 +83,26 @@ function IncomeForm({
         : getLocalTodayForInput(),
       amount: income?.amount.toString() || '',
       categoryId: income?.categoryId || '',
+      subcategoryId: income?.subcategoryId || '',
       accountId: income?.accountId || '',
       merchantOrSource: income?.merchantOrSource || '',
       notes: income?.notes || '',
       tags: income?.tags?.join(', ') || '',
     },
   });
+
+  const selectedCategoryId = useWatch({ control, name: 'categoryId' });
+  const selectedSubcategoryId = useWatch({ control, name: 'subcategoryId' });
+  const availableSubcategories =
+    categories.find((c) => c.id === selectedCategoryId)?.subcategories || [];
+
+  useEffect(() => {
+    const subs =
+      categories.find((c) => c.id === selectedCategoryId)?.subcategories || [];
+    if (selectedSubcategoryId && !subs.some((s) => s.id === selectedSubcategoryId)) {
+      setValue('subcategoryId', '');
+    }
+  }, [selectedCategoryId, selectedSubcategoryId, categories, setValue]);
 
   const onSubmit = async (data: IncomeFormData) => {
     setIsSubmitting(true);
@@ -92,6 +112,7 @@ function IncomeForm({
     formData.append('date', data.date);
     formData.append('amount', data.amount);
     formData.append('categoryId', data.categoryId);
+    formData.append('subcategoryId', data.subcategoryId || '');
     formData.append('accountId', data.accountId);
     formData.append('merchantOrSource', data.merchantOrSource || '');
     formData.append('notes', data.notes || '');
@@ -144,6 +165,18 @@ function IncomeForm({
           ...categories.map((c) => ({ value: c.id, label: c.name })),
         ]}
       />
+
+      {availableSubcategories.length > 0 && (
+        <Select
+          label="Subcategory (Optional)"
+          {...register('subcategoryId')}
+          error={errors.subcategoryId?.message}
+          options={[
+            { value: '', label: 'None' },
+            ...availableSubcategories.map((s) => ({ value: s.id, label: s.name })),
+          ]}
+        />
+      )}
 
       <Select
         label="Account"
@@ -203,8 +236,12 @@ export default function IncomePage() {
     startDate: '',
     endDate: '',
     categoryId: '',
+    subcategoryId: '',
     search: '',
   });
+
+  const filterSubcategories =
+    categories.find((c) => c.id === filters.categoryId)?.subcategories || [];
 
   useEffect(() => {
     loadData();
@@ -217,6 +254,7 @@ export default function IncomePage() {
         ...(filters.startDate && { startDate: filters.startDate }),
         ...(filters.endDate && { endDate: filters.endDate }),
         ...(filters.categoryId && { categoryId: filters.categoryId }),
+        ...(filters.subcategoryId && { subcategoryId: filters.subcategoryId }),
         ...(filters.search && { search: filters.search }),
       };
 
@@ -314,7 +352,7 @@ export default function IncomePage() {
               <X size={20} />
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <Input
               label="Start Date"
               type="date"
@@ -330,10 +368,28 @@ export default function IncomePage() {
             <Select
               label="Category"
               value={filters.categoryId}
-              onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
+              onChange={(e) =>
+                setFilters({
+                  ...filters,
+                  categoryId: e.target.value,
+                  subcategoryId: '',
+                })
+              }
               options={[
                 { value: '', label: 'All Categories' },
                 ...categories.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
+            <Select
+              label="Subcategory"
+              value={filters.subcategoryId}
+              onChange={(e) => setFilters({ ...filters, subcategoryId: e.target.value })}
+              options={[
+                {
+                  value: '',
+                  label: filters.categoryId ? 'All Subcategories' : 'Select category first',
+                },
+                ...filterSubcategories.map((s) => ({ value: s.id, label: s.name })),
               ]}
             />
             <Input
@@ -347,7 +403,15 @@ export default function IncomePage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setFilters({ startDate: '', endDate: '', categoryId: '', search: '' })}
+              onClick={() =>
+                setFilters({
+                  startDate: '',
+                  endDate: '',
+                  categoryId: '',
+                  subcategoryId: '',
+                  search: '',
+                })
+              }
             >
               Clear Filters
             </Button>
@@ -385,7 +449,14 @@ export default function IncomePage() {
                   <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     {item.category?.icon && <span>{item.category.icon}</span>}
-                    <span className="text-sm text-ink">{item.category?.name || 'Uncategorized'}</span>
+                    <div>
+                      <span className="text-sm text-ink">
+                        {item.category?.name || 'Uncategorized'}
+                      </span>
+                      {item.subcategory?.name && (
+                        <p className="text-xs text-ink-muted">{item.subcategory.name}</p>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-ink-secondary hidden sm:table-cell">

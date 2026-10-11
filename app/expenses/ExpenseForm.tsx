@@ -7,7 +7,7 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Button from '@/components/Button';
 import { createExpense, updateExpense, createDebtPaymentTransfer, createPaymentTransfer } from './actions';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
 import { CreditCard, ArrowRight, Banknote } from 'lucide-react';
 
@@ -15,6 +15,7 @@ const expenseSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.string().optional(),
   categoryId: z.string().min(1, 'Category is required'),
+  subcategoryId: z.string().optional(),
   accountId: z.string().optional(),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
@@ -32,12 +33,17 @@ interface ExpenseFormProps {
     date: Date;
     amount: number;
     categoryId: string | null;
+    subcategoryId?: string | null;
     accountId: string | null;
     merchantOrSource?: string | null;
     notes?: string | null;
     tags: string[];
   };
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{
+    id: string;
+    name: string;
+    subcategories?: Array<{ id: string; name: string }>;
+  }>;
   accounts: Array<{ id: string; name: string; type?: string }>;
   onSuccess: () => void;
   onCancel: () => void;
@@ -57,6 +63,7 @@ export default function ExpenseForm({
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
@@ -64,6 +71,7 @@ export default function ExpenseForm({
       date: expense?.date ? formatDateForInput(expense.date) : getLocalTodayForInput(),
       amount: expense?.amount.toString() || '',
       categoryId: expense?.categoryId || '',
+      subcategoryId: expense?.subcategoryId || '',
       accountId: expense?.accountId || '',
       merchantOrSource: expense?.merchantOrSource || '',
       notes: expense?.notes || '',
@@ -82,6 +90,29 @@ export default function ExpenseForm({
   const PAYMENT_SENTINEL = '__PAYMENT__';
   const isDebtPayment = selectedCategoryId === DEBT_PAYMENT_SENTINEL;
   const isPayment = selectedCategoryId === PAYMENT_SENTINEL;
+
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const availableSubcategories = selectedCategory?.subcategories || [];
+  const selectedSubcategoryId = useWatch({ control, name: 'subcategoryId' });
+
+  useEffect(() => {
+    if (isDebtPayment || isPayment) {
+      setValue('subcategoryId', '');
+      return;
+    }
+    const subs =
+      categories.find((c) => c.id === selectedCategoryId)?.subcategories || [];
+    if (selectedSubcategoryId && !subs.some((s) => s.id === selectedSubcategoryId)) {
+      setValue('subcategoryId', '');
+    }
+  }, [
+    selectedCategoryId,
+    selectedSubcategoryId,
+    categories,
+    isDebtPayment,
+    isPayment,
+    setValue,
+  ]);
 
   const fromAccount = accounts.find((a) => a.id === selectedFromAccountId);
   const toAccount = accounts.find((a) => a.id === selectedToAccountId);
@@ -155,6 +186,7 @@ export default function ExpenseForm({
         formData.append('date', data.date);
         formData.append('amount', data.amount);
         formData.append('categoryId', data.categoryId);
+        formData.append('subcategoryId', data.subcategoryId || '');
         formData.append('accountId', data.accountId || '');
         formData.append('merchantOrSource', data.merchantOrSource || '');
         formData.append('notes', data.notes || '');
@@ -210,6 +242,18 @@ export default function ExpenseForm({
             .map((c) => ({ value: c.id, label: c.name })),
         ]}
       />
+
+      {!isDebtPayment && !isPayment && availableSubcategories.length > 0 && (
+        <Select
+          label="Subcategory (Optional)"
+          {...register('subcategoryId')}
+          error={errors.subcategoryId?.message}
+          options={[
+            { value: '', label: 'None' },
+            ...availableSubcategories.map((s) => ({ value: s.id, label: s.name })),
+          ]}
+        />
+      )}
 
       {/* ── PAYMENT MODE ─────────────────────────────────── */}
       {isPayment && (

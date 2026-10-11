@@ -20,18 +20,24 @@ interface Expense {
   amount: number;
   kind: string;
   categoryId: string | null;
+  subcategoryId?: string | null;
   accountId: string | null;
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
   category: { id: string; name: string; icon: string | null } | null;
+  subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
   toAccount: { id: string; name: string } | null;
 }
 
 interface ExpensesClientProps {
   initialExpenses: Expense[];
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{
+    id: string;
+    name: string;
+    subcategories?: Array<{ id: string; name: string }>;
+  }>;
   accounts: Array<{ id: string; name: string }>;
 }
 
@@ -57,8 +63,12 @@ export default function ExpensesClient({
     startDate: '',
     endDate: '',
     categoryId: '',
+    subcategoryId: '',
     search: '',
   });
+
+  const filterSubcategories =
+    categories.find((c) => c.id === filters.categoryId)?.subcategories || [];
 
   const getMonthOptions = () => {
     const monthsMap = new Map<string, string>();
@@ -135,6 +145,7 @@ export default function ExpensesClient({
     if (filters.startDate && new Date(expense.date) < new Date(filters.startDate)) return false;
     if (filters.endDate && new Date(expense.date) > new Date(filters.endDate)) return false;
     if (filters.categoryId && expense.categoryId !== filters.categoryId) return false;
+    if (filters.subcategoryId && expense.subcategoryId !== filters.subcategoryId) return false;
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       const matchesMerchant = expense.merchantOrSource?.toLowerCase().includes(searchLower);
@@ -186,7 +197,7 @@ export default function ExpensesClient({
               <X size={20} />
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <Input
               label="Start Date"
               type="date"
@@ -202,10 +213,25 @@ export default function ExpensesClient({
             <Select
               label="Category"
               value={filters.categoryId}
-              onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
+              onChange={(e) =>
+                setFilters({
+                  ...filters,
+                  categoryId: e.target.value,
+                  subcategoryId: '',
+                })
+              }
               options={[
                 { value: '', label: 'All Categories' },
                 ...categories.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
+            <Select
+              label="Subcategory"
+              value={filters.subcategoryId}
+              onChange={(e) => setFilters({ ...filters, subcategoryId: e.target.value })}
+              options={[
+                { value: '', label: filters.categoryId ? 'All Subcategories' : 'Select category first' },
+                ...filterSubcategories.map((s) => ({ value: s.id, label: s.name })),
               ]}
             />
             <Input
@@ -219,7 +245,15 @@ export default function ExpensesClient({
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setFilters({ startDate: '', endDate: '', categoryId: '', search: '' })}
+              onClick={() =>
+                setFilters({
+                  startDate: '',
+                  endDate: '',
+                  categoryId: '',
+                  subcategoryId: '',
+                  search: '',
+                })
+              }
             >
               Clear Filters
             </Button>
@@ -258,7 +292,14 @@ export default function ExpensesClient({
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     {expense.category?.icon && <span>{expense.category.icon}</span>}
-                    <span className="text-sm text-ink">{expense.category?.name || 'Uncategorized'}</span>
+                    <div>
+                      <span className="text-sm text-ink">
+                        {expense.category?.name || 'Uncategorized'}
+                      </span>
+                      {expense.subcategory?.name && (
+                        <p className="text-xs text-ink-muted">{expense.subcategory.name}</p>
+                      )}
+                    </div>
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-ink-secondary">

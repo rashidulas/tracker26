@@ -8,16 +8,36 @@ const transactionSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.number().positive('Amount must be positive'),
   categoryId: z.string().min(1, 'Category is required'),
+  subcategoryId: z.string().optional(),
   accountId: z.string().optional(),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
 
+async function resolveSubcategoryId(
+  categoryId: string,
+  subcategoryId?: string
+): Promise<{ ok: true; subcategoryId: string | null } | { ok: false; error: string }> {
+  if (!subcategoryId) return { ok: true, subcategoryId: null };
+
+  const sub = await prisma.subcategory.findFirst({
+    where: { id: subcategoryId, categoryId },
+    select: { id: true },
+  });
+
+  if (!sub) {
+    return { ok: false, error: 'Subcategory does not belong to the selected category' };
+  }
+
+  return { ok: true, subcategoryId: sub.id };
+}
+
 export async function getExpenses(filters?: {
   startDate?: string;
   endDate?: string;
   categoryId?: string;
+  subcategoryId?: string;
   minAmount?: number;
   maxAmount?: number;
   search?: string;
@@ -38,6 +58,10 @@ export async function getExpenses(filters?: {
 
     if (filters?.categoryId) {
       baseWhere.categoryId = filters.categoryId;
+    }
+
+    if (filters?.subcategoryId) {
+      baseWhere.subcategoryId = filters.subcategoryId;
     }
 
     if (filters?.minAmount !== undefined || filters?.maxAmount !== undefined) {
@@ -61,6 +85,7 @@ export async function getExpenses(filters?: {
       where: baseWhere,
       include: {
         category: true,
+        subcategory: true,
         account: true,
         toAccount: true,
       },
@@ -79,10 +104,12 @@ export async function createExpense(formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
     const rawAccountId = formData.get('accountId') as string;
+    const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
     const data = {
       date: formData.get('date') as string,
       amount: parseFloat(formData.get('amount') as string),
       categoryId: formData.get('categoryId') as string,
+      subcategoryId: rawSubcategoryId || undefined,
       accountId: rawAccountId || undefined,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
@@ -90,6 +117,11 @@ export async function createExpense(formData: FormData) {
     };
 
     const validated = transactionSchema.parse(data);
+    const subResult = await resolveSubcategoryId(
+      validated.categoryId,
+      validated.subcategoryId
+    );
+    if (!subResult.ok) return { success: false, error: subResult.error };
 
     await prisma.transaction.create({
       data: {
@@ -97,6 +129,7 @@ export async function createExpense(formData: FormData) {
         amount: validated.amount,
         kind: 'EXPENSE',
         categoryId: validated.categoryId,
+        subcategoryId: subResult.subcategoryId,
         accountId: validated.accountId || null,
         merchantOrSource: validated.merchantOrSource,
         notes: validated.notes,
@@ -119,10 +152,12 @@ export async function updateExpense(id: string, formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
     const rawAccountId = formData.get('accountId') as string;
+    const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
     const data = {
       date: formData.get('date') as string,
       amount: parseFloat(formData.get('amount') as string),
       categoryId: formData.get('categoryId') as string,
+      subcategoryId: rawSubcategoryId || undefined,
       accountId: rawAccountId || undefined,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
@@ -130,6 +165,11 @@ export async function updateExpense(id: string, formData: FormData) {
     };
 
     const validated = transactionSchema.parse(data);
+    const subResult = await resolveSubcategoryId(
+      validated.categoryId,
+      validated.subcategoryId
+    );
+    if (!subResult.ok) return { success: false, error: subResult.error };
 
     await prisma.transaction.update({
       where: { id },
@@ -138,6 +178,7 @@ export async function updateExpense(id: string, formData: FormData) {
         amount: validated.amount,
         kind: 'EXPENSE',
         categoryId: validated.categoryId,
+        subcategoryId: subResult.subcategoryId,
         accountId: validated.accountId || null,
         merchantOrSource: validated.merchantOrSource,
         notes: validated.notes,
@@ -175,6 +216,12 @@ export async function getCategoriesForSelect() {
     const categories = await prisma.category.findMany({
       where: {
         type: 'EXPENSE',
+      },
+      include: {
+        subcategories: {
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true },
+        },
       },
       orderBy: { name: 'asc' },
     });
