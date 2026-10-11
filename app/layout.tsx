@@ -22,7 +22,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Tracker26 — Personal Finance",
-  description: "Manage your finances, budgets, and goals",
+  description: "Manage your personal finances",
 };
 
 export const viewport: Viewport = {

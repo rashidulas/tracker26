@@ -9,11 +9,7 @@ import {
   TrendingDown,
   TrendingUp,
   Wallet,
-  Target,
-  PieChart,
-  BarChart3,
   ArrowLeftRight,
-  BarChart2,
   Grid2x2,
   Sparkles,
   Users,
@@ -28,11 +24,7 @@ const desktopNavItems = [
   { href: '/friends', label: 'Friends', icon: Users },
   { href: '/expenses', label: 'Expenses', icon: TrendingDown },
   { href: '/income', label: 'Income', icon: TrendingUp },
-  { href: '/expenses-dashboard', label: 'Expense Dashboard', icon: BarChart3 },
-  { href: '/income-dashboard', label: 'Income Dashboard', icon: BarChart2 },
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
-  { href: '/goals', label: 'Goals', icon: Target },
-  { href: '/budgets', label: 'Budgets', icon: PieChart },
 ];
 
 const mobileTabs = [
@@ -47,10 +39,6 @@ const moreItems = [
   { href: '/friends', label: 'Friends', icon: Users, hint: 'Shared expenses & IOUs' },
   { href: '/categories', label: 'Categories', icon: FolderOpen, hint: 'Income & spend labels' },
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight, hint: 'Move between accounts' },
-  { href: '/goals', label: 'Goals', icon: Target, hint: 'Savings targets' },
-  { href: '/budgets', label: 'Budgets', icon: PieChart, hint: 'Monthly limits' },
-  { href: '/expenses-dashboard', label: 'Expense analytics', icon: BarChart3, hint: 'Charts & filters' },
-  { href: '/income-dashboard', label: 'Income analytics', icon: BarChart2, hint: 'Charts & filters' },
 ];
 
 function isActivePath(pathname: string, href: string) {

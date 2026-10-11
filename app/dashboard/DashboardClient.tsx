@@ -28,6 +28,7 @@ import {
   Line,
 } from 'recharts';
 import { formatDate } from '@/lib/utils';
+import DashboardViewSwitcher from '@/components/DashboardViewSwitcher';
 
 interface BudgetItem {
   id: string;
@@ -208,9 +209,13 @@ export default function DashboardClient({ data }: DashboardClientProps) {
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
+        className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4"
       >
-        <h1 className="page-title">Dashboard</h1>
-        <p className="page-subtitle">Your financial overview at a glance</p>
+        <div>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">Your financial overview at a glance</p>
+        </div>
+        <DashboardViewSwitcher />
       </motion.div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">

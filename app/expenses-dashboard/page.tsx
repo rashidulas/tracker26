@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { TrendingDown, DollarSign, Calendar, BarChart3 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import SummaryCard from '@/components/SummaryCard';
+import DashboardViewSwitcher from '@/components/DashboardViewSwitcher';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ToastProvider';
 import {
@@ -218,6 +219,7 @@ export default function ExpenseDashboardPage() {
       <PageHeader
         title="Expense Dashboard"
         subtitle="Analyze your spending patterns with powerful filters"
+        actions={<DashboardViewSwitcher />}
       />
 
       {/* Filters */}

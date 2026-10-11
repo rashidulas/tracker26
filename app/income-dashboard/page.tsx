@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { TrendingUp, DollarSign, Calendar, BarChart3 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import SummaryCard from '@/components/SummaryCard';
+import DashboardViewSwitcher from '@/components/DashboardViewSwitcher';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { useToast } from '@/components/ToastProvider';
 import {
@@ -208,6 +209,7 @@ export default function IncomeDashboardPage() {
       <PageHeader
         title="Income Dashboard"
         subtitle="Track and analyze your income sources and patterns"
+        actions={<DashboardViewSwitcher />}
       />
 
       {/* Filters */}
