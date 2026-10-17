@@ -99,6 +99,84 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
 
   const totalBalance = accounts.reduce((sum, account) => sum + account.currentBalance, 0);
 
+  const accountSections: Array<{
+    key: Account['type'];
+    label: string;
+    types: Account['type'][];
+  }> = [
+    { key: 'CREDIT_CARD', label: 'Credit Cards', types: ['CREDIT_CARD'] },
+    { key: 'CHECKING', label: 'Checking', types: ['CHECKING'] },
+    { key: 'CASH', label: 'Cash', types: ['CASH'] },
+    { key: 'SAVINGS', label: 'Savings', types: ['SAVINGS'] },
+    { key: 'LOAN', label: 'Loans', types: ['LOAN'] },
+    { key: 'INVESTMENT', label: 'Investments', types: ['INVESTMENT'] },
+  ];
+
+  const sections = accountSections
+    .map((section) => ({
+      ...section,
+      accounts: accounts
+        .filter((a) => section.types.includes(a.type))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .filter((section) => section.accounts.length > 0);
+
+  const renderAccountCard = (account: Account) => {
+    const TypeIcon = getTypeIcon(account.type);
+    return (
+      <div key={account.id} className="panel-hover shadow-panel p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-graphite-surface-2 border border-graphite-border-subtle text-mint">
+              <TypeIcon size={22} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-ink font-display">{account.name}</h3>
+              <p className="text-sm text-ink-muted">{account.type.replace('_', ' ')}</p>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleEdit(account)}
+              className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+            >
+              <Edit2 size={16} />
+            </button>
+            <button
+              onClick={() => handleDelete(account.id)}
+              className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        {account.institution && (
+          <p className="text-sm text-ink-secondary mb-3">{account.institution}</p>
+        )}
+
+        <div className="border-t border-graphite-border-subtle pt-3">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm text-ink-secondary">Current Balance</span>
+            <span className="text-lg font-semibold text-ink money">
+              {formatCurrency(account.currentBalance)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-ink-secondary">Starting</span>
+            <span className="text-ink-secondary money">
+              {formatCurrency(account.startingBalance)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center text-sm mt-1">
+            <span className="text-ink-secondary">Transactions</span>
+            <span className="text-ink-secondary">{account.transactionCount}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="page-shell">
       <PageHeader
@@ -135,63 +213,22 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
         </div>
       </div>
 
-      {/* Accounts Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {accounts.map((account) => {
-          const TypeIcon = getTypeIcon(account.type);
-          return (
-            <div key={account.id} className="panel-hover shadow-panel p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-graphite-surface-2 border border-graphite-border-subtle text-mint">
-                    <TypeIcon size={22} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-ink font-display">{account.name}</h3>
-                    <p className="text-sm text-ink-muted">{account.type.replace('_', ' ')}</p>
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => handleEdit(account)}
-                    className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
-                  >
-                    <Edit2 size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(account.id)}
-                    className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {account.institution && (
-                <p className="text-sm text-ink-secondary mb-3">{account.institution}</p>
-              )}
-
-              <div className="border-t border-graphite-border-subtle pt-3">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-ink-secondary">Current Balance</span>
-                  <span className="text-lg font-semibold text-ink money">
-                    {formatCurrency(account.currentBalance)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-ink-secondary">Starting</span>
-                  <span className="text-ink-secondary money">
-                    {formatCurrency(account.startingBalance)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-sm mt-1">
-                  <span className="text-ink-secondary">Transactions</span>
-                  <span className="text-ink-secondary">{account.transactionCount}</span>
-                </div>
-              </div>
+      <div className="space-y-8 mb-6">
+        {sections.map((section) => (
+          <section key={section.key}>
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h2 className="text-sm font-medium text-ink-secondary tracking-wide uppercase">
+                {section.label}
+              </h2>
+              <span className="text-xs text-ink-muted">
+                {section.accounts.length} account{section.accounts.length === 1 ? '' : 's'}
+              </span>
             </div>
-          );
-        })}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {section.accounts.map(renderAccountCard)}
+            </div>
+          </section>
+        ))}
       </div>
 
       {accounts.length === 0 && (
