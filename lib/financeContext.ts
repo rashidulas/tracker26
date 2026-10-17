@@ -20,6 +20,7 @@ export type FinanceContext = {
     name: string;
     type: string;
     balance: number;
+    creditLimit: number | null;
   }[];
   expenseCategories: { id: string; name: string }[];
   incomeCategories: { id: string; name: string }[];
@@ -165,6 +166,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
         a.transactionsTo,
         a.id
       ),
+      creditLimit: a.creditLimit ?? null,
     };
   });
 

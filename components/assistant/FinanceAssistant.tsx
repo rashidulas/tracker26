@@ -27,7 +27,15 @@ function formatMoney(amount: number) {
   }).format(amount);
 }
 
-export default function FinanceAssistant({ embedded = false }: { embedded?: boolean }) {
+export default function FinanceAssistant({
+  variant = 'card',
+}: {
+  /** @deprecated use variant */
+  embedded?: boolean;
+  variant?: 'card' | 'page' | 'embedded';
+}) {
+  const isPage = variant === 'page';
+  const isEmbedded = variant === 'embedded';
   const { success, error: toastError } = useToast();
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<UiMessage[]>([
@@ -35,7 +43,7 @@ export default function FinanceAssistant({ embedded = false }: { embedded?: bool
       id: 'welcome',
       role: 'assistant',
       content:
-        'Hold the orb and say something like “I spent $42 on groceries,” or type below. Nothing saves until you confirm.',
+        'Hey — I can see your accounts, balances, spending, income, friends, and loans. Ask me anything, or say something like “I spent $42 on groceries at Walmart” and I’ll draft it for you to confirm.',
     },
   ]);
   const [pendingImage, setPendingImage] = useState<{
@@ -53,9 +61,12 @@ export default function FinanceAssistant({ embedded = false }: { embedded?: bool
   const bottomRef = useRef<HTMLDivElement>(null);
   const holdStartedRef = useRef(false);
   const pendingImageRef = useRef(pendingImage);
-  const sendRef = useRef<(payload: { text: string; image?: { dataUrl: string; mimeType: string } | null }) => Promise<void>>(
-    async () => {}
-  );
+  const sendRef = useRef<
+    (payload: {
+      text: string;
+      image?: { dataUrl: string; mimeType: string } | null;
+    }) => Promise<void>
+  >(async () => {});
 
   useEffect(() => {
     pendingImageRef.current = pendingImage;
@@ -201,7 +212,6 @@ export default function FinanceAssistant({ embedded = false }: { embedded?: bool
           if (!res.ok || !data.success) {
             throw new Error(data.error || 'Transcription failed');
           }
-          // Hold-to-talk: auto-send after speech, Siri-style
           await sendRef.current({ text: data.text, image: pendingImageRef.current });
         } catch (err) {
           toastError(err instanceof Error ? err.message : 'Could not transcribe audio');
@@ -296,11 +306,228 @@ export default function FinanceAssistant({ embedded = false }: { embedded?: bool
       ? 'Transcribing…'
       : isSending
         ? 'Thinking…'
-        : 'Hold to talk';
+        : 'Hold to talk · or type below';
+
+  const orb = (
+    <div className={`flex flex-col items-center justify-center gap-2 ${isPage ? 'sm:min-w-[120px]' : 'sm:min-w-[140px]'} py-1`}>
+      <button
+        type="button"
+        onPointerDown={onOrbPointerDown}
+        onPointerUp={onOrbPointerUp}
+        onPointerCancel={onOrbPointerUp}
+        onPointerLeave={(e) => {
+          if (holdStartedRef.current) onOrbPointerUp(e);
+        }}
+        disabled={isSending || isTranscribing}
+        className={`siri-orb touch-none select-none ${isPage ? '' : 'siri-orb--mobile'} ${
+          isRecording ? 'siri-orb--listening' : ''
+        } ${isTranscribing || isSending ? 'siri-orb--busy' : ''}`}
+        aria-label="Hold to talk"
+      >
+        <span className="siri-orb__ring siri-orb__ring--a" />
+        <span className="siri-orb__ring siri-orb__ring--b" />
+        <span className="siri-orb__core" />
+      </button>
+      <p className="text-[11px] text-ink-muted text-center leading-snug max-w-[9rem]">
+        {isRecording ? 'Release to send' : 'Hold & speak'}
+      </p>
+    </div>
+  );
+
+  const messageList = (
+    <div
+      className={`overflow-y-auto rounded-xl border border-graphite-border-subtle bg-graphite-elevated/50 px-3 py-3 space-y-2.5 ${
+        isPage
+          ? 'flex-1 min-h-[320px] sm:min-h-[420px]'
+          : 'h-[150px] sm:h-[200px] mb-3'
+      }`}
+    >
+      {messages.map((m) => (
+        <div
+          key={m.id}
+          className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+        >
+          <div
+            className={`max-w-[92%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${
+              m.role === 'user'
+                ? 'bg-mint-dim text-ink border border-mint/20'
+                : 'bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle'
+            }`}
+          >
+            {m.imagePreview && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={m.imagePreview}
+                alt="Uploaded"
+                className="mb-2 rounded-lg max-h-28 object-cover w-full"
+              />
+            )}
+            <p className="whitespace-pre-wrap">{m.content}</p>
+
+            {m.draft && (
+              <div className="mt-2.5 rounded-xl border border-graphite-border bg-graphite-elevated/90 p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                      m.draft.kind === 'INCOME' ? 'text-mint' : 'text-danger'
+                    }`}
+                  >
+                    {m.draft.kind} draft
+                  </span>
+                  {m.draft.confidence && (
+                    <span className="text-[10px] text-ink-muted capitalize">
+                      {m.draft.confidence}
+                    </span>
+                  )}
+                </div>
+                <p className="text-lg font-semibold text-ink money">
+                  {formatMoney(m.draft.amount)}
+                </p>
+                <p className="text-[11px] text-ink-muted">
+                  {m.draft.categoryName || 'Category'} · {m.draft.date}
+                  {m.draft.accountName || m.draft.merchantOrSource
+                    ? ` · ${[m.draft.accountName, m.draft.merchantOrSource]
+                        .filter(Boolean)
+                        .join(' · ')}`
+                    : ''}
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    disabled={confirmingId === m.id}
+                    onClick={() => handleConfirm(m.id, m.draft!)}
+                  >
+                    {confirmingId === m.id ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Check size={14} />
+                    )}
+                    Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => handleDiscard(m.id)}
+                    disabled={confirmingId === m.id}
+                  >
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      {(isSending || isTranscribing) && (
+        <div className="flex items-center gap-2 text-xs text-ink-muted px-1">
+          <Loader2 size={13} className="animate-spin text-mint" />
+          {isTranscribing ? 'Transcribing…' : 'Thinking…'}
+        </div>
+      )}
+      <div ref={bottomRef} />
+    </div>
+  );
+
+  const composer = (
+    <div className={isPage ? 'pt-3 border-t border-graphite-border-subtle mt-3' : ''}>
+      {pendingImage && (
+        <div className="relative inline-block mb-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={pendingImage.dataUrl}
+            alt="Pending upload"
+            className="h-14 w-14 rounded-xl object-cover border border-graphite-border"
+          />
+          <button
+            type="button"
+            onClick={() => setPendingImage(null)}
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-graphite-surface-2 border border-graphite-border text-ink-muted flex items-center justify-center"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => onPickImage(e.target.files?.[0] || null)}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="p-2.5 rounded-xl text-ink-secondary hover:text-ink hover:bg-graphite-surface-2"
+          aria-label="Upload receipt"
+          title="Upload receipt"
+        >
+          <ImagePlus size={18} />
+        </button>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              void sendToAssistant({ text: input, image: pendingImage });
+            }
+          }}
+          placeholder="Ask about balances, or log an expense / income…"
+          disabled={isSending || isTranscribing || isRecording}
+          className="flex-1 px-3.5 py-2.5 rounded-xl border border-graphite-border bg-[var(--surface-2)] text-sm text-ink placeholder-ink-muted focus:outline-none focus:ring-2 focus:ring-mint/30 focus:border-mint/50 disabled:opacity-50"
+        />
+        <button
+          type="button"
+          disabled={
+            isSending || isTranscribing || isRecording || (!input.trim() && !pendingImage)
+          }
+          onClick={() => sendToAssistant({ text: input, image: pendingImage })}
+          className="p-2.5 rounded-xl bg-mint text-graphite disabled:opacity-40 hover:bg-mint-bright transition-colors"
+          aria-label="Send"
+        >
+          {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (isPage) {
+    return (
+      <section className="panel shadow-panel overflow-hidden flex flex-col h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-8rem)]">
+        <div className="relative px-4 sm:px-5 pt-4 pb-3 border-b border-graphite-border-subtle shrink-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-mint/[0.06] via-transparent to-info/[0.04] pointer-events-none" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-medium text-mint uppercase tracking-[0.16em]">
+                Finance chat
+              </p>
+              <h2 className="text-lg font-semibold text-ink font-display mt-0.5">
+                Your money, in conversation
+              </h2>
+              <p className="text-xs text-ink-muted mt-1">{statusLabel}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 p-4 sm:p-5">
+          {orb}
+          <div className="flex flex-col min-w-0 min-h-0 h-full">
+            {messageList}
+            {composer}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className={embedded ? 'overflow-hidden' : 'panel shadow-panel overflow-hidden'}>
-      {!embedded && (
+    <section className={isEmbedded ? 'overflow-hidden' : 'panel shadow-panel overflow-hidden'}>
+      {!isEmbedded && (
         <div className="relative px-4 sm:px-5 pt-4 pb-3 border-b border-graphite-border-subtle">
           <div className="absolute inset-0 bg-gradient-to-br from-mint/[0.06] via-transparent to-info/[0.04] pointer-events-none" />
           <div className="relative flex items-start justify-between gap-3">
@@ -316,187 +543,19 @@ export default function FinanceAssistant({ embedded = false }: { embedded?: bool
           </div>
         </div>
       )}
-      {embedded && (
+      {isEmbedded && (
         <p className="text-xs text-ink-muted px-1 pb-2">{statusLabel}</p>
       )}
 
-      <div className={`grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 ${embedded ? 'p-1' : 'p-4 sm:p-5'}`}>
-        {/* Siri-style orb */}
-        <div className="flex flex-col items-center justify-center gap-2 sm:min-w-[140px] py-1">
-          <button
-            type="button"
-            onPointerDown={onOrbPointerDown}
-            onPointerUp={onOrbPointerUp}
-            onPointerCancel={onOrbPointerUp}
-            onPointerLeave={(e) => {
-              if (holdStartedRef.current) onOrbPointerUp(e);
-            }}
-            disabled={isSending || isTranscribing}
-            className={`siri-orb siri-orb--mobile touch-none select-none ${
-              isRecording ? 'siri-orb--listening' : ''
-            } ${isTranscribing || isSending ? 'siri-orb--busy' : ''}`}
-            aria-label="Hold to talk"
-          >
-            <span className="siri-orb__ring siri-orb__ring--a" />
-            <span className="siri-orb__ring siri-orb__ring--b" />
-            <span className="siri-orb__core" />
-          </button>
-          <p className="text-[11px] text-ink-muted text-center leading-snug max-w-[9rem]">
-            {isRecording ? 'Release to send' : 'Hold & speak'}
-          </p>
-        </div>
-
-        {/* Chat column */}
+      <div
+        className={`grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-5 ${
+          isEmbedded ? 'p-1' : 'p-4 sm:p-5'
+        }`}
+      >
+        {orb}
         <div className="flex flex-col min-w-0">
-          <div className="h-[150px] sm:h-[200px] overflow-y-auto rounded-xl border border-graphite-border-subtle bg-graphite-elevated/50 px-3 py-3 space-y-2.5 mb-3">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[92%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${
-                    m.role === 'user'
-                      ? 'bg-mint-dim text-ink border border-mint/20'
-                      : 'bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle'
-                  }`}
-                >
-                  {m.imagePreview && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.imagePreview}
-                      alt="Uploaded"
-                      className="mb-2 rounded-lg max-h-28 object-cover w-full"
-                    />
-                  )}
-                  <p className="whitespace-pre-wrap">{m.content}</p>
-
-                  {m.draft && (
-                    <div className="mt-2.5 rounded-xl border border-graphite-border bg-graphite-elevated/90 p-2.5 space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                            m.draft.kind === 'INCOME' ? 'text-mint' : 'text-danger'
-                          }`}
-                        >
-                          {m.draft.kind} draft
-                        </span>
-                        {m.draft.confidence && (
-                          <span className="text-[10px] text-ink-muted capitalize">
-                            {m.draft.confidence}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-lg font-semibold text-ink money">
-                        {formatMoney(m.draft.amount)}
-                      </p>
-                      <p className="text-[11px] text-ink-muted">
-                        {m.draft.categoryName || 'Category'} · {m.draft.date}
-                        {m.draft.accountName || m.draft.merchantOrSource
-                          ? ` · ${[m.draft.accountName, m.draft.merchantOrSource]
-                              .filter(Boolean)
-                              .join(' · ')}`
-                          : ''}
-                      </p>
-                      <div className="flex gap-2 pt-1">
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          disabled={confirmingId === m.id}
-                          onClick={() => handleConfirm(m.id, m.draft!)}
-                        >
-                          {confirmingId === m.id ? (
-                            <Loader2 size={14} className="animate-spin" />
-                          ) : (
-                            <Check size={14} />
-                          )}
-                          Confirm
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="flex-1"
-                          onClick={() => handleDiscard(m.id)}
-                          disabled={confirmingId === m.id}
-                        >
-                          Discard
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-            {(isSending || isTranscribing) && (
-              <div className="flex items-center gap-2 text-xs text-ink-muted px-1">
-                <Loader2 size={13} className="animate-spin text-mint" />
-                {isTranscribing ? 'Transcribing…' : 'Thinking…'}
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-
-          {pendingImage && (
-            <div className="relative inline-block mb-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={pendingImage.dataUrl}
-                alt="Pending upload"
-                className="h-14 w-14 rounded-xl object-cover border border-graphite-border"
-              />
-              <button
-                type="button"
-                onClick={() => setPendingImage(null)}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-graphite-surface-2 border border-graphite-border text-ink-muted flex items-center justify-center"
-              >
-                <X size={11} />
-              </button>
-            </div>
-          )}
-
-          <div className="flex items-end gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => onPickImage(e.target.files?.[0] || null)}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2.5 rounded-xl text-ink-secondary hover:text-ink hover:bg-graphite-surface-2"
-              aria-label="Upload receipt"
-              title="Upload receipt"
-            >
-              <ImagePlus size={18} />
-            </button>
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void sendToAssistant({ text: input, image: pendingImage });
-                }
-              }}
-              placeholder="Or type an expense / income…"
-              disabled={isSending || isTranscribing || isRecording}
-              className="flex-1 px-3.5 py-2.5 rounded-xl border border-graphite-border bg-[var(--surface-2)] text-sm text-ink placeholder-ink-muted focus:outline-none focus:ring-2 focus:ring-mint/30 focus:border-mint/50 disabled:opacity-50"
-            />
-            <button
-              type="button"
-              disabled={
-                isSending || isTranscribing || isRecording || (!input.trim() && !pendingImage)
-              }
-              onClick={() => sendToAssistant({ text: input, image: pendingImage })}
-              className="p-2.5 rounded-xl bg-mint text-graphite disabled:opacity-40 hover:bg-mint-bright transition-colors"
-              aria-label="Send"
-            >
-              {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-            </button>
-          </div>
+          {messageList}
+          {composer}
         </div>
       </div>
     </section>

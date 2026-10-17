@@ -13,11 +13,13 @@ import {
   Grid2x2,
   Sparkles,
   Users,
+  MessageCircle,
   X,
 } from 'lucide-react';
 
 const desktopNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/chat', label: 'Chat', icon: MessageCircle },
   { href: '/analytics', label: 'Analytics', icon: Sparkles },
   { href: '/categories', label: 'Categories', icon: FolderOpen },
   { href: '/accounts', label: 'Accounts', icon: Wallet },
@@ -30,10 +32,11 @@ const desktopNavItems = [
 const mobileTabs = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/expenses', label: 'Expenses', icon: TrendingDown },
-  { href: '/friends', label: 'Friends', icon: Users },
+  { href: '/chat', label: 'Chat', icon: MessageCircle },
 ] as const;
 
 const moreItems = [
+  { href: '/friends', label: 'Friends', icon: Users, hint: 'IOUs and shared money' },
   { href: '/analytics', label: 'Analytics', icon: Sparkles, hint: 'AI daily money debrief' },
   { href: '/accounts', label: 'Accounts', icon: Wallet, hint: 'Balances, cards & loans' },
   { href: '/income', label: 'Income', icon: TrendingUp, hint: 'Log and review income' },
