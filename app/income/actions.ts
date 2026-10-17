@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -164,6 +165,9 @@ export async function createIncome(formData: FormData) {
     const splitResult = parseAccountSplits(formData, validated.amount);
     if (!splitResult.ok) return { success: false, error: splitResult.error };
 
+    const multi = splitResult.splits.length > 1;
+    const splitGroupId = multi ? randomUUID() : null;
+
     const shared = {
       date: new Date(validated.date),
       kind: 'INCOME' as const,
@@ -172,6 +176,7 @@ export async function createIncome(formData: FormData) {
       merchantOrSource: validated.merchantOrSource,
       notes: validated.notes,
       tags: validated.tags || [],
+      splitGroupId,
     };
 
     if (splitResult.splits.length === 1) {
@@ -230,6 +235,37 @@ export async function updateIncome(id: string, formData: FormData) {
     const splitResult = parseAccountSplits(formData, validated.amount);
     if (!splitResult.ok) return { success: false, error: splitResult.error };
 
+    const existing = await prisma.transaction.findUnique({ where: { id } });
+    if (!existing || existing.kind !== 'INCOME') {
+      return { success: false, error: 'Income not found' };
+    }
+
+    let idsToReplace = [id];
+    const memberIdsRaw = formData.get('memberIds') as string | null;
+    if (memberIdsRaw) {
+      try {
+        const parsed = JSON.parse(memberIdsRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          idsToReplace = parsed.map(String);
+        }
+      } catch {
+        // keep default
+      }
+    } else if (existing.splitGroupId) {
+      const members = await prisma.transaction.findMany({
+        where: { splitGroupId: existing.splitGroupId, kind: 'INCOME' },
+        select: { id: true },
+      });
+      idsToReplace = members.map((m) => m.id);
+    }
+
+    await prisma.transaction.deleteMany({
+      where: { id: { in: idsToReplace }, kind: 'INCOME' },
+    });
+
+    const multi = splitResult.splits.length > 1;
+    const splitGroupId = multi ? randomUUID() : null;
+
     const shared = {
       date: new Date(validated.date),
       kind: 'INCOME' as const,
@@ -238,22 +274,20 @@ export async function updateIncome(id: string, formData: FormData) {
       merchantOrSource: validated.merchantOrSource,
       notes: validated.notes,
       tags: validated.tags || [],
+      splitGroupId,
     };
 
-    const [first, ...rest] = splitResult.splits;
-
-    await prisma.transaction.update({
-      where: { id },
-      data: {
-        ...shared,
-        amount: first.amount,
-        accountId: first.accountId,
-      },
-    });
-
-    if (rest.length > 0) {
+    if (splitResult.splits.length === 1) {
+      await prisma.transaction.create({
+        data: {
+          ...shared,
+          amount: splitResult.splits[0].amount,
+          accountId: splitResult.splits[0].accountId,
+        },
+      });
+    } else {
       await prisma.transaction.createMany({
-        data: rest.map((split) => ({
+        data: splitResult.splits.map((split) => ({
           ...shared,
           amount: split.amount,
           accountId: split.accountId,
@@ -274,13 +308,29 @@ export async function updateIncome(id: string, formData: FormData) {
   }
 }
 
-export async function deleteIncome(id: string) {
+export async function deleteIncome(id: string, memberIds?: string[]) {
   try {
-    await prisma.transaction.delete({
-      where: { id },
-    });
+    if (memberIds && memberIds.length > 0) {
+      await prisma.transaction.deleteMany({
+        where: { id: { in: memberIds }, kind: 'INCOME' },
+      });
+    } else {
+      const existing = await prisma.transaction.findUnique({ where: { id } });
+      if (!existing) {
+        return { success: false, error: 'Income not found' };
+      }
+      if (existing.splitGroupId) {
+        await prisma.transaction.deleteMany({
+          where: { splitGroupId: existing.splitGroupId, kind: 'INCOME' },
+        });
+      } else {
+        await prisma.transaction.delete({ where: { id } });
+      }
+    }
 
     revalidatePath('/income');
+    revalidatePath('/dashboard');
+    revalidatePath('/accounts');
     return { success: true };
   } catch (error) {
     console.error('Error deleting income:', error);

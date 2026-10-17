@@ -31,7 +31,7 @@ function cents(n: number) {
   return Math.round(n * 100);
 }
 
-interface Income {
+interface IncomePart {
   id: string;
   date: Date;
   amount: number;
@@ -41,9 +41,148 @@ interface Income {
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
+  splitGroupId?: string | null;
   category: { id: string; name: string; icon: string | null } | null;
   subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
+}
+
+interface IncomeAccountSplit {
+  accountId: string;
+  name: string;
+  amount: number;
+}
+
+interface IncomeRow {
+  id: string;
+  memberIds: string[];
+  date: Date;
+  amount: number;
+  categoryId: string | null;
+  subcategoryId?: string | null;
+  merchantOrSource: string | null;
+  notes: string | null;
+  tags: string[];
+  splitGroupId?: string | null;
+  category: { id: string; name: string; icon: string | null } | null;
+  subcategory?: { id: string; name: string } | null;
+  accounts: IncomeAccountSplit[];
+}
+
+function incomeFingerprint(item: IncomePart) {
+  return [
+    new Date(item.date).toISOString().slice(0, 10),
+    item.categoryId || '',
+    item.subcategoryId || '',
+    item.merchantOrSource || '',
+    item.notes || '',
+    [...(item.tags || [])].map((t) => t.toLowerCase()).sort().join(','),
+  ].join('|');
+}
+
+function groupIncomeRows(parts: IncomePart[]): IncomeRow[] {
+  const used = new Set<string>();
+  const rows: IncomeRow[] = [];
+
+  const byGroup = new Map<string, IncomePart[]>();
+  for (const part of parts) {
+    if (!part.splitGroupId) continue;
+    const list = byGroup.get(part.splitGroupId) || [];
+    list.push(part);
+    byGroup.set(part.splitGroupId, list);
+  }
+
+  for (const [groupId, members] of byGroup) {
+    members.forEach((m) => used.add(m.id));
+    const sorted = [...members].sort((a, b) => b.amount - a.amount);
+    const primary = sorted[0];
+    rows.push({
+      id: primary.id,
+      memberIds: sorted.map((m) => m.id),
+      date: primary.date,
+      amount: sorted.reduce((sum, m) => sum + m.amount, 0),
+      categoryId: primary.categoryId,
+      subcategoryId: primary.subcategoryId,
+      merchantOrSource: primary.merchantOrSource,
+      notes: primary.notes,
+      tags: primary.tags,
+      splitGroupId: groupId,
+      category: primary.category,
+      subcategory: primary.subcategory,
+      accounts: sorted.map((m) => ({
+        accountId: m.accountId || '',
+        name: m.account?.name || 'Unknown',
+        amount: m.amount,
+      })),
+    });
+  }
+
+  const leftover = parts.filter((p) => !used.has(p.id));
+  const byFingerprint = new Map<string, IncomePart[]>();
+  for (const part of leftover) {
+    const key = incomeFingerprint(part);
+    const list = byFingerprint.get(key) || [];
+    list.push(part);
+    byFingerprint.set(key, list);
+  }
+
+  for (const members of byFingerprint.values()) {
+    const distinctAccounts = new Set(members.map((m) => m.accountId).filter(Boolean));
+    const shouldMerge = members.length > 1 && distinctAccounts.size > 1;
+
+    if (!shouldMerge) {
+      for (const part of members) {
+        rows.push({
+          id: part.id,
+          memberIds: [part.id],
+          date: part.date,
+          amount: part.amount,
+          categoryId: part.categoryId,
+          subcategoryId: part.subcategoryId,
+          merchantOrSource: part.merchantOrSource,
+          notes: part.notes,
+          tags: part.tags,
+          splitGroupId: part.splitGroupId,
+          category: part.category,
+          subcategory: part.subcategory,
+          accounts: [
+            {
+              accountId: part.accountId || '',
+              name: part.account?.name || 'Unknown',
+              amount: part.amount,
+            },
+          ],
+        });
+      }
+      continue;
+    }
+
+    const sorted = [...members].sort((a, b) => b.amount - a.amount);
+    const primary = sorted[0];
+    rows.push({
+      id: primary.id,
+      memberIds: sorted.map((m) => m.id),
+      date: primary.date,
+      amount: sorted.reduce((sum, m) => sum + m.amount, 0),
+      categoryId: primary.categoryId,
+      subcategoryId: primary.subcategoryId,
+      merchantOrSource: primary.merchantOrSource,
+      notes: primary.notes,
+      tags: primary.tags,
+      splitGroupId: primary.splitGroupId,
+      category: primary.category,
+      subcategory: primary.subcategory,
+      accounts: sorted.map((m) => ({
+        accountId: m.accountId || '',
+        name: m.account?.name || 'Unknown',
+        amount: m.amount,
+      })),
+    });
+  }
+
+  return rows.sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 }
 
 interface Category {
@@ -64,7 +203,7 @@ function IncomeForm({
   onSuccess,
   onCancel,
 }: {
-  income?: Income;
+  income?: IncomeRow;
   categories: Category[];
   accounts: Account[];
   onSuccess: () => void;
@@ -72,12 +211,15 @@ function IncomeForm({
 }) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [splits, setSplits] = useState<AccountSplit[]>([
-    {
-      accountId: income?.accountId || '',
-      amount: income?.amount?.toString() || '',
-    },
-  ]);
+  const [splits, setSplits] = useState<AccountSplit[]>(() => {
+    if (income?.accounts?.length) {
+      return income.accounts.map((a) => ({
+        accountId: a.accountId,
+        amount: a.amount.toString(),
+      }));
+    }
+    return [{ accountId: '', amount: '' }];
+  });
 
   const {
     register,
@@ -225,6 +367,9 @@ function IncomeForm({
     formData.append('merchantOrSource', data.merchantOrSource || '');
     formData.append('notes', data.notes || '');
     formData.append('tags', data.tags || '');
+    if (income?.memberIds?.length) {
+      formData.append('memberIds', JSON.stringify(income.memberIds));
+    }
 
     const result = income
       ? await updateIncome(income.id, formData)
@@ -400,12 +545,12 @@ function IncomeForm({
 }
 
 export default function IncomePage() {
-  const [income, setIncome] = useState<Income[]>([]);
+  const [income, setIncome] = useState<IncomeRow[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingIncome, setEditingIncome] = useState<Income | null>(null);
+  const [editingIncome, setEditingIncome] = useState<IncomeRow | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
     startDate: '',
@@ -440,7 +585,7 @@ export default function IncomePage() {
       ]);
 
       if (incomeResult.success && incomeResult.data) {
-        setIncome(incomeResult.data);
+        setIncome(groupIncomeRows(incomeResult.data as IncomePart[]));
       }
 
       if (categoriesResult.success && categoriesResult.data) {
@@ -463,7 +608,7 @@ export default function IncomePage() {
     loadData();
   };
 
-  const handleEdit = (item: Income) => {
+  const handleEdit = (item: IncomeRow) => {
     setEditingIncome(item);
     setIsModalOpen(true);
   };
@@ -473,9 +618,9 @@ export default function IncomePage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (item: IncomeRow) => {
     if (!confirm('Are you sure you want to delete this income?')) return;
-    const result = await deleteIncome(id);
+    const result = await deleteIncome(item.id, item.memberIds);
     if (result.success) {
       loadData();
     }
@@ -617,7 +762,7 @@ export default function IncomePage() {
             </thead>
             <tbody className="divide-y divide-graphite-border-subtle">
               {income.map((item) => (
-                <tr key={item.id} className="hover:bg-graphite-surface-hover transition-colors">
+                <tr key={item.memberIds.join('-')} className="hover:bg-graphite-surface-hover transition-colors">
                   <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-ink">
                     {formatDate(item.date)}
                   </td>
@@ -637,8 +782,21 @@ export default function IncomePage() {
                 <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-ink-secondary hidden sm:table-cell">
                   {item.merchantOrSource || '-'}
                 </td>
-                <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-ink-secondary hidden md:table-cell">
-                  {item.account?.name || '-'}
+                <td className="px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm text-ink-secondary hidden md:table-cell">
+                  {item.accounts.length <= 1 ? (
+                    item.accounts[0]?.name || '-'
+                  ) : (
+                    <div className="space-y-1">
+                      {item.accounts.map((acc) => (
+                        <div key={`${acc.accountId}-${acc.amount}`} className="flex items-baseline justify-between gap-3">
+                          <span>{acc.name}</span>
+                          <span className="text-mint money tabular-nums">
+                            {formatCurrency(acc.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium text-mint money">
                   {formatCurrency(item.amount)}
@@ -653,7 +811,7 @@ export default function IncomePage() {
                       <Edit2 size={16} className="sm:w-[18px] sm:h-[18px]" />
                     </button>
                     <button
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => handleDelete(item)}
                       className="rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors p-1 touch-target"
                       aria-label="Delete"
                     >
