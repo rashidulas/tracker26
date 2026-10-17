@@ -116,6 +116,30 @@ export async function POST(request: NextRequest) {
     ];
     const accounts = ctx.accounts;
 
+    const lastUserText = [...messages]
+      .reverse()
+      .find((m) => m.role === 'user')
+      ?.content?.toLowerCase() || '';
+
+    const userNamedAccount = accounts.some((a) => {
+      const name = a.name.toLowerCase();
+      if (name && lastUserText.includes(name)) return true;
+      const typeHints: Record<string, string[]> = {
+        CASH: ['cash', 'wallet'],
+        CHECKING: ['checking'],
+        SAVINGS: ['savings'],
+        CREDIT_CARD: ['credit card', 'card'],
+        LOAN: ['loan'],
+        INVESTMENT: ['investment'],
+      };
+      return (typeHints[a.type] || []).some((hint) => lastUserText.includes(hint));
+    });
+
+    const accountChoices = accounts
+      .filter((a) => a.type !== 'LOAN')
+      .map((a) => a.name)
+      .join(', ');
+
     if (draft) {
       const category = categories.find((c) => c.id === draft!.categoryId);
       if (!category) {
@@ -134,11 +158,26 @@ export async function POST(request: NextRequest) {
         draft = null;
       } else if (draft.kind === 'INCOME' && category.type !== 'INCOME') {
         draft = null;
-      } else if (draft.kind === 'INCOME' && !draft.accountId) {
+      } else if (draft.kind === 'INCOME' && (!draft.accountId || !userNamedAccount)) {
         return NextResponse.json({
           success: true,
           data: {
-            message: validated.data.message + ' Which account should this income go into?',
+            message: `Got it — $${draft.amount.toFixed(2)} income${
+              draft.merchantOrSource ? ` from ${draft.merchantOrSource}` : ''
+            }. Which account should it go into? (${accountChoices || 'add an account first'})`,
+            draft: null,
+          },
+        });
+      } else if (
+        draft.kind === 'EXPENSE' &&
+        draft.accountId &&
+        !userNamedAccount &&
+        accounts.filter((a) => a.type !== 'LOAN').length > 1
+      ) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            message: `Got it — $${draft.amount.toFixed(2)} expense. Which account should I use? (${accountChoices})`,
             draft: null,
           },
         });
@@ -148,9 +187,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({
             success: true,
             data: {
-              message:
-                validated.data.message +
-                ' That account was not found — which account should I use?',
+              message: `That account was not found — which account should I use? (${accountChoices})`,
               draft: null,
             },
           });

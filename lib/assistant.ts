@@ -74,11 +74,13 @@ Rules:
 - Prefer EXPENSE for spending, purchases, bills, dining, groceries, receipts
 - Prefer INCOME for salary, freelance, refunds received, pay deposited into an account
 - Always pick categoryId from the matching list (EXPENSE categories for expenses, INCOME for income)
-- For EXPENSE: accountId strongly preferred; pick the most likely (checking/cash/credit card from context). If unclear, ask or leave null.
-- For INCOME: accountId is REQUIRED
+- NEVER guess a missing account. If the user did not clearly name which account (by name or type like "cash", "checking", "wallet", "Discover"), set draft to null and ask which account — list the relevant account names from the Accounts list.
+- For INCOME: account is REQUIRED. If missing, ask (do not default to checking).
+- For EXPENSE: if account is unclear and more than one account could fit, ask which account; only set accountId when the user named it or there is exactly one non-loan account.
+- If amount, kind, or category is missing/unclear, set draft to null and ask the next missing piece (one question at a time).
 - Dates must be YYYY-MM-DD
 - Amounts must be positive numbers in USD
-- If an image is a receipt/payment screenshot, extract merchant, date, total, and best category
+- If an image is a receipt/payment screenshot, extract merchant, date, total, and best category — still ask for account if not clear
 - If the image is not financial, explain briefly and set draft to null
 - For answers: keep "message" useful (a few sentences or a short bullet-style paragraph is fine). For drafts: keep message to 1–3 sentences and mention the draft details.
 - If categories/accounts are missing for a log request, say so and set draft to null

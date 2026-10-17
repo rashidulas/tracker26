@@ -148,15 +148,20 @@ export default function FinanceAssistant({
           throw new Error(data.error || 'Assistant failed');
         }
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `a-${Date.now()}`,
-            role: 'assistant',
-            content: data.data.message,
-            draft: data.data.draft,
-          },
-        ]);
+        setMessages((prev) => {
+          const cleared = data.data.draft
+            ? prev.map((m) => (m.draft ? { ...m, draft: null } : m))
+            : prev;
+          return [
+            ...cleared,
+            {
+              id: `a-${Date.now()}`,
+              role: 'assistant',
+              content: data.data.message,
+              draft: data.data.draft,
+            },
+          ];
+        });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Something went wrong';
         toastError(msg);
@@ -273,7 +278,17 @@ export default function FinanceAssistant({
   const handleConfirm = async (messageId: string, draft: UiDraft) => {
     setConfirmingId(messageId);
     try {
-      const { categoryName: _c, accountName: _a, ...clean } = draft;
+      const clean = {
+        kind: draft.kind,
+        amount: Number(draft.amount),
+        date: draft.date,
+        categoryId: draft.categoryId,
+        accountId: draft.accountId ?? null,
+        merchantOrSource: draft.merchantOrSource ?? null,
+        notes: draft.notes ?? null,
+        tags: draft.tags || [],
+        confidence: draft.confidence,
+      };
       const result = await confirmAssistantDraft(clean);
       if (!result.success) {
         throw new Error(result.error || 'Failed to save');
@@ -285,9 +300,13 @@ export default function FinanceAssistant({
             ? {
                 ...m,
                 draft: null,
-                content: `${m.content}\n\nSaved ${draft.kind === 'INCOME' ? 'income' : 'expense'} of ${formatMoney(draft.amount)}.`,
+                content: `${m.content}\n\nSaved ${draft.kind === 'INCOME' ? 'income' : 'expense'} of ${formatMoney(draft.amount)}${
+                  draft.accountName ? ` to ${draft.accountName}` : ''
+                }.`,
               }
-            : m
+            : m.draft
+              ? { ...m, draft: null }
+              : m
         )
       );
     } catch (err) {
@@ -396,10 +415,11 @@ export default function FinanceAssistant({
                 </p>
                 <div className="flex gap-2 pt-1">
                   <Button
+                    type="button"
                     size="sm"
                     className="flex-1"
                     disabled={confirmingId === m.id}
-                    onClick={() => handleConfirm(m.id, m.draft!)}
+                    onClick={() => void handleConfirm(m.id, m.draft!)}
                   >
                     {confirmingId === m.id ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -409,6 +429,7 @@ export default function FinanceAssistant({
                     Confirm
                   </Button>
                   <Button
+                    type="button"
                     size="sm"
                     variant="secondary"
                     className="flex-1"

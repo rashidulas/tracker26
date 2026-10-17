@@ -1,35 +1,75 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { createExpense } from '@/app/expenses/actions';
-import { createIncome } from '@/app/income/actions';
-import type { AssistantDraft } from '@/lib/assistant';
+import { prisma } from '@/lib/prisma';
+import { assistantDraftSchema, type AssistantDraft } from '@/lib/assistant';
 
 export async function confirmAssistantDraft(draft: AssistantDraft) {
   try {
-    const formData = new FormData();
-    formData.append('date', draft.date);
-    formData.append('amount', String(draft.amount));
-    formData.append('categoryId', draft.categoryId);
-    if (draft.accountId) formData.append('accountId', draft.accountId);
-    if (draft.merchantOrSource) formData.append('merchantOrSource', draft.merchantOrSource);
-    if (draft.notes) formData.append('notes', draft.notes);
-    if (draft.tags?.length) formData.append('tags', draft.tags.join(','));
-
-    const result =
-      draft.kind === 'INCOME' ? await createIncome(formData) : await createExpense(formData);
-
-    if (result.success) {
-      revalidatePath('/dashboard');
-      revalidatePath('/analytics');
-      revalidatePath('/expenses');
-      revalidatePath('/income');
-      revalidatePath('/accounts');
+    const validated = assistantDraftSchema.safeParse(draft);
+    if (!validated.success) {
+      return {
+        success: false,
+        error: validated.error.errors[0]?.message || 'Invalid draft',
+      };
     }
 
-    return result;
+    const data = validated.data;
+
+    if (data.kind === 'INCOME' && !data.accountId) {
+      return { success: false, error: 'Pick an account for this income first' };
+    }
+
+    const category = await prisma.category.findUnique({
+      where: { id: data.categoryId },
+      select: { id: true, type: true },
+    });
+    if (!category) {
+      return { success: false, error: 'Category not found' };
+    }
+    if (data.kind === 'INCOME' && category.type !== 'INCOME') {
+      return { success: false, error: 'That category is not an income category' };
+    }
+    if (data.kind === 'EXPENSE' && category.type !== 'EXPENSE') {
+      return { success: false, error: 'That category is not an expense category' };
+    }
+
+    if (data.accountId) {
+      const account = await prisma.account.findUnique({
+        where: { id: data.accountId },
+        select: { id: true },
+      });
+      if (!account) {
+        return { success: false, error: 'Account not found' };
+      }
+    }
+
+    await prisma.transaction.create({
+      data: {
+        date: new Date(data.date),
+        amount: data.amount,
+        kind: data.kind,
+        categoryId: data.categoryId,
+        accountId: data.accountId || null,
+        merchantOrSource: data.merchantOrSource || null,
+        notes: data.notes || null,
+        tags: data.tags || [],
+        accountSplits: [],
+        splitGroupId: null,
+      },
+    });
+
+    revalidatePath('/dashboard');
+    revalidatePath('/analytics');
+    revalidatePath('/expenses');
+    revalidatePath('/income');
+    revalidatePath('/accounts');
+    revalidatePath('/chat');
+
+    return { success: true };
   } catch (error) {
     console.error('confirmAssistantDraft error:', error);
-    return { success: false, error: 'Failed to save transaction' };
+    const message = error instanceof Error ? error.message : 'Failed to save transaction';
+    return { success: false, error: message };
   }
 }
