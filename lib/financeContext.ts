@@ -35,6 +35,8 @@ export type FinanceContext = {
     todayIncome: number;
     todayExpenses: number;
     weekExpenses: number;
+    last30DaysIncome: number;
+    last30DaysExpenses: number;
     monthIncome: number;
     monthExpenses: number;
     monthNet: number;
@@ -43,6 +45,13 @@ export type FinanceContext = {
   recentTransactions: {
     date: string;
     kind: string;
+    amount: number;
+    category: string | null;
+    account: string | null;
+    merchant: string | null;
+  }[];
+  recentIncome: {
+    date: string;
     amount: number;
     category: string | null;
     account: string | null;
@@ -63,6 +72,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const weekStart = startOfDay(subDays(now, 6));
+  const last30Start = startOfDay(subDays(now, 29));
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
   const today = format(now, 'yyyy-MM-dd');
@@ -73,10 +83,13 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     todayIncomeAgg,
     todayExpenseAgg,
     weekExpenseAgg,
+    last30IncomeAgg,
+    last30ExpenseAgg,
     monthIncomeAgg,
     monthExpenseAgg,
     expensesByCategory,
     recent,
+    recentIncome,
     friendsRaw,
   ] = await Promise.all([
     prisma.account.findMany({
@@ -110,6 +123,14 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
+      where: { kind: 'INCOME', date: { gte: last30Start, lte: todayEnd } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
+      where: { kind: 'EXPENSE', date: { gte: last30Start, lte: todayEnd } },
+      _sum: { amount: true },
+    }),
+    prisma.transaction.aggregate({
       where: { kind: 'INCOME', date: { gte: monthStart, lte: monthEnd } },
       _sum: { amount: true },
     }),
@@ -131,6 +152,12 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     prisma.transaction.findMany({
       take: 20,
       orderBy: { date: 'desc' },
+      include: { category: true, account: true },
+    }),
+    prisma.transaction.findMany({
+      where: { kind: 'INCOME', date: { gte: last30Start, lte: todayEnd } },
+      orderBy: { date: 'desc' },
+      take: 40,
       include: { category: true, account: true },
     }),
     prisma.friend.findMany({
@@ -222,6 +249,8 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       todayIncome: todayIncomeAgg._sum.amount || 0,
       todayExpenses: todayExpenseAgg._sum.amount || 0,
       weekExpenses: weekExpenseAgg._sum.amount || 0,
+      last30DaysIncome: last30IncomeAgg._sum.amount || 0,
+      last30DaysExpenses: last30ExpenseAgg._sum.amount || 0,
       monthIncome,
       monthExpenses,
       monthNet: monthIncome - monthExpenses,
@@ -233,6 +262,13 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     recentTransactions: recent.map((t) => ({
       date: t.date.toISOString().slice(0, 10),
       kind: t.kind,
+      amount: t.amount,
+      category: t.category?.name ?? null,
+      account: t.account?.name ?? null,
+      merchant: t.merchantOrSource,
+    })),
+    recentIncome: recentIncome.map((t) => ({
+      date: t.date.toISOString().slice(0, 10),
       amount: t.amount,
       category: t.category?.name ?? null,
       account: t.account?.name ?? null,

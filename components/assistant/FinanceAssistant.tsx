@@ -106,11 +106,10 @@ export default function FinanceAssistant({
         imagePreview: payload.image?.dataUrl,
       };
 
-      let nextMessages: UiMessage[] = [];
-      setMessages((prev) => {
-        nextMessages = [...prev, userMessage];
-        return nextMessages;
-      });
+      // Build history synchronously — do not rely on setState updater side effects
+      // (React 18+ may defer updaters, which previously sent an empty messages array).
+      const nextMessages = [...messages, userMessage];
+      setMessages(nextMessages);
       setInput('');
       setPendingImage(null);
       setIsSending(true);
@@ -122,6 +121,10 @@ export default function FinanceAssistant({
             role: m.role,
             content: m.content,
           }));
+
+        if (history.length === 0) {
+          throw new Error('Nothing to send');
+        }
 
         const apiMessages = history.map((m, i) => {
           if (i === history.length - 1 && payload.image) {
@@ -169,7 +172,7 @@ export default function FinanceAssistant({
         setIsSending(false);
       }
     },
-    [toastError]
+    [messages, toastError]
   );
 
   sendRef.current = sendToAssistant;
