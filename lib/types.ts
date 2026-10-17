@@ -29,6 +29,7 @@ export interface Account {
   type: AccountType;
   institution?: string | null;
   startingBalance: number;
+  creditLimit?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

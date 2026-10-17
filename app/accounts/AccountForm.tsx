@@ -1,6 +1,6 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Input from '@/components/Input';
@@ -14,6 +14,7 @@ const accountSchema = z.object({
   type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT', 'LOAN']),
   institution: z.string().optional(),
   startingBalance: z.string().min(1, 'Starting balance is required'),
+  creditLimit: z.string().optional(),
 });
 
 type AccountFormData = z.infer<typeof accountSchema>;
@@ -25,6 +26,7 @@ interface AccountFormProps {
     type: 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN';
     institution?: string | null;
     startingBalance: number;
+    creditLimit?: number | null;
   };
   onSuccess: () => void;
   onCancel: () => void;
@@ -37,6 +39,7 @@ export default function AccountForm({ account, onSuccess, onCancel }: AccountFor
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<AccountFormData>({
     resolver: zodResolver(accountSchema),
@@ -45,8 +48,15 @@ export default function AccountForm({ account, onSuccess, onCancel }: AccountFor
       type: account?.type || 'CHECKING',
       institution: account?.institution || '',
       startingBalance: account?.startingBalance.toString() || '0',
+      creditLimit:
+        account?.creditLimit != null && account.creditLimit > 0
+          ? account.creditLimit.toString()
+          : '',
     },
   });
+
+  const selectedType = useWatch({ control, name: 'type' });
+  const showCreditLimit = selectedType === 'CREDIT_CARD';
 
   const onSubmit = async (data: AccountFormData) => {
     setIsSubmitting(true);
@@ -57,6 +67,10 @@ export default function AccountForm({ account, onSuccess, onCancel }: AccountFor
     formData.append('type', data.type);
     formData.append('institution', data.institution || '');
     formData.append('startingBalance', data.startingBalance);
+    formData.append(
+      'creditLimit',
+      data.type === 'CREDIT_CARD' ? data.creditLimit || '' : ''
+    );
 
     const result = account
       ? await updateAccount(account.id, formData)
@@ -115,6 +129,18 @@ export default function AccountForm({ account, onSuccess, onCancel }: AccountFor
         error={errors.startingBalance?.message}
         placeholder="0.00"
       />
+
+      {showCreditLimit && (
+        <Input
+          label="Credit Limit"
+          type="number"
+          step="0.01"
+          min="0"
+          {...register('creditLimit')}
+          error={errors.creditLimit?.message}
+          placeholder="e.g., 5000"
+        />
+      )}
 
       <div className="flex gap-3 pt-4">
         <Button type="submit" disabled={isSubmitting} className="flex-1">

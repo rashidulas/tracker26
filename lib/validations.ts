@@ -24,6 +24,7 @@ export const accountSchema = z.object({
   type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT', 'LOAN']),
   institution: z.string().max(100).optional(),
   startingBalance: z.number().default(0),
+  creditLimit: z.number().nonnegative().nullable().optional(),
 });
 
 export type AccountInput = z.infer<typeof accountSchema>;

@@ -27,6 +27,7 @@ interface Account {
   type: 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN';
   institution: string | null;
   startingBalance: number;
+  creditLimit?: number | null;
   currentBalance: number;
   transactionCount: number;
 }
@@ -162,6 +163,16 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
               {formatCurrency(account.currentBalance)}
             </span>
           </div>
+          {account.type === 'CREDIT_CARD' && (
+            <div className="flex justify-between items-center text-sm mb-1">
+              <span className="text-ink-secondary">Limit</span>
+              <span className="text-ink-secondary money">
+                {account.creditLimit != null && account.creditLimit > 0
+                  ? formatCurrency(account.creditLimit)
+                  : '—'}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between items-center text-sm">
             <span className="text-ink-secondary">Starting</span>
             <span className="text-ink-secondary money">

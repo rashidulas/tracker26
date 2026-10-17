@@ -13,7 +13,17 @@ const accountSchema = z.object({
   type: z.enum(['CHECKING', 'SAVINGS', 'CASH', 'CREDIT_CARD', 'INVESTMENT', 'LOAN']),
   institution: z.string().optional(),
   startingBalance: z.number(),
+  creditLimit: z.number().nonnegative('Credit limit cannot be negative').nullable(),
 });
+
+function parseCreditLimit(formData: FormData, type: string): number | null {
+  if (type !== 'CREDIT_CARD') return null;
+  const raw = (formData.get('creditLimit') as string) || '';
+  if (!raw.trim()) return null;
+  const value = parseFloat(raw);
+  if (Number.isNaN(value)) return null;
+  return value;
+}
 
 export async function getAccounts() {
   try {
@@ -81,11 +91,19 @@ export async function getAccounts() {
 
 export async function createAccount(formData: FormData) {
   try {
+    const type = formData.get('type') as
+      | 'CHECKING'
+      | 'SAVINGS'
+      | 'CASH'
+      | 'CREDIT_CARD'
+      | 'INVESTMENT'
+      | 'LOAN';
     const data = {
       name: formData.get('name') as string,
-      type: formData.get('type') as 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN',
+      type,
       institution: formData.get('institution') as string,
       startingBalance: parseFloat(formData.get('startingBalance') as string) || 0,
+      creditLimit: parseCreditLimit(formData, type),
     };
 
     const validated = accountSchema.parse(data);
@@ -114,11 +132,19 @@ export async function createAccount(formData: FormData) {
 
 export async function updateAccount(id: string, formData: FormData) {
   try {
+    const type = formData.get('type') as
+      | 'CHECKING'
+      | 'SAVINGS'
+      | 'CASH'
+      | 'CREDIT_CARD'
+      | 'INVESTMENT'
+      | 'LOAN';
     const data = {
       name: formData.get('name') as string,
-      type: formData.get('type') as 'CHECKING' | 'SAVINGS' | 'CASH' | 'CREDIT_CARD' | 'INVESTMENT' | 'LOAN',
+      type,
       institution: formData.get('institution') as string,
       startingBalance: parseFloat(formData.get('startingBalance') as string) || 0,
+      creditLimit: parseCreditLimit(formData, type),
     };
 
     const validated = accountSchema.parse(data);
