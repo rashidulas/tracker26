@@ -9,11 +9,69 @@ const incomeSchema = z.object({
   amount: z.number().positive('Amount must be positive'),
   categoryId: z.string().min(1, 'Category is required'),
   subcategoryId: z.string().optional(),
-  accountId: z.string().min(1, 'Account is required'),
+  accountId: z.string().optional(),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
+
+const accountSplitSchema = z.object({
+  accountId: z.string().min(1, 'Account is required'),
+  amount: z.number().positive('Split amount must be positive'),
+});
+
+function cents(n: number) {
+  return Math.round(n * 100);
+}
+
+function parseAccountSplits(
+  formData: FormData,
+  totalAmount: number
+): { ok: true; splits: Array<{ accountId: string; amount: number }> } | { ok: false; error: string } {
+  const raw = formData.get('accountSplits') as string | null;
+
+  let splits: Array<{ accountId: string; amount: number }> = [];
+
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return { ok: false, error: 'At least one account is required' };
+      }
+      splits = parsed.map((item) => ({
+        accountId: String(item.accountId || ''),
+        amount: parseFloat(String(item.amount)),
+      }));
+    } catch {
+      return { ok: false, error: 'Invalid account splits' };
+    }
+  } else {
+    const accountId = (formData.get('accountId') as string) || '';
+    splits = [{ accountId, amount: totalAmount }];
+  }
+
+  for (const split of splits) {
+    const result = accountSplitSchema.safeParse(split);
+    if (!result.success) {
+      return { ok: false, error: result.error.errors[0].message };
+    }
+  }
+
+  const accountIds = splits.map((s) => s.accountId);
+  if (new Set(accountIds).size !== accountIds.length) {
+    return { ok: false, error: 'Each split must use a different account' };
+  }
+
+  const splitTotal = splits.reduce((sum, s) => sum + s.amount, 0);
+  if (cents(splitTotal) !== cents(totalAmount)) {
+    return {
+      ok: false,
+      error: `Account amounts ($${splitTotal.toFixed(2)}) must equal total ($${totalAmount.toFixed(2)})`,
+    };
+  }
+
+  return { ok: true, splits };
+}
 
 async function resolveSubcategoryId(
   categoryId: string,
@@ -85,15 +143,15 @@ export async function createIncome(formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
     const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
+    const amount = parseFloat(formData.get('amount') as string);
     const data = {
       date: formData.get('date') as string,
-      amount: parseFloat(formData.get('amount') as string),
+      amount,
       categoryId: formData.get('categoryId') as string,
       subcategoryId: rawSubcategoryId || undefined,
-      accountId: formData.get('accountId') as string,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
-      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      tags: tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
     };
 
     const validated = incomeSchema.parse(data);
@@ -103,21 +161,40 @@ export async function createIncome(formData: FormData) {
     );
     if (!subResult.ok) return { success: false, error: subResult.error };
 
-    await prisma.transaction.create({
-      data: {
-        date: new Date(validated.date),
-        amount: validated.amount,
-        kind: 'INCOME',
-        categoryId: validated.categoryId,
-        subcategoryId: subResult.subcategoryId,
-        accountId: validated.accountId,
-        merchantOrSource: validated.merchantOrSource,
-        notes: validated.notes,
-        tags: validated.tags || [],
-      },
-    });
+    const splitResult = parseAccountSplits(formData, validated.amount);
+    if (!splitResult.ok) return { success: false, error: splitResult.error };
+
+    const shared = {
+      date: new Date(validated.date),
+      kind: 'INCOME' as const,
+      categoryId: validated.categoryId,
+      subcategoryId: subResult.subcategoryId,
+      merchantOrSource: validated.merchantOrSource,
+      notes: validated.notes,
+      tags: validated.tags || [],
+    };
+
+    if (splitResult.splits.length === 1) {
+      await prisma.transaction.create({
+        data: {
+          ...shared,
+          amount: splitResult.splits[0].amount,
+          accountId: splitResult.splits[0].accountId,
+        },
+      });
+    } else {
+      await prisma.transaction.createMany({
+        data: splitResult.splits.map((split) => ({
+          ...shared,
+          amount: split.amount,
+          accountId: split.accountId,
+        })),
+      });
+    }
 
     revalidatePath('/income');
+    revalidatePath('/dashboard');
+    revalidatePath('/accounts');
     return { success: true };
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -132,15 +209,15 @@ export async function updateIncome(id: string, formData: FormData) {
   try {
     const tags = formData.get('tags') as string;
     const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
+    const amount = parseFloat(formData.get('amount') as string);
     const data = {
       date: formData.get('date') as string,
-      amount: parseFloat(formData.get('amount') as string),
+      amount,
       categoryId: formData.get('categoryId') as string,
       subcategoryId: rawSubcategoryId || undefined,
-      accountId: formData.get('accountId') as string,
       merchantOrSource: formData.get('merchantOrSource') as string,
       notes: formData.get('notes') as string,
-      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      tags: tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
     };
 
     const validated = incomeSchema.parse(data);
@@ -150,22 +227,43 @@ export async function updateIncome(id: string, formData: FormData) {
     );
     if (!subResult.ok) return { success: false, error: subResult.error };
 
+    const splitResult = parseAccountSplits(formData, validated.amount);
+    if (!splitResult.ok) return { success: false, error: splitResult.error };
+
+    const shared = {
+      date: new Date(validated.date),
+      kind: 'INCOME' as const,
+      categoryId: validated.categoryId,
+      subcategoryId: subResult.subcategoryId,
+      merchantOrSource: validated.merchantOrSource,
+      notes: validated.notes,
+      tags: validated.tags || [],
+    };
+
+    const [first, ...rest] = splitResult.splits;
+
     await prisma.transaction.update({
       where: { id },
       data: {
-        date: new Date(validated.date),
-        amount: validated.amount,
-        kind: 'INCOME',
-        categoryId: validated.categoryId,
-        subcategoryId: subResult.subcategoryId,
-        accountId: validated.accountId,
-        merchantOrSource: validated.merchantOrSource,
-        notes: validated.notes,
-        tags: validated.tags || [],
+        ...shared,
+        amount: first.amount,
+        accountId: first.accountId,
       },
     });
 
+    if (rest.length > 0) {
+      await prisma.transaction.createMany({
+        data: rest.map((split) => ({
+          ...shared,
+          amount: split.amount,
+          accountId: split.accountId,
+        })),
+      });
+    }
+
     revalidatePath('/income');
+    revalidatePath('/dashboard');
+    revalidatePath('/accounts');
     return { success: true };
   } catch (error) {
     if (error instanceof z.ZodError) {

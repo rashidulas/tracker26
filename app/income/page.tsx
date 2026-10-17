@@ -8,7 +8,6 @@ import Select from '@/components/Select';
 import { deleteIncome, createIncome, updateIncome, getIncome, getCategoriesForSelect, getAccountsForSelect } from './actions';
 import PageHeader from '@/components/PageHeader';
 import { Plus, Edit2, Trash2, Filter, X } from 'lucide-react';
-import { format } from 'date-fns';
 import { formatDate, formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -19,13 +18,18 @@ const incomeSchema = z.object({
   amount: z.string().min(1, 'Amount is required'),
   categoryId: z.string().min(1, 'Category is required'),
   subcategoryId: z.string().optional(),
-  accountId: z.string().min(1, 'Account is required'),
   merchantOrSource: z.string().optional(),
   notes: z.string().optional(),
   tags: z.string().optional(),
 });
 
 type IncomeFormData = z.infer<typeof incomeSchema>;
+
+type AccountSplit = { accountId: string; amount: string };
+
+function cents(n: number) {
+  return Math.round(n * 100);
+}
 
 interface Income {
   id: string;
@@ -68,6 +72,12 @@ function IncomeForm({
 }) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [splits, setSplits] = useState<AccountSplit[]>([
+    {
+      accountId: income?.accountId || '',
+      amount: income?.amount?.toString() || '',
+    },
+  ]);
 
   const {
     register,
@@ -84,7 +94,6 @@ function IncomeForm({
       amount: income?.amount.toString() || '',
       categoryId: income?.categoryId || '',
       subcategoryId: income?.subcategoryId || '',
-      accountId: income?.accountId || '',
       merchantOrSource: income?.merchantOrSource || '',
       notes: income?.notes || '',
       tags: income?.tags?.join(', ') || '',
@@ -93,8 +102,16 @@ function IncomeForm({
 
   const selectedCategoryId = useWatch({ control, name: 'categoryId' });
   const selectedSubcategoryId = useWatch({ control, name: 'subcategoryId' });
+  const totalAmountStr = useWatch({ control, name: 'amount' });
   const availableSubcategories =
     categories.find((c) => c.id === selectedCategoryId)?.subcategories || [];
+
+  const totalAmount = parseFloat(totalAmountStr || '0') || 0;
+  const isSplitMode = splits.length > 1;
+  const splitSum = splits.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+  const remaining = totalAmount - splitSum;
+  const splitsMatch =
+    totalAmount > 0 && cents(splitSum) === cents(totalAmount) && splits.every((s) => s.accountId);
 
   useEffect(() => {
     const subs =
@@ -104,16 +121,107 @@ function IncomeForm({
     }
   }, [selectedCategoryId, selectedSubcategoryId, categories, setValue]);
 
+  useEffect(() => {
+    if (splits.length !== 1) return;
+    setSplits((prev) => {
+      if (prev.length !== 1) return prev;
+      if (prev[0].amount === (totalAmountStr || '')) return prev;
+      return [{ ...prev[0], amount: totalAmountStr || '' }];
+    });
+  }, [totalAmountStr, splits.length]);
+
+  const updateSplit = (index: number, patch: Partial<AccountSplit>) => {
+    setSplits((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  };
+
+  const addSplit = () => {
+    setSplits((prev) => {
+      const next = [...prev];
+      if (next.length === 1 && totalAmount > 0) {
+        const firstAmt = parseFloat(next[0].amount) || 0;
+        if (!next[0].amount || cents(firstAmt) === cents(totalAmount)) {
+          const half = Math.floor(cents(totalAmount) / 2) / 100;
+          const rest = (cents(totalAmount) - cents(half)) / 100;
+          next[0] = { ...next[0], amount: half ? half.toFixed(2) : '' };
+          next.push({ accountId: '', amount: rest ? rest.toFixed(2) : '' });
+          return next;
+        }
+      }
+      const used = next.reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+      const leftover = Math.max(0, totalAmount - used);
+      next.push({
+        accountId: '',
+        amount: leftover > 0 ? leftover.toFixed(2) : '',
+      });
+      return next;
+    });
+  };
+
+  const removeSplit = (index: number) => {
+    setSplits((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((_, i) => i !== index);
+      if (next.length === 1 && totalAmountStr) {
+        return [{ ...next[0], amount: totalAmountStr }];
+      }
+      return next;
+    });
+  };
+
   const onSubmit = async (data: IncomeFormData) => {
     setIsSubmitting(true);
     setError('');
+
+    const total = parseFloat(data.amount);
+    if (!total || total <= 0) {
+      setError('Amount must be positive');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const prepared = isSplitMode
+      ? splits
+      : [{ accountId: splits[0]?.accountId || '', amount: data.amount }];
+
+    if (prepared.some((s) => !s.accountId)) {
+      setError('Select an account for each split');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const accountIds = prepared.map((s) => s.accountId);
+    if (new Set(accountIds).size !== accountIds.length) {
+      setError('Each split must use a different account');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const parsedSplits = prepared.map((s) => ({
+      accountId: s.accountId,
+      amount: parseFloat(s.amount),
+    }));
+
+    if (parsedSplits.some((s) => !s.amount || s.amount <= 0)) {
+      setError('Each split amount must be positive');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const sum = parsedSplits.reduce((acc, s) => acc + s.amount, 0);
+    if (cents(sum) !== cents(total)) {
+      setError(
+        `Account amounts ($${sum.toFixed(2)}) must equal total ($${total.toFixed(2)})`
+      );
+      setIsSubmitting(false);
+      return;
+    }
 
     const formData = new FormData();
     formData.append('date', data.date);
     formData.append('amount', data.amount);
     formData.append('categoryId', data.categoryId);
     formData.append('subcategoryId', data.subcategoryId || '');
-    formData.append('accountId', data.accountId);
+    formData.append('accountSplits', JSON.stringify(parsedSplits));
     formData.append('merchantOrSource', data.merchantOrSource || '');
     formData.append('notes', data.notes || '');
     formData.append('tags', data.tags || '');
@@ -178,15 +286,82 @@ function IncomeForm({
         />
       )}
 
-      <Select
-        label="Account"
-        {...register('accountId')}
-        error={errors.accountId?.message}
-        options={[
-          { value: '', label: 'Select account...' },
-          ...accounts.map((a) => ({ value: a.id, label: a.name })),
-        ]}
-      />
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <label className="block text-sm font-medium text-ink-secondary">
+            {isSplitMode ? 'Accounts' : 'Account'}
+          </label>
+          <button
+            type="button"
+            onClick={addSplit}
+            disabled={splits.length >= accounts.length}
+            className="inline-flex items-center gap-1 text-sm text-mint hover:text-mint/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            aria-label="Add account split"
+            title="Split across another account"
+          >
+            <Plus size={16} />
+            Split
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {splits.map((split, index) => {
+            const usedElsewhere = new Set(
+              splits.filter((_, i) => i !== index).map((s) => s.accountId).filter(Boolean)
+            );
+            return (
+              <div key={index} className="flex gap-2 items-start">
+                <div className="flex-1 min-w-0">
+                  <Select
+                    value={split.accountId}
+                    onChange={(e) => updateSplit(index, { accountId: e.target.value })}
+                    options={[
+                      { value: '', label: 'Select account...' },
+                      ...accounts
+                        .filter((a) => a.id === split.accountId || !usedElsewhere.has(a.id))
+                        .map((a) => ({ value: a.id, label: a.name })),
+                    ]}
+                  />
+                </div>
+                {isSplitMode && (
+                  <div className="w-[7.5rem] shrink-0">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={split.amount}
+                      onChange={(e) => updateSplit(index, { amount: e.target.value })}
+                      placeholder="0.00"
+                      aria-label={`Amount for account ${index + 1}`}
+                    />
+                  </div>
+                )}
+                {isSplitMode && (
+                  <button
+                    type="button"
+                    onClick={() => removeSplit(index)}
+                    className="mt-0.5 p-2.5 rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors shrink-0"
+                    aria-label="Remove account split"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {isSplitMode && totalAmount > 0 && (
+          <p
+            className={`mt-2 text-xs ${
+              splitsMatch ? 'text-mint' : Math.abs(remaining) < 0.005 ? 'text-ink-muted' : 'text-warning'
+            }`}
+          >
+            {splitsMatch
+              ? `Split totals $${splitSum.toFixed(2)}`
+              : `$${Math.abs(remaining).toFixed(2)} ${remaining > 0 ? 'left to assign' : 'over total'}`}
+          </p>
+        )}
+      </div>
 
       <Input
         label="Source (Optional)"
