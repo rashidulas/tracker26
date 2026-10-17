@@ -166,7 +166,7 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
           {account.type === 'CREDIT_CARD' && (
             <div className="flex justify-between items-center text-sm mb-1">
               <span className="text-ink-secondary">Limit</span>
-              <span className="text-ink-secondary money">
+              <span className="text-mint money font-medium">
                 {account.creditLimit != null && account.creditLimit > 0
                   ? formatCurrency(account.creditLimit)
                   : '—'}
