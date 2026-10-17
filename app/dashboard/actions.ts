@@ -1,7 +1,10 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { computeAccountBalance } from '@/lib/accountBalance';
+import {
+  collectFromTransactionsForAccount,
+  computeAccountBalance,
+} from '@/lib/accountBalance';
 import { signedFriendAmount } from '@/lib/friends';
 import { startOfMonth, endOfMonth, subMonths, eachDayOfInterval, format } from 'date-fns';
 
@@ -19,6 +22,7 @@ export async function getDashboardData() {
       accounts,
       dailyTransactions,
       friendsRaw,
+      splitTransactionsRaw,
     ] = await Promise.all([
       prisma.transaction.aggregate({
         where: { kind: 'INCOME', date: { gte: monthStart, lte: monthEnd } },
@@ -44,7 +48,15 @@ export async function getDashboardData() {
       }),
       prisma.account.findMany({
         include: {
-          transactionsFrom: { select: { amount: true, kind: true, date: true } },
+          transactionsFrom: {
+            select: {
+              amount: true,
+              kind: true,
+              date: true,
+              accountId: true,
+              accountSplits: true,
+            },
+          },
           transactionsTo: { select: { amount: true, date: true } },
         },
       }),
@@ -59,6 +71,16 @@ export async function getDashboardData() {
       prisma.friend.findMany({
         include: { entries: true },
         orderBy: { name: 'asc' },
+      }),
+      prisma.transaction.findMany({
+        where: { kind: { in: ['INCOME', 'EXPENSE'] } },
+        select: {
+          amount: true,
+          kind: true,
+          date: true,
+          accountId: true,
+          accountSplits: true,
+        },
       }),
     ]);
 
@@ -102,16 +124,30 @@ export async function getDashboardData() {
       });
     }
 
+    const withSplits = splitTransactionsRaw.filter(
+      (t) => (t.accountSplits || []).length > 0
+    );
+
+    const balanceFor = (
+      a: (typeof accounts)[number],
+      fromFilter?: (t: (typeof a.transactionsFrom)[number]) => boolean,
+      toFilter?: (t: (typeof a.transactionsTo)[number]) => boolean
+    ) => {
+      const linked = fromFilter
+        ? a.transactionsFrom.filter(fromFilter)
+        : a.transactionsFrom;
+      const splitPool = fromFilter ? withSplits.filter(fromFilter) : withSplits;
+      const from = collectFromTransactionsForAccount(a.id, linked, splitPool);
+      const to = toFilter ? a.transactionsTo.filter(toFilter) : a.transactionsTo;
+      return computeAccountBalance(a.startingBalance, from, to, a.id);
+    };
+
     const mapLiability = (a: (typeof accounts)[number]) => {
-      const currentBalance = computeAccountBalance(
-        a.startingBalance,
-        a.transactionsFrom,
-        a.transactionsTo
-      );
-      const balanceAtMonthStart = computeAccountBalance(
-        a.startingBalance,
-        a.transactionsFrom.filter((t) => new Date(t.date) < monthStart),
-        a.transactionsTo.filter((t) => new Date(t.date) < monthStart)
+      const currentBalance = balanceFor(a);
+      const balanceAtMonthStart = balanceFor(
+        a,
+        (t) => new Date(t.date) < monthStart,
+        (t) => new Date(t.date) < monthStart
       );
 
       return {
@@ -128,16 +164,10 @@ export async function getDashboardData() {
 
     const cashBalance = accounts
       .filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN')
-      .reduce(
-        (sum, a) =>
-          sum + computeAccountBalance(a.startingBalance, a.transactionsFrom, a.transactionsTo),
-        0
-      );
+      .reduce((sum, a) => sum + balanceFor(a), 0);
 
     const totalBalance = accounts.reduce(
-      (sum, account) =>
-        sum +
-        computeAccountBalance(account.startingBalance, account.transactionsFrom, account.transactionsTo),
+      (sum, account) => sum + balanceFor(account),
       0
     );
 

@@ -1,7 +1,10 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { computeAccountBalance } from '@/lib/accountBalance';
+import {
+  collectFromTransactionsForAccount,
+  computeAccountBalance,
+} from '@/lib/accountBalance';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -14,32 +17,59 @@ const accountSchema = z.object({
 
 export async function getAccounts() {
   try {
-    const accounts = await prisma.account.findMany({
-      orderBy: { name: 'asc' },
-      include: {
-        transactionsFrom: {
-          select: {
-            amount: true,
-            kind: true,
+    const [accounts, splitTransactions] = await Promise.all([
+      prisma.account.findMany({
+        orderBy: { name: 'asc' },
+        include: {
+          transactionsFrom: {
+            select: {
+              amount: true,
+              kind: true,
+              accountId: true,
+              accountSplits: true,
+            },
+          },
+          transactionsTo: {
+            select: {
+              amount: true,
+            },
           },
         },
-        transactionsTo: {
-          select: {
-            amount: true,
-          },
+      }),
+      prisma.transaction.findMany({
+        where: {
+          kind: { in: ['INCOME', 'EXPENSE'] },
         },
-      },
-    });
+        select: {
+          amount: true,
+          kind: true,
+          accountId: true,
+          accountSplits: true,
+        },
+      }),
+    ]);
 
-    const accountsWithBalance = accounts.map((account) => ({
-      ...account,
-      currentBalance: computeAccountBalance(
-        account.startingBalance,
+    const withSplits = splitTransactions.filter(
+      (t) => (t.accountSplits || []).length > 0
+    );
+
+    const accountsWithBalance = accounts.map((account) => {
+      const from = collectFromTransactionsForAccount(
+        account.id,
         account.transactionsFrom,
-        account.transactionsTo
-      ),
-      transactionCount: account.transactionsFrom.length + account.transactionsTo.length,
-    }));
+        withSplits
+      );
+      return {
+        ...account,
+        currentBalance: computeAccountBalance(
+          account.startingBalance,
+          from,
+          account.transactionsTo,
+          account.id
+        ),
+        transactionCount: from.length + account.transactionsTo.length,
+      };
+    });
 
     return { success: true, data: accountsWithBalance };
   } catch (error) {

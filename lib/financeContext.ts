@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/prisma';
-import { computeAccountBalance } from '@/lib/accountBalance';
+import {
+  collectFromTransactionsForAccount,
+  computeAccountBalance,
+} from '@/lib/accountBalance';
 import { signedFriendAmount } from '@/lib/friends';
 import {
   startOfDay,
@@ -77,7 +80,14 @@ export async function getFinanceContext(): Promise<FinanceContext> {
   ] = await Promise.all([
     prisma.account.findMany({
       include: {
-        transactionsFrom: { select: { amount: true, kind: true } },
+        transactionsFrom: {
+          select: {
+            amount: true,
+            kind: true,
+            accountId: true,
+            accountSplits: true,
+          },
+        },
         transactionsTo: { select: { amount: true } },
       },
       orderBy: { name: 'asc' },
@@ -128,12 +138,35 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     }),
   ]);
 
-  const accounts = accountsRaw.map((a) => ({
-    id: a.id,
-    name: a.name,
-    type: a.type,
-    balance: computeAccountBalance(a.startingBalance, a.transactionsFrom, a.transactionsTo),
-  }));
+  const splitTxs = await prisma.transaction.findMany({
+    where: { kind: { in: ['INCOME', 'EXPENSE'] } },
+    select: {
+      amount: true,
+      kind: true,
+      accountId: true,
+      accountSplits: true,
+    },
+  });
+  const withSplits = splitTxs.filter((t) => (t.accountSplits || []).length > 0);
+
+  const accounts = accountsRaw.map((a) => {
+    const from = collectFromTransactionsForAccount(
+      a.id,
+      a.transactionsFrom,
+      withSplits
+    );
+    return {
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      balance: computeAccountBalance(
+        a.startingBalance,
+        from,
+        a.transactionsTo,
+        a.id
+      ),
+    };
+  });
 
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
   const cashBalance = accounts

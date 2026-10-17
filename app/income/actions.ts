@@ -1,6 +1,5 @@
 'use server';
 
-import { randomUUID } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -92,6 +91,88 @@ async function resolveSubcategoryId(
   return { ok: true, subcategoryId: sub.id };
 }
 
+function incomeFingerprint(item: {
+  date: Date;
+  categoryId: string | null;
+  subcategoryId?: string | null;
+  merchantOrSource: string | null;
+  notes: string | null;
+  tags: string[];
+}) {
+  return [
+    new Date(item.date).toISOString().slice(0, 10),
+    item.categoryId || '',
+    item.subcategoryId || '',
+    item.merchantOrSource || '',
+    item.notes || '',
+    [...(item.tags || [])].map((t) => t.toLowerCase()).sort().join(','),
+  ].join('|');
+}
+
+/** Merge old multi-row income splits into one transaction with accountSplits. */
+async function consolidateLegacyIncomeSplits() {
+  const legacy = await prisma.transaction.findMany({
+    where: { kind: 'INCOME' },
+    select: {
+      id: true,
+      date: true,
+      amount: true,
+      categoryId: true,
+      subcategoryId: true,
+      accountId: true,
+      merchantOrSource: true,
+      notes: true,
+      tags: true,
+      splitGroupId: true,
+      accountSplits: true,
+    },
+  });
+
+  const candidates = legacy.filter(
+    (t) => (!t.accountSplits || t.accountSplits.length === 0) && t.accountId
+  );
+
+  const byKey = new Map<string, typeof candidates>();
+  for (const item of candidates) {
+    const key = item.splitGroupId
+      ? `group:${item.splitGroupId}`
+      : `fp:${incomeFingerprint(item)}`;
+    const list = byKey.get(key) || [];
+    list.push(item);
+    byKey.set(key, list);
+  }
+
+  for (const members of byKey.values()) {
+    const accounts = new Set(members.map((m) => m.accountId).filter(Boolean));
+    if (members.length < 2 || accounts.size < 2) continue;
+
+    const sorted = [...members].sort((a, b) => b.amount - a.amount);
+    const primary = sorted[0];
+    const total = sorted.reduce((sum, m) => sum + m.amount, 0);
+    const splits = sorted.map((m) => ({
+      accountId: m.accountId as string,
+      amount: m.amount,
+    }));
+
+    await prisma.transaction.update({
+      where: { id: primary.id },
+      data: {
+        amount: total,
+        accountId: primary.accountId,
+        accountSplits: splits,
+        splitGroupId: null,
+      },
+    });
+
+    const siblingIds = sorted.slice(1).map((m) => m.id);
+    if (siblingIds.length > 0) {
+      await prisma.transaction.deleteMany({
+        where: { id: { in: siblingIds }, kind: 'INCOME' },
+      });
+    }
+  }
+}
+
 export async function getIncome(filters?: {
   startDate?: string;
   endDate?: string;
@@ -100,6 +181,8 @@ export async function getIncome(filters?: {
   search?: string;
 }) {
   try {
+    await consolidateLegacyIncomeSplits();
+
     const where: any = { kind: 'INCOME' };
 
     if (filters?.startDate || filters?.endDate) {
@@ -166,36 +249,23 @@ export async function createIncome(formData: FormData) {
     if (!splitResult.ok) return { success: false, error: splitResult.error };
 
     const multi = splitResult.splits.length > 1;
-    const splitGroupId = multi ? randomUUID() : null;
+    const primary = splitResult.splits[0];
 
-    const shared = {
-      date: new Date(validated.date),
-      kind: 'INCOME' as const,
-      categoryId: validated.categoryId,
-      subcategoryId: subResult.subcategoryId,
-      merchantOrSource: validated.merchantOrSource,
-      notes: validated.notes,
-      tags: validated.tags || [],
-      splitGroupId,
-    };
-
-    if (splitResult.splits.length === 1) {
-      await prisma.transaction.create({
-        data: {
-          ...shared,
-          amount: splitResult.splits[0].amount,
-          accountId: splitResult.splits[0].accountId,
-        },
-      });
-    } else {
-      await prisma.transaction.createMany({
-        data: splitResult.splits.map((split) => ({
-          ...shared,
-          amount: split.amount,
-          accountId: split.accountId,
-        })),
-      });
-    }
+    await prisma.transaction.create({
+      data: {
+        date: new Date(validated.date),
+        amount: validated.amount,
+        kind: 'INCOME',
+        categoryId: validated.categoryId,
+        subcategoryId: subResult.subcategoryId,
+        accountId: primary.accountId,
+        merchantOrSource: validated.merchantOrSource,
+        notes: validated.notes,
+        tags: validated.tags || [],
+        accountSplits: multi ? splitResult.splits : [],
+        splitGroupId: null,
+      },
+    });
 
     revalidatePath('/income');
     revalidatePath('/dashboard');
@@ -240,60 +310,52 @@ export async function updateIncome(id: string, formData: FormData) {
       return { success: false, error: 'Income not found' };
     }
 
-    let idsToReplace = [id];
+    // Legacy multi-row splits: drop sibling rows, keep one real transaction
+    let keepId = id;
     const memberIdsRaw = formData.get('memberIds') as string | null;
+    let siblingIds: string[] = [];
     if (memberIdsRaw) {
       try {
         const parsed = JSON.parse(memberIdsRaw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          idsToReplace = parsed.map(String);
+          siblingIds = parsed.map(String).filter((memberId) => memberId !== id);
         }
       } catch {
-        // keep default
+        // ignore
       }
     } else if (existing.splitGroupId) {
       const members = await prisma.transaction.findMany({
         where: { splitGroupId: existing.splitGroupId, kind: 'INCOME' },
         select: { id: true },
       });
-      idsToReplace = members.map((m) => m.id);
+      siblingIds = members.map((m) => m.id).filter((memberId) => memberId !== id);
     }
 
-    await prisma.transaction.deleteMany({
-      where: { id: { in: idsToReplace }, kind: 'INCOME' },
-    });
+    if (siblingIds.length > 0) {
+      await prisma.transaction.deleteMany({
+        where: { id: { in: siblingIds }, kind: 'INCOME' },
+      });
+    }
 
     const multi = splitResult.splits.length > 1;
-    const splitGroupId = multi ? randomUUID() : null;
+    const primary = splitResult.splits[0];
 
-    const shared = {
-      date: new Date(validated.date),
-      kind: 'INCOME' as const,
-      categoryId: validated.categoryId,
-      subcategoryId: subResult.subcategoryId,
-      merchantOrSource: validated.merchantOrSource,
-      notes: validated.notes,
-      tags: validated.tags || [],
-      splitGroupId,
-    };
-
-    if (splitResult.splits.length === 1) {
-      await prisma.transaction.create({
-        data: {
-          ...shared,
-          amount: splitResult.splits[0].amount,
-          accountId: splitResult.splits[0].accountId,
-        },
-      });
-    } else {
-      await prisma.transaction.createMany({
-        data: splitResult.splits.map((split) => ({
-          ...shared,
-          amount: split.amount,
-          accountId: split.accountId,
-        })),
-      });
-    }
+    await prisma.transaction.update({
+      where: { id: keepId },
+      data: {
+        date: new Date(validated.date),
+        amount: validated.amount,
+        kind: 'INCOME',
+        categoryId: validated.categoryId,
+        subcategoryId: subResult.subcategoryId,
+        accountId: primary.accountId,
+        merchantOrSource: validated.merchantOrSource,
+        notes: validated.notes,
+        tags: validated.tags || [],
+        accountSplits: multi ? splitResult.splits : [],
+        splitGroupId: null,
+      },
+    });
 
     revalidatePath('/income');
     revalidatePath('/dashboard');
@@ -310,7 +372,7 @@ export async function updateIncome(id: string, formData: FormData) {
 
 export async function deleteIncome(id: string, memberIds?: string[]) {
   try {
-    if (memberIds && memberIds.length > 0) {
+    if (memberIds && memberIds.length > 1) {
       await prisma.transaction.deleteMany({
         where: { id: { in: memberIds }, kind: 'INCOME' },
       });

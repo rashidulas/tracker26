@@ -42,6 +42,7 @@ interface IncomePart {
   notes: string | null;
   tags: string[];
   splitGroupId?: string | null;
+  accountSplits?: Array<{ accountId: string; amount: number }> | null;
   category: { id: string; name: string; icon: string | null } | null;
   subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
@@ -80,13 +81,46 @@ function incomeFingerprint(item: IncomePart) {
   ].join('|');
 }
 
-function groupIncomeRows(parts: IncomePart[]): IncomeRow[] {
+function groupIncomeRows(
+  parts: IncomePart[],
+  accountNameById: Map<string, string>
+): IncomeRow[] {
   const used = new Set<string>();
   const rows: IncomeRow[] = [];
 
+  const resolveAccountName = (accountId: string, fallback?: string | null) =>
+    accountNameById.get(accountId) || fallback || 'Unknown';
+
+  // One DB row with embedded accountSplits = one income transaction
+  for (const part of parts) {
+    const splits = part.accountSplits || [];
+    if (splits.length === 0) continue;
+    used.add(part.id);
+    rows.push({
+      id: part.id,
+      memberIds: [part.id],
+      date: part.date,
+      amount: part.amount,
+      categoryId: part.categoryId,
+      subcategoryId: part.subcategoryId,
+      merchantOrSource: part.merchantOrSource,
+      notes: part.notes,
+      tags: part.tags,
+      splitGroupId: part.splitGroupId,
+      category: part.category,
+      subcategory: part.subcategory,
+      accounts: splits.map((s) => ({
+        accountId: s.accountId,
+        name: resolveAccountName(s.accountId, part.account?.name),
+        amount: s.amount,
+      })),
+    });
+  }
+
+  // Legacy multi-row groups (pre accountSplits)
   const byGroup = new Map<string, IncomePart[]>();
   for (const part of parts) {
-    if (!part.splitGroupId) continue;
+    if (used.has(part.id) || !part.splitGroupId) continue;
     const list = byGroup.get(part.splitGroupId) || [];
     list.push(part);
     byGroup.set(part.splitGroupId, list);
@@ -111,7 +145,7 @@ function groupIncomeRows(parts: IncomePart[]): IncomeRow[] {
       subcategory: primary.subcategory,
       accounts: sorted.map((m) => ({
         accountId: m.accountId || '',
-        name: m.account?.name || 'Unknown',
+        name: resolveAccountName(m.accountId || '', m.account?.name),
         amount: m.amount,
       })),
     });
@@ -148,7 +182,7 @@ function groupIncomeRows(parts: IncomePart[]): IncomeRow[] {
           accounts: [
             {
               accountId: part.accountId || '',
-              name: part.account?.name || 'Unknown',
+              name: resolveAccountName(part.accountId || '', part.account?.name),
               amount: part.amount,
             },
           ],
@@ -174,7 +208,7 @@ function groupIncomeRows(parts: IncomePart[]): IncomeRow[] {
       subcategory: primary.subcategory,
       accounts: sorted.map((m) => ({
         accountId: m.accountId || '',
-        name: m.account?.name || 'Unknown',
+        name: resolveAccountName(m.accountId || '', m.account?.name),
         amount: m.amount,
       })),
     });
@@ -584,16 +618,25 @@ export default function IncomePage() {
         getAccountsForSelect(),
       ]);
 
+      if (accountsResult.success && accountsResult.data) {
+        setAccounts(accountsResult.data);
+      }
+
+      const accountNameById = new Map(
+        (accountsResult.success && accountsResult.data
+          ? accountsResult.data
+          : []
+        ).map((a: Account) => [a.id, a.name])
+      );
+
       if (incomeResult.success && incomeResult.data) {
-        setIncome(groupIncomeRows(incomeResult.data as IncomePart[]));
+        setIncome(
+          groupIncomeRows(incomeResult.data as IncomePart[], accountNameById)
+        );
       }
 
       if (categoriesResult.success && categoriesResult.data) {
         setCategories(categoriesResult.data);
-      }
-
-      if (accountsResult.success && accountsResult.data) {
-        setAccounts(accountsResult.data);
       }
     } catch (error) {
       console.error('Failed to load data:', error);
