@@ -43,6 +43,7 @@ model Category {
   transactions  Transaction[]
   budgets       Budget[]
 
+  @@unique([name, type])
   @@index([type])
 }
 
@@ -116,6 +117,7 @@ model Transaction {
   @@index([categoryId])
   @@index([subcategoryId])
   @@index([accountId])
+  @@index([toAccountId])
   @@index([splitGroupId])
   @@index([date, kind])
 }
@@ -145,6 +147,7 @@ model GoalContribution {
 
   @@index([date])
   @@index([goalId])
+  @@index([fromAccountId])
 }
 
 model Budget {
@@ -159,6 +162,7 @@ model Budget {
 
   @@unique([month, categoryId])
   @@index([month])
+  @@index([categoryId])
 }
 
 // Friends / shared IOUs

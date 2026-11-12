@@ -1,10 +1,8 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import {
-  collectFromTransactionsForAccount,
-  computeAccountBalance,
-} from '@/lib/accountBalance';
+import { computeBalancesForAccounts } from '@/lib/accountBalance';
+import { accountDeleteBlocker } from '@/lib/references';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -27,59 +25,25 @@ function parseCreditLimit(formData: FormData, type: string): number | null {
 
 export async function getAccounts() {
   try {
-    const [accounts, splitTransactions] = await Promise.all([
-      prisma.account.findMany({
-        orderBy: { name: 'asc' },
-        include: {
-          transactionsFrom: {
-            select: {
-              amount: true,
-              kind: true,
-              accountId: true,
-              accountSplits: true,
-            },
-          },
-          transactionsTo: {
-            select: {
-              amount: true,
-            },
-          },
-        },
-      }),
+    const [accounts, transactions] = await Promise.all([
+      prisma.account.findMany({ orderBy: { name: 'asc' } }),
       prisma.transaction.findMany({
-        where: {
-          kind: { in: ['INCOME', 'EXPENSE'] },
-        },
         select: {
           amount: true,
           kind: true,
           accountId: true,
+          toAccountId: true,
           accountSplits: true,
         },
       }),
     ]);
 
-    const withSplits = splitTransactions.filter(
-      (t) => (t.accountSplits || []).length > 0
-    );
-
-    const accountsWithBalance = accounts.map((account) => {
-      const from = collectFromTransactionsForAccount(
-        account.id,
-        account.transactionsFrom,
-        withSplits
-      );
-      return {
-        ...account,
-        currentBalance: computeAccountBalance(
-          account.startingBalance,
-          from,
-          account.transactionsTo,
-          account.id
-        ),
-        transactionCount: from.length + account.transactionsTo.length,
-      };
-    });
+    const balances = computeBalancesForAccounts(accounts, transactions);
+    const accountsWithBalance = accounts.map((account) => ({
+      ...account,
+      currentBalance: balances.get(account.id)?.balance ?? account.startingBalance,
+      transactionCount: balances.get(account.id)?.transactionCount ?? 0,
+    }));
 
     return { success: true, data: accountsWithBalance };
   } catch (error) {
@@ -167,26 +131,40 @@ export async function updateAccount(id: string, formData: FormData) {
 
 export async function deleteAccount(id: string) {
   try {
-    // Check if account has transactions
-    const count = await prisma.transaction.count({
-      where: { accountId: id },
+    const account = await prisma.account.findUnique({
+      where: { id },
+      select: { name: true },
     });
+    if (!account) return { success: false, error: 'Account not found' };
 
-    if (count > 0) {
-      return {
-        success: false,
-        error: `Cannot delete account. It has ${count} transaction(s).`,
-      };
-    }
+    // Transfers into the account would cascade-delete, and income/expense
+    // account splits and goal contributions would be left pointing at nothing.
+    const blocker = await accountDeleteBlocker(prisma, id, account.name);
+    if (blocker) return { success: false, error: blocker };
 
     await prisma.account.delete({
       where: { id },
     });
 
     revalidatePath('/accounts');
+    revalidatePath('/dashboard');
+    revalidatePath('/goals');
     return { success: true };
   } catch (error) {
     console.error('Error deleting account:', error);
     return { success: false, error: 'Failed to delete account' };
+  }
+}
+
+/** Accounts for pickers (expense, income and transfer forms). */
+export async function getAccountsForSelect() {
+  try {
+    const accounts = await prisma.account.findMany({
+      orderBy: { name: 'asc' },
+    });
+    return { success: true, data: accounts };
+  } catch (error) {
+    console.error('Error fetching accounts:', error);
+    return { success: false, error: 'Failed to fetch accounts' };
   }
 }

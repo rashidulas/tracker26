@@ -75,3 +75,35 @@ export function computeAccountBalance(
 
   return startingBalance + fromDelta + transfersIn;
 }
+
+export type BalanceTransaction = FromTransaction & {
+  toAccountId?: string | null;
+};
+
+/**
+ * Current balance for every account from the full transaction list.
+ * Same rules as computeAccountBalance; only TRANSFER rows credit toAccountId.
+ */
+export function computeBalancesForAccounts(
+  accounts: { id: string; startingBalance: number }[],
+  transactions: BalanceTransaction[]
+): Map<string, { balance: number; transactionCount: number }> {
+  const withSplits = transactions.filter(
+    (t) => t.kind !== 'TRANSFER' && (t.accountSplits || []).length > 0
+  );
+  const result = new Map<string, { balance: number; transactionCount: number }>();
+
+  for (const account of accounts) {
+    const linked = transactions.filter((t) => t.accountId === account.id);
+    const from = collectFromTransactionsForAccount(account.id, linked, withSplits);
+    const to = transactions.filter(
+      (t) => t.kind === 'TRANSFER' && t.toAccountId === account.id
+    );
+    result.set(account.id, {
+      balance: computeAccountBalance(account.startingBalance, from, to, account.id),
+      transactionCount: from.length + to.length,
+    });
+  }
+
+  return result;
+}

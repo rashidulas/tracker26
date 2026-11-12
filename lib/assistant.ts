@@ -79,7 +79,7 @@ Rules:
 - Always pick categoryId from the matching list (EXPENSE categories for expenses, INCOME for income)
 - NEVER guess a missing account. If the user did not clearly name which account (by name or type like "cash", "checking", "wallet", "Discover"), set draft to null and ask which account — list the relevant account names from the Accounts list.
 - For INCOME: account is REQUIRED. If missing, ask (do not default to checking).
-- For EXPENSE: if account is unclear and more than one account could fit, ask which account; only set accountId when the user named it or there is exactly one non-loan account.
+- For EXPENSE: account is REQUIRED too (an expense cannot be saved without one). Set accountId only when the user named it or there is exactly one non-loan account; otherwise set draft to null and ask which account.
 - If amount, kind, or category is missing/unclear, set draft to null and ask the next missing piece (one question at a time).
 - Dates must be YYYY-MM-DD
 - Amounts must be positive numbers in USD

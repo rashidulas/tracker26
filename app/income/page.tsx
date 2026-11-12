@@ -1,4 +1,6 @@
-import { getIncome, getCategoriesForSelect, getAccountsForSelect } from './actions';
+import { getIncome } from './actions';
+import { getCategoriesForSelect } from '@/app/categories/actions';
+import { getAccountsForSelect } from '@/app/accounts/actions';
 import IncomeClient from './IncomeClient';
 import type { IncomePart } from './incomeRows';
 
@@ -8,7 +10,7 @@ export const revalidate = 0;
 export default async function IncomePage() {
   const [incomeResult, categoriesResult, accountsResult] = await Promise.all([
     getIncome(),
-    getCategoriesForSelect(),
+    getCategoriesForSelect('INCOME'),
     getAccountsForSelect(),
   ]);
 

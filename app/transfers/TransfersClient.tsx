@@ -168,8 +168,8 @@ export default function TransfersClient({
       amount: parseFloat(formData.get('amount') as string),
       accountId: formData.get('fromAccountId') as string,
       toAccountId: formData.get('toAccountId') as string,
-      notes: (formData.get('notes') as string) || undefined,
-      tags: editingTransfer?.tags || [],
+      notes: (formData.get('notes') as string) ?? null,
+      // No tags: lib/transactions keeps existing tags (e.g. "payment") on edit.
     };
 
     if (data.accountId === data.toAccountId) {
