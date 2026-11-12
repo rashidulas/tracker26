@@ -1,9 +1,12 @@
 import { z } from 'zod';
+import { isValidDay } from '@/lib/dates';
 
 export const assistantDraftSchema = z.object({
   kind: z.enum(['EXPENSE', 'INCOME']),
   amount: z.number().positive(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z
+    .string()
+    .refine(isValidDay, 'Date must be a real calendar day in YYYY-MM-DD form'),
   categoryId: z.string().min(1),
   accountId: z.string().nullable().optional(),
   merchantOrSource: z.string().nullable().optional(),

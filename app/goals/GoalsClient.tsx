@@ -13,8 +13,8 @@ import { Plus, Edit2, Trash2, DollarSign, Target as TargetIcon } from 'lucide-re
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format } from 'date-fns';
-import { formatDate, formatDateForInput } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
+import { toDayString, todayInAppTimeZone } from '@/lib/dates';
 
 const goalSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -57,7 +57,7 @@ function GoalForm({ goal, onSuccess, onCancel }: any) {
     defaultValues: {
       name: goal?.name || '',
       targetAmount: goal?.targetAmount.toString() || '',
-      dueDate: goal?.dueDate ? formatDateForInput(goal.dueDate) : '',
+      dueDate: goal?.dueDate ? toDayString(goal.dueDate) : '',
     },
   });
 
@@ -121,7 +121,7 @@ function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(contributionSchema),
     defaultValues: {
-      date: new Date().toISOString().split('T')[0],
+      date: todayInAppTimeZone(),
       amount: '',
       fromAccountId: '',
       notes: '',

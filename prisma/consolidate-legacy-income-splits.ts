@@ -24,6 +24,7 @@
  * an account are skipped (a split never pays the same account twice).
  */
 import { PrismaClient } from '@prisma/client';
+import { toDayString } from '../lib/dates';
 
 const prisma = new PrismaClient();
 const APPLY = process.argv.includes('--apply');
@@ -44,7 +45,7 @@ type Row = {
 
 function fingerprint(item: Row) {
   return [
-    new Date(item.date).toISOString().slice(0, 10),
+    toDayString(item.date),
     item.categoryId || '',
     item.subcategoryId || '',
     item.merchantOrSource || '',

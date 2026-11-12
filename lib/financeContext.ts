@@ -6,13 +6,12 @@ import {
 import { signedFriendAmount } from '@/lib/friends';
 import { expenseCategoryAllocations } from '@/lib/transactions';
 import {
-  startOfDay,
-  endOfDay,
-  startOfMonth,
-  endOfMonth,
-  subDays,
-  format,
-} from 'date-fns';
+  todayInAppTimeZone,
+  dayRange,
+  lastNDaysRange,
+  monthRange,
+  toDayString,
+} from '@/lib/dates';
 
 export type FinanceContext = {
   today: string;
@@ -69,14 +68,11 @@ export type FinanceContext = {
 };
 
 export async function getFinanceContext(): Promise<FinanceContext> {
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
-  const weekStart = startOfDay(subDays(now, 6));
-  const last30Start = startOfDay(subDays(now, 29));
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-  const today = format(now, 'yyyy-MM-dd');
+  const today = todayInAppTimeZone();
+  const todayRange = dayRange(today);
+  const last7Days = lastNDaysRange(7, today);
+  const last30Days = lastNDaysRange(30, today);
+  const thisMonth = monthRange(today);
 
   const [
     accountsRaw,
@@ -112,38 +108,38 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       orderBy: { name: 'asc' },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'INCOME', date: { gte: todayStart, lte: todayEnd } },
+      where: { kind: 'INCOME', date: todayRange },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'EXPENSE', date: { gte: todayStart, lte: todayEnd } },
+      where: { kind: 'EXPENSE', date: todayRange },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'EXPENSE', date: { gte: weekStart, lte: todayEnd } },
+      where: { kind: 'EXPENSE', date: last7Days },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'INCOME', date: { gte: last30Start, lte: todayEnd } },
+      where: { kind: 'INCOME', date: last30Days },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'EXPENSE', date: { gte: last30Start, lte: todayEnd } },
+      where: { kind: 'EXPENSE', date: last30Days },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'INCOME', date: { gte: monthStart, lte: monthEnd } },
+      where: { kind: 'INCOME', date: thisMonth },
       _sum: { amount: true },
     }),
     prisma.transaction.aggregate({
-      where: { kind: 'EXPENSE', date: { gte: monthStart, lte: monthEnd } },
+      where: { kind: 'EXPENSE', date: thisMonth },
       _sum: { amount: true },
     }),
     // Split expenses keep their categories in splitItems, so total in code.
     prisma.transaction.findMany({
       where: {
         kind: 'EXPENSE',
-        date: { gte: monthStart, lte: monthEnd },
+        date: thisMonth,
       },
       select: { amount: true, categoryId: true, splitItems: true },
     }),
@@ -153,7 +149,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       include: { category: true, account: true },
     }),
     prisma.transaction.findMany({
-      where: { kind: 'INCOME', date: { gte: last30Start, lte: todayEnd } },
+      where: { kind: 'INCOME', date: last30Days },
       orderBy: { date: 'desc' },
       take: 40,
       include: { category: true, account: true },
@@ -267,7 +263,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       amount,
     })),
     recentTransactions: recent.map((t) => ({
-      date: t.date.toISOString().slice(0, 10),
+      date: toDayString(t.date),
       kind: t.kind,
       amount: t.amount,
       category: t.category?.name ?? null,
@@ -275,7 +271,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       merchant: t.merchantOrSource,
     })),
     recentIncome: recentIncome.map((t) => ({
-      date: t.date.toISOString().slice(0, 10),
+      date: toDayString(t.date),
       amount: t.amount,
       category: t.category?.name ?? null,
       account: t.account?.name ?? null,

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { parseDay } from '../lib/dates'
 
 const prisma = new PrismaClient()
 
@@ -59,7 +60,7 @@ async function main() {
     data: {
       name: 'Emergency Fund',
       targetAmount: 10000,
-      dueDate: new Date('2026-12-31'),
+      dueDate: parseDay('2026-12-31'),
     },
   })
   console.log('✅ Created sample goal')

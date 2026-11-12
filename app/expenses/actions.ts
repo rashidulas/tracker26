@@ -8,6 +8,7 @@ import {
   type ExpenseInput,
   type TransferPurpose,
 } from '@/lib/transactions';
+import { dayFilter } from '@/lib/dates';
 
 export async function getExpenses(filters?: {
   startDate?: string;
@@ -26,11 +27,8 @@ export async function getExpenses(filters?: {
       ],
     };
 
-    if (filters?.startDate || filters?.endDate) {
-      baseWhere.date = {};
-      if (filters.startDate) baseWhere.date.gte = new Date(filters.startDate);
-      if (filters.endDate) baseWhere.date.lte = new Date(filters.endDate);
-    }
+    const dateRange = dayFilter(filters?.startDate, filters?.endDate);
+    if (dateRange) baseWhere.date = dateRange;
 
     if (filters?.categoryId) {
       baseWhere.categoryId = filters.categoryId;

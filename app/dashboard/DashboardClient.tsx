@@ -32,6 +32,7 @@ import {
   Line,
 } from 'recharts';
 import { formatDate } from '@/lib/utils';
+import { formatDay, todayInAppTimeZone } from '@/lib/dates';
 import DashboardViewSwitcher from '@/components/DashboardViewSwitcher';
 
 interface LiabilityItem {
@@ -370,7 +371,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                         style={{ left: `${startPct}%`, transform: 'translateX(-50%)' }}
                       >
                         <span className="text-[9px] text-ink-muted whitespace-nowrap leading-none mb-0.5">
-                          {new Date().toLocaleDateString('en-US', { month: 'short' })} 1
+                          {formatDay(todayInAppTimeZone(), { month: 'short' })} 1
                         </span>
                         <div className="w-px h-2 bg-ink-muted" />
                       </div>

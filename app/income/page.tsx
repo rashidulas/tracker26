@@ -10,7 +10,8 @@ import { getCategoriesForSelect } from '@/app/categories/actions';
 import { getAccountsForSelect } from '@/app/accounts/actions';
 import PageHeader from '@/components/PageHeader';
 import { Plus, Edit2, Trash2, Filter, X } from 'lucide-react';
-import { formatDate, formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
+import { toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -74,7 +75,7 @@ interface IncomeRow {
 
 function incomeFingerprint(item: IncomePart) {
   return [
-    new Date(item.date).toISOString().slice(0, 10),
+    toDayString(item.date),
     item.categoryId || '',
     item.subcategoryId || '',
     item.merchantOrSource || '',
@@ -267,8 +268,8 @@ function IncomeForm({
     resolver: zodResolver(incomeSchema),
     defaultValues: {
       date: income?.date
-        ? formatDateForInput(income.date)
-        : getLocalTodayForInput(),
+        ? toDayString(income.date)
+        : todayInAppTimeZone(),
       amount: income?.amount.toString() || '',
       categoryId: income?.categoryId || '',
       subcategoryId: income?.subcategoryId || '',

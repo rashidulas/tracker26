@@ -14,7 +14,7 @@ import {
 } from './actions';
 import { createCategory } from '@/app/categories/actions';
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
-import { formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
+import { addDays, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
 import { loadExpensePrefs, rememberExpense } from '@/lib/expensePrefs';
 import type { ExpenseRow } from '@/lib/expenseEvents';
@@ -148,11 +148,7 @@ const QUICK_ICONS = ['📁', '🚗', '🛒', '🍽️', '🏠', '💡', '✈️'
 type CategoryOption = ExpenseFormProps['categories'][number];
 
 function localYesterdayForInput() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
+  return addDays(todayInAppTimeZone(), -1);
 }
 
 export default function ExpenseForm({
@@ -209,7 +205,7 @@ export default function ExpenseForm({
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
-      date: expense?.date ? formatDateForInput(expense.date) : getLocalTodayForInput(),
+      date: expense?.date ? toDayString(expense.date) : todayInAppTimeZone(),
       amount: expense?.amount.toString() || '',
       categoryId: expense?.categoryId || '',
       subcategoryId: expense?.subcategoryId || '',
@@ -487,7 +483,7 @@ export default function ExpenseForm({
     }
   };
 
-  const today = getLocalTodayForInput();
+  const today = todayInAppTimeZone();
   const yesterday = localYesterdayForInput();
   const amountField = register(isTransfer ? 'payAmount' : 'amount');
   const amountError = (isTransfer ? errors.payAmount : errors.amount)?.message;

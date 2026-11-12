@@ -7,6 +7,7 @@ import {
   updateTransaction,
   type IncomeInput,
 } from '@/lib/transactions';
+import { dayFilter } from '@/lib/dates';
 
 export async function getIncome(filters?: {
   startDate?: string;
@@ -18,11 +19,8 @@ export async function getIncome(filters?: {
   try {
     const where: any = { kind: 'INCOME' };
 
-    if (filters?.startDate || filters?.endDate) {
-      where.date = {};
-      if (filters.startDate) where.date.gte = new Date(filters.startDate);
-      if (filters.endDate) where.date.lte = new Date(filters.endDate);
-    }
+    const dateRange = dayFilter(filters?.startDate, filters?.endDate);
+    if (dateRange) where.date = dateRange;
 
     if (filters?.categoryId) {
       where.categoryId = filters.categoryId;

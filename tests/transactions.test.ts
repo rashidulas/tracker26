@@ -5,9 +5,9 @@
  * Balances are computed with computeBalancesForAccounts, the same function the
  * Accounts page uses, over whatever the module stored.
  *
- * Run: npm test
+ * Run: npm test (vitest)
  */
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach } from 'vitest';
 import assert from 'node:assert/strict';
 
 import {
@@ -753,4 +753,30 @@ test('deleteCategory guard reports split-expense lines, subcategory use and budg
     (await categoryDeleteBlocker(db as never, ids.groceries))!,
     /1 transaction using one of its subcategories/
   );
+});
+
+// ==================== DATES ====================
+
+test('dates are stored as UTC midnight of the calendar day; impossible days are refused', async () => {
+  const saved = ok(
+    await createTransaction(
+      { kind: 'EXPENSE', date: '2026-11-01', amount: 5, categoryId: ids.dining, accountId: ids.checking },
+      deps
+    )
+  );
+  assert.equal(saved.date.toISOString(), '2026-11-01T00:00:00.000Z');
+
+  for (const date of ['2026-13-45', '2026-02-30', '11/01/2026', '']) {
+    assert.equal(
+      err(
+        await createTransaction(
+          { kind: 'EXPENSE', date, amount: 5, categoryId: ids.dining, accountId: ids.checking },
+          deps
+        )
+      ),
+      'Please enter a valid date',
+      `refuses ${JSON.stringify(date)}`
+    );
+  }
+  assert.equal(db.data.transaction.length, 1);
 });

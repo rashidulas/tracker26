@@ -17,6 +17,7 @@
  */
 import type { Prisma, PrismaClient, Transaction, TransactionKind } from '@prisma/client';
 import { z } from 'zod';
+import { isValidDay, parseDay, toDayString } from '@/lib/dates';
 
 // ==================== DEPENDENCIES ====================
 
@@ -97,12 +98,21 @@ const amountSchema = z
   .finite('Amount must be a number')
   .positive('Amount must be positive');
 
+/**
+ * A transaction date is a calendar day stored as UTC midnight (lib/dates.ts).
+ * Accepts a `YYYY-MM-DD` string, or a Date whose UTC day is that day.
+ */
 const dateSchema = z
-  .union([z.date(), z.string().trim().min(1, 'Date is required')], {
-    required_error: 'Date is required',
-  })
-  .transform((v) => (v instanceof Date ? v : new Date(v)))
-  .refine((d) => !Number.isNaN(d.getTime()), 'Date is invalid');
+  .union([z.date(), z.string()], { required_error: 'Date is required' })
+  .transform((v, ctx) => {
+    const day =
+      v instanceof Date ? (Number.isNaN(v.getTime()) ? '' : toDayString(v)) : v.trim();
+    if (!isValidDay(day)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Please enter a valid date' });
+      return z.NEVER;
+    }
+    return parseDay(day);
+  });
 
 /** undefined = leave as is on update; '' / null = clear. */
 const optionalText = (max: number) =>
