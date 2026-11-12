@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ToastProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -101,10 +103,46 @@ function entryLabel(type: EntryType) {
 }
 
 export default function FriendsClient({ initialFriends }: FriendsClientProps) {
-  const [friends, setFriends] = useState(initialFriends);
+  const router = useRouter();
+  const toast = useToast();
+  const [allFriends, setFriends] = useState(initialFriends);
   const [friendModalOpen, setFriendModalOpen] = useState(false);
   const [editingFriend, setEditingFriend] = useState<Friend | null>(null);
-  const [detailFriend, setDetailFriend] = useState<Friend | null>(null);
+  const [detailFriendId, setDetailFriendId] = useState<string | null>(null);
+  // Hidden while their delete waits out the Undo window.
+  const [pendingFriends, setPendingFriends] = useState<Set<string>>(() => new Set());
+  const [pendingEntries, setPendingEntries] = useState<Set<string>>(() => new Set());
+
+  // Refreshed server data (balances, entries) replaces local state.
+  useEffect(() => {
+    setFriends(initialFriends);
+  }, [initialFriends]);
+
+  const friends = useMemo(
+    () =>
+      allFriends
+        .filter((f) => !pendingFriends.has(f.id))
+        .map((f) =>
+          f.entries.some((e) => pendingEntries.has(e.id))
+            ? { ...f, entries: f.entries.filter((e) => !pendingEntries.has(e.id)) }
+            : f
+        ),
+    [allFriends, pendingFriends, pendingEntries]
+  );
+  const detailFriend = friends.find((f) => f.id === detailFriendId) ?? null;
+  const setDetailFriend = (friend: Friend | null) => setDetailFriendId(friend?.id ?? null);
+
+  const toggle = (
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+    id: string,
+    on: boolean
+  ) =>
+    setter((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   const [entryModalOpen, setEntryModalOpen] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,7 +165,6 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
     return { owedToYou, youOwe, net: owedToYou - youOwe };
   }, [friends]);
 
-  const reload = () => window.location.reload();
 
   const openAddFriend = () => {
     setEditingFriend(null);
@@ -176,22 +213,29 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
 
     setIsSubmitting(false);
     if (result.success) {
+      toast.success(editingFriend ? 'Friend updated' : 'Friend added');
       setFriendModalOpen(false);
-      reload();
+      router.refresh();
     } else {
       setError(result.error || 'Something went wrong');
     }
   };
 
-  const handleDeleteFriend = async (friend: Friend) => {
-    if (!confirm(`Remove ${friend.name} and all their entries?`)) return;
-    const result = await deleteFriend(friend.id);
-    if (result.success) {
-      setFriends(friends.filter((f) => f.id !== friend.id));
-      if (detailFriend?.id === friend.id) setDetailFriend(null);
-    } else {
-      setError(result.error || 'Failed to delete');
-    }
+  const handleDeleteFriend = (friend: Friend) => {
+    toggle(setPendingFriends, friend.id, true);
+    if (detailFriendId === friend.id) setDetailFriendId(null);
+    toast.deferred({
+      message: `Removed ${friend.name} and their entries`,
+      commit: () => deleteFriend(friend.id),
+      errorMessage: `Failed to remove ${friend.name}`,
+      onUndo: () => toggle(setPendingFriends, friend.id, false),
+      onFailed: () => toggle(setPendingFriends, friend.id, false),
+      onCommitted: () => {
+        setFriends((prev) => prev.filter((f) => f.id !== friend.id));
+        toggle(setPendingFriends, friend.id, false);
+        router.refresh();
+      },
+    });
   };
 
   const handleSaveEntry = async () => {
@@ -208,17 +252,27 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
     const result = await createFriendEntry(formData);
     setIsSubmitting(false);
     if (result.success) {
+      toast.success('Entry added');
       setEntryModalOpen(false);
-      reload();
+      router.refresh();
     } else {
       setError(result.error || 'Something went wrong');
     }
   };
 
-  const handleDeleteEntry = async (entryId: string) => {
-    if (!confirm('Delete this entry?')) return;
-    const result = await deleteFriendEntry(entryId);
-    if (result.success) reload();
+  const handleDeleteEntry = (entryId: string) => {
+    toggle(setPendingEntries, entryId, true);
+    toast.deferred({
+      message: 'Entry deleted',
+      commit: () => deleteFriendEntry(entryId),
+      errorMessage: 'Failed to delete entry',
+      onUndo: () => toggle(setPendingEntries, entryId, false),
+      onFailed: () => toggle(setPendingEntries, entryId, false),
+      onCommitted: () => {
+        // Keep it hidden until the refreshed data (with the new balance) arrives.
+        router.refresh();
+      },
+    });
   };
 
   return (

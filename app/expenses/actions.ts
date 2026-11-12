@@ -15,6 +15,20 @@ const transactionSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
+const rowInclude = {
+  category: true,
+  subcategory: true,
+  account: true,
+  toAccount: true,
+} as const;
+
+function revalidateExpenseViews() {
+  revalidatePath('/expenses');
+  revalidatePath('/dashboard');
+  revalidatePath('/accounts');
+  revalidatePath('/expenses-dashboard');
+}
+
 async function resolveSubcategoryId(
   categoryId: string,
   subcategoryId?: string
@@ -123,7 +137,7 @@ export async function createExpense(formData: FormData) {
     );
     if (!subResult.ok) return { success: false, error: subResult.error };
 
-    await prisma.transaction.create({
+    const created = await prisma.transaction.create({
       data: {
         date: new Date(validated.date),
         amount: validated.amount,
@@ -131,14 +145,15 @@ export async function createExpense(formData: FormData) {
         categoryId: validated.categoryId,
         subcategoryId: subResult.subcategoryId,
         accountId: validated.accountId || null,
-        merchantOrSource: validated.merchantOrSource,
+        merchantOrSource: validated.merchantOrSource?.trim() || null,
         notes: validated.notes,
         tags: validated.tags || [],
       },
+      include: rowInclude,
     });
 
-    revalidatePath('/expenses');
-    return { success: true };
+    revalidateExpenseViews();
+    return { success: true, data: created };
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
@@ -171,7 +186,7 @@ export async function updateExpense(id: string, formData: FormData) {
     );
     if (!subResult.ok) return { success: false, error: subResult.error };
 
-    await prisma.transaction.update({
+    const updated = await prisma.transaction.update({
       where: { id },
       data: {
         date: new Date(validated.date),
@@ -180,14 +195,15 @@ export async function updateExpense(id: string, formData: FormData) {
         categoryId: validated.categoryId,
         subcategoryId: subResult.subcategoryId,
         accountId: validated.accountId || null,
-        merchantOrSource: validated.merchantOrSource,
+        merchantOrSource: validated.merchantOrSource?.trim() || null,
         notes: validated.notes,
         tags: validated.tags || [],
       },
+      include: rowInclude,
     });
 
-    revalidatePath('/expenses');
-    return { success: true };
+    revalidateExpenseViews();
+    return { success: true, data: updated };
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
@@ -203,7 +219,7 @@ export async function deleteExpense(id: string) {
       where: { id },
     });
 
-    revalidatePath('/expenses');
+    revalidateExpenseViews();
     return { success: true };
   } catch (error) {
     console.error('Error deleting expense:', error);
@@ -275,7 +291,7 @@ export async function createPaymentTransfer(formData: FormData) {
       });
     }
 
-    await prisma.transaction.create({
+    const created = await prisma.transaction.create({
       data: {
         date: new Date(date),
         amount,
@@ -287,12 +303,11 @@ export async function createPaymentTransfer(formData: FormData) {
         notes: notes || 'Account payment transfer',
         tags: ['payment'],
       },
+      include: rowInclude,
     });
 
-    revalidatePath('/expenses');
-    revalidatePath('/accounts');
-    revalidatePath('/dashboard');
-    return { success: true };
+    revalidateExpenseViews();
+    return { success: true, data: created };
   } catch (error) {
     console.error('Error creating payment transfer:', error);
     return { success: false, error: 'Failed to record payment' };
@@ -329,7 +344,7 @@ export async function createDebtPaymentTransfer(formData: FormData) {
     }
 
     // Create a TRANSFER transaction: money moves from checking → credit card
-    await prisma.transaction.create({
+    const created = await prisma.transaction.create({
       data: {
         date: new Date(date),
         amount,
@@ -341,15 +356,93 @@ export async function createDebtPaymentTransfer(formData: FormData) {
         notes: notes || 'Debt payment transfer',
         tags: ['debt-payment'],
       },
+      include: rowInclude,
     });
 
-    revalidatePath('/expenses');
-    revalidatePath('/accounts');
-    revalidatePath('/dashboard');
-    return { success: true };
+    revalidateExpenseViews();
+    revalidatePath('/transfers');
+    return { success: true, data: created };
   } catch (error) {
     console.error('Error creating debt payment transfer:', error);
     return { success: false, error: 'Failed to record debt payment' };
   }
 }
 
+
+/**
+ * Everything the global quick-add form needs: categories, accounts, and past
+ * merchants (most recent first) with the category / account used last time for
+ * each, plus the account last used per category.
+ */
+export async function getQuickAddData() {
+  try {
+    const [categories, accounts, recent] = await Promise.all([
+      prisma.category.findMany({
+        where: { type: 'EXPENSE' },
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          color: true,
+          subcategories: { orderBy: { name: 'asc' }, select: { id: true, name: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.account.findMany({
+        select: { id: true, name: true, type: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.transaction.findMany({
+        where: { kind: 'EXPENSE' },
+        select: {
+          merchantOrSource: true,
+          categoryId: true,
+          subcategoryId: true,
+          accountId: true,
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: 500,
+      }),
+    ]);
+
+    const merchants: Array<{
+      name: string;
+      categoryId: string | null;
+      subcategoryId: string | null;
+      accountId: string | null;
+    }> = [];
+    const seen = new Set<string>();
+    const accountByCategory: Record<string, string> = {};
+
+    for (const t of recent) {
+      if (t.categoryId && t.accountId && !accountByCategory[t.categoryId]) {
+        accountByCategory[t.categoryId] = t.accountId;
+      }
+      const name = t.merchantOrSource?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merchants.push({
+        name,
+        categoryId: t.categoryId,
+        subcategoryId: t.subcategoryId,
+        accountId: t.accountId,
+      });
+    }
+
+    return {
+      success: true as const,
+      data: {
+        categories,
+        accounts,
+        merchants: merchants.slice(0, 200),
+        accountByCategory,
+        lastAccountId: recent.find((t) => t.accountId)?.accountId ?? null,
+      },
+    };
+  } catch (error) {
+    console.error('Error loading quick-add data:', error);
+    return { success: false as const, error: 'Failed to load expense form data' };
+  }
+}

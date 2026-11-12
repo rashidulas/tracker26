@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ToastProvider';
 import { motion } from 'framer-motion';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -46,30 +48,51 @@ const fadeUp = {
 type FilterTab = 'ALL' | 'EXPENSE' | 'INCOME';
 
 export default function CategoriesClient({ initialCategories }: CategoriesClientProps) {
+  const router = useRouter();
+  const toast = useToast();
   const [categories, setCategories] = useState(initialCategories);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [deleteError, setDeleteError] = useState('');
   const [filter, setFilter] = useState<FilterTab>('ALL');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Hidden while the delete waits out its Undo window.
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setCategories(initialCategories);
+  }, [initialCategories]);
+
+  const visible = useMemo(
+    () => categories.filter((c) => !pendingDelete.has(c.id)),
+    [categories, pendingDelete]
+  );
 
   const counts = useMemo(() => {
     return {
-      all: categories.length,
-      expense: categories.filter((c) => c.type === 'EXPENSE').length,
-      income: categories.filter((c) => c.type === 'INCOME').length,
+      all: visible.length,
+      expense: visible.filter((c) => c.type === 'EXPENSE').length,
+      income: visible.filter((c) => c.type === 'INCOME').length,
     };
-  }, [categories]);
+  }, [visible]);
 
   const filtered = useMemo(() => {
-    if (filter === 'ALL') return categories;
-    return categories.filter((c) => c.type === filter);
-  }, [categories, filter]);
+    if (filter === 'ALL') return visible;
+    return visible.filter((c) => c.type === filter);
+  }, [visible, filter]);
+
+  const setPending = (id: string, on: boolean) =>
+    setPendingDelete((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   const handleSuccess = () => {
+    toast.success(editingCategory ? 'Category updated' : 'Category created');
     setIsModalOpen(false);
     setEditingCategory(null);
-    window.location.reload();
+    router.refresh();
   };
 
   const handleEdit = (category: Category) => {
@@ -82,18 +105,20 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this category? This cannot be undone.')) return;
-
-    setDeleteError('');
-    const result = await deleteCategory(id);
-
-    if (result.success) {
-      setCategories(categories.filter((c) => c.id !== id));
-    } else {
-      setDeleteError(result.error || 'Failed to delete category');
-      setTimeout(() => setDeleteError(''), 5000);
-    }
+  const handleDelete = (category: Category) => {
+    setPending(category.id, true);
+    toast.deferred({
+      message: `Deleted ${category.name}`,
+      commit: () => deleteCategory(category.id),
+      errorMessage: 'Failed to delete category',
+      onUndo: () => setPending(category.id, false),
+      onFailed: () => setPending(category.id, false),
+      onCommitted: () => {
+        setCategories((prev) => prev.filter((c) => c.id !== category.id));
+        setPending(category.id, false);
+        router.refresh();
+      },
+    });
   };
 
   const tabs: { id: FilterTab; label: string; count: number }[] = [
@@ -114,12 +139,6 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
           </Button>
         }
       />
-
-      {deleteError && (
-        <div className="mb-5 p-3.5 bg-danger-dim border border-danger/25 rounded-2xl text-danger text-sm">
-          {deleteError}
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-2 mb-6">
         {tabs.map((tab) => {
@@ -234,7 +253,7 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
                         <Pencil size={16} />
                       </button>
                       <button
-                        onClick={() => handleDelete(category.id)}
+                        onClick={() => handleDelete(category)}
                         className="p-2 rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                         aria-label={`Delete ${category.name}`}
                       >
