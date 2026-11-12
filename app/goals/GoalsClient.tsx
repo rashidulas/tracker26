@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ToastProvider';
 import PageHeader from '@/components/PageHeader';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -198,26 +200,55 @@ function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
 }
 
 export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps) {
+  const router = useRouter();
+  const toast = useToast();
   const [goals, setGoals] = useState(initialGoals);
+  // Hidden while the delete waits out its Undo window.
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setGoals(initialGoals);
+  }, [initialGoals]);
+
+  const setPending = (id: string, on: boolean) =>
+    setPendingDelete((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const visibleGoals = goals.filter((g) => !pendingDelete.has(g.id));
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isContributionModalOpen, setIsContributionModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [selectedGoalForContribution, setSelectedGoalForContribution] = useState<string | null>(null);
 
   const handleSuccess = () => {
+    toast.success(
+      isContributionModalOpen ? 'Contribution added' : editingGoal ? 'Goal updated' : 'Goal added'
+    );
     setIsGoalModalOpen(false);
     setIsContributionModalOpen(false);
     setEditingGoal(null);
     setSelectedGoalForContribution(null);
-    window.location.reload();
+    router.refresh();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this goal?')) return;
-    const result = await deleteGoal(id);
-    if (result.success) {
-      setGoals(goals.filter((g) => g.id !== id));
-    }
+  const handleDelete = (goal: Goal) => {
+    setPending(goal.id, true);
+    toast.deferred({
+      message: `Deleted ${goal.name}`,
+      commit: () => deleteGoal(goal.id),
+      errorMessage: 'Failed to delete goal',
+      onUndo: () => setPending(goal.id, false),
+      onFailed: () => setPending(goal.id, false),
+      onCommitted: () => {
+        setGoals((prev) => prev.filter((g) => g.id !== goal.id));
+        setPending(goal.id, false);
+        router.refresh();
+      },
+    });
   };
 
   const formatCurrency = (amount: number) => {
@@ -241,7 +272,7 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-        {goals.map((goal) => (
+        {visibleGoals.map((goal) => (
           <div key={goal.id} className="panel-hover shadow-panel p-4 sm:p-6">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -264,7 +295,7 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                   <Edit2 size={16} />
                 </button>
                 <button
-                  onClick={() => handleDelete(goal.id)}
+                  onClick={() => handleDelete(goal)}
                   className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                 >
                   <Trash2 size={16} />
@@ -319,7 +350,7 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
         ))}
       </div>
 
-      {goals.length === 0 && (
+      {visibleGoals.length === 0 && (
         <div className="panel shadow-panel p-12 text-center">
           <TargetIcon size={64} className="mx-auto text-ink-muted mb-4" />
           <p className="text-ink-muted">No goals yet. Add your first savings goal!</p>
