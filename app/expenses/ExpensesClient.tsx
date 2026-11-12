@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -23,6 +23,11 @@ import {
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDate } from '@/lib/utils';
 import { formatDay, toDayString, todayInAppTimeZone } from '@/lib/dates';
+import { useToast } from '@/components/ToastProvider';
+import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
+import { useExpenseSaved } from '@/components/quickadd/useExpenseSaved';
+import { onExpenseEvent, type ExpenseRow } from '@/lib/expenseEvents';
+import type { ExpenseSaveResult } from './ExpenseForm';
 
 interface Expense {
   id: string;
@@ -68,7 +73,12 @@ export default function ExpensesClient({
     formatDay(`${monthKey}-01`, { month: 'long', year: 'numeric' });
   const selectedMonth = searchParams.get('month') || currentMonthKey;
 
+  const toast = useToast();
+  const quickAdd = useQuickAdd();
+  const announceSaved = useExpenseSaved();
   const [expenses, setExpenses] = useState(initialExpenses);
+  // Rows deleted in the UI whose delete hasn't been committed yet (Undo window).
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
@@ -113,10 +123,35 @@ export default function ExpensesClient({
     router.push(`${pathname}?${params.toString()}`);
   };
 
-  const handleSuccess = () => {
+  // Server data wins whenever it is refreshed (router.refresh after a save).
+  useEffect(() => {
+    setExpenses(initialExpenses);
+  }, [initialExpenses]);
+
+  // Saves from the global quick-add (or Undo) update the list in place.
+  useEffect(
+    () =>
+      onExpenseEvent((event) => {
+        if (event.type === 'removed') {
+          setExpenses((prev) => prev.filter((e) => e.id !== event.id));
+          return;
+        }
+        const row = event.row as ExpenseRow & Expense;
+        setExpenses((prev) => {
+          const rest = prev.filter((e) => e.id !== row.id);
+          return [row, ...rest].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+        });
+      }),
+    []
+  );
+
+  const handleSuccess = (result: ExpenseSaveResult) => {
     setIsModalOpen(false);
     setEditingExpense(null);
-    window.location.reload();
+    announceSaved(result);
+    router.refresh();
   };
 
   const handleEdit = (expense: Expense) => {
@@ -124,18 +159,30 @@ export default function ExpensesClient({
     setIsModalOpen(true);
   };
 
-  const handleAdd = () => {
-    setEditingExpense(null);
-    setIsModalOpen(true);
-  };
+  const handleAdd = () => quickAdd.open();
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this expense?')) return;
+  const setPending = (id: string, on: boolean) =>
+    setPendingDelete((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
-    const result = await deleteExpense(id);
-    if (result.success) {
-      setExpenses(expenses.filter((e) => e.id !== id));
-    }
+  const handleDelete = (expense: Expense) => {
+    setPending(expense.id, true);
+    toast.deferred({
+      message: `Deleted ${expense.merchantOrSource || expense.category?.name || 'expense'} · ${formatCurrency(expense.amount)}`,
+      commit: () => deleteExpense(expense.id),
+      errorMessage: 'Failed to delete expense',
+      onUndo: () => setPending(expense.id, false),
+      onFailed: () => setPending(expense.id, false),
+      onCommitted: () => {
+        setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
+        setPending(expense.id, false);
+        router.refresh();
+      },
+    });
   };
 
   const formatCurrency = (amount: number) => {
@@ -145,7 +192,12 @@ export default function ExpensesClient({
     }).format(amount);
   };
 
-  const filteredExpenses = expenses.filter((expense) => {
+  const visibleExpenses = useMemo(
+    () => expenses.filter((e) => !pendingDelete.has(e.id)),
+    [expenses, pendingDelete]
+  );
+
+  const filteredExpenses = visibleExpenses.filter((expense) => {
     if (selectedMonth && selectedMonth !== 'all') {
       if (toDayString(expense.date).slice(0, 7) !== selectedMonth) return false;
     }
@@ -405,7 +457,7 @@ export default function ExpensesClient({
                     <Pencil size={15} />
                   </button>
                   <button
-                    onClick={() => handleDelete(expense.id)}
+                    onClick={() => handleDelete(expense)}
                     className="p-2 rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                     aria-label="Delete expense"
                   >
@@ -482,7 +534,8 @@ export default function ExpensesClient({
           accounts={accounts}
           onSuccess={() => {
             setIsScannerOpen(false);
-            window.location.reload();
+            toast.success('Receipt expense added');
+            router.refresh();
           }}
           onCancel={() => setIsScannerOpen(false)}
         />
