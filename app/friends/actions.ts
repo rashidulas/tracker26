@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { signedFriendAmount } from '@/lib/friends';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { isValidDay, parseDay, todayAsStoredDate } from '@/lib/dates';
 import type { FriendEntryType } from '@prisma/client';
 
 const FRIEND_COLORS = [
@@ -25,7 +26,7 @@ const friendSchema = z.object({
 
 const entrySchema = z.object({
   friendId: z.string().min(1),
-  date: z.string().min(1, 'Date is required'),
+  date: z.string().refine(isValidDay, 'Please enter a valid date'),
   amount: z.number().positive('Amount must be positive'),
   type: z.enum(['THEY_OWE_ME', 'I_OWE_THEM', 'THEY_PAID_ME', 'I_PAID_THEM']),
   description: z.string().max(120).optional(),
@@ -95,7 +96,7 @@ export async function createFriend(formData: FormData) {
       await prisma.friendEntry.create({
         data: {
           friendId: friend.id,
-          date: new Date(),
+          date: todayAsStoredDate(),
           amount: openingAmount,
           type: openingType,
           description: 'Opening balance',
@@ -167,7 +168,7 @@ export async function createFriendEntry(formData: FormData) {
     await prisma.friendEntry.create({
       data: {
         friendId: validated.friendId,
-        date: new Date(validated.date),
+        date: parseDay(validated.date),
         amount: validated.amount,
         type: validated.type,
         description: validated.description?.trim() || null,

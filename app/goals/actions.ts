@@ -3,15 +3,19 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { isValidDay, parseDay } from '@/lib/dates';
 
 const goalSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   targetAmount: z.number().positive('Target amount must be positive'),
-  dueDate: z.string().optional(),
+  dueDate: z
+    .string()
+    .optional()
+    .refine((v) => !v || isValidDay(v), 'Please enter a valid due date'),
 });
 
 const contributionSchema = z.object({
-  date: z.string().min(1, 'Date is required'),
+  date: z.string().refine(isValidDay, 'Please enter a valid date'),
   amount: z.number().positive('Amount must be positive'),
   goalId: z.string().min(1, 'Goal is required'),
   fromAccountId: z.string().min(1, 'Account is required'),
@@ -59,7 +63,7 @@ export async function createGoal(formData: FormData) {
     await prisma.goal.create({
       data: {
         ...validated,
-        dueDate: validated.dueDate ? new Date(validated.dueDate) : null,
+        dueDate: validated.dueDate ? parseDay(validated.dueDate) : null,
       },
     });
 
@@ -86,7 +90,7 @@ export async function updateGoal(id: string, formData: FormData) {
       where: { id },
       data: {
         ...validated,
-        dueDate: validated.dueDate ? new Date(validated.dueDate) : null,
+        dueDate: validated.dueDate ? parseDay(validated.dueDate) : null,
       },
     });
 
@@ -124,7 +128,7 @@ export async function createContribution(formData: FormData) {
     await prisma.goalContribution.create({
       data: {
         ...validated,
-        date: new Date(validated.date),
+        date: parseDay(validated.date),
       },
     });
 

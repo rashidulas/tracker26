@@ -41,44 +41,7 @@ export function formatDate(date: Date | string, format: 'short' | 'long' | 'full
   }
 }
 
-// Format date for input fields (YYYY-MM-DD) to prevent timezone shifting
-export function formatDateForInput(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-// Get today's local date in YYYY-MM-DD format
-export function getLocalTodayForInput(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-// Get month string (YYYY-MM)
-export function getMonthString(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
-}
-
-// Parse month string to Date (first day of month)
-export function parseMonthString(monthStr: string): Date {
-  const [year, month] = monthStr.split('-').map(Number);
-  return new Date(year, month - 1, 1);
-}
-
-// Get date range for month
-export function getMonthDateRange(monthStr: string): { start: Date; end: Date } {
-  const [year, month] = monthStr.split('-').map(Number);
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0, 23, 59, 59, 999);
-  return { start, end };
-}
+// Calendar-day helpers (today, ranges, input values) live in lib/dates.ts.
 
 // Get month/year string for display
 export function getMonthYearString(date: Date): string {

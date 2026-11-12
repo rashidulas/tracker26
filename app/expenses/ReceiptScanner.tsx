@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { isValidDay, todayInAppTimeZone } from '@/lib/dates';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
 import Button from '@/components/Button';
@@ -75,7 +76,7 @@ export default function ReceiptScanner({
   } = useForm<ReviewFormData>({
     resolver: zodResolver(reviewSchema),
     defaultValues: {
-      date: new Date().toISOString().split('T')[0],
+      date: todayInAppTimeZone(),
       amount: '',
       categoryId: '',
       accountId: accounts.length > 0 ? accounts[0].id : '',
@@ -148,7 +149,7 @@ export default function ReceiptScanner({
       setScanResult(data);
 
       setValue('merchantOrSource', data.merchant || '');
-      setValue('date', data.date || new Date().toISOString().split('T')[0]);
+      setValue('date', isValidDay(data.date) ? data.date : todayInAppTimeZone());
       setValue('amount', data.totalAmount?.toString() || '');
       setValue('categoryId', findCategoryId(data.category || ''));
       setValue('notes', data.notes || '');

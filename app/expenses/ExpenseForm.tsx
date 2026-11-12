@@ -14,7 +14,7 @@ import {
 } from './actions';
 import { createCategory } from '@/app/categories/actions';
 import { useEffect, useState } from 'react';
-import { formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
+import { toDayString, todayInAppTimeZone } from '@/lib/dates';
 import {
   CreditCard,
   ArrowRight,
@@ -116,7 +116,7 @@ export default function ExpenseForm({
   } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
-      date: expense?.date ? formatDateForInput(expense.date) : getLocalTodayForInput(),
+      date: expense?.date ? toDayString(expense.date) : todayInAppTimeZone(),
       amount: expense?.amount.toString() || '',
       categoryId: expense?.categoryId || '',
       subcategoryId: expense?.subcategoryId || '',

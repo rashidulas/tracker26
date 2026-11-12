@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { getMonthDateRange } from '@/lib/utils';
+import { dayFilter, toDayString, todayAsStoredDate } from '@/lib/dates';
 
 // ==================== TYPES ====================
 export type ExpenseFilter = {
@@ -34,11 +34,8 @@ export async function getFilteredExpenses(filter: ExpenseFilter) {
     };
 
     // Date range filter
-    if (filter.startDate || filter.endDate) {
-      where.date = {};
-      if (filter.startDate) where.date.gte = filter.startDate;
-      if (filter.endDate) where.date.lte = filter.endDate;
-    }
+    const dateRange = dayFilter(filter.startDate, filter.endDate);
+    if (dateRange) where.date = dateRange;
 
     // Amount range filter
     if (filter.minAmount !== undefined || filter.maxAmount !== undefined) {
@@ -95,8 +92,8 @@ export async function getExpenseSummary(filter: ExpenseFilter) {
     const total = expenses.reduce((sum, exp) => sum + exp.amount, 0);
 
     // Calculate date range days
-    const startDate = filter.startDate || (expenses.length > 0 ? expenses[expenses.length - 1].date : new Date());
-    const endDate = filter.endDate || (expenses.length > 0 ? expenses[0].date : new Date());
+    const startDate = filter.startDate || (expenses.length > 0 ? expenses[expenses.length - 1].date : todayAsStoredDate());
+    const endDate = filter.endDate || (expenses.length > 0 ? expenses[0].date : todayAsStoredDate());
     const daysDiff = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
 
     // Average per day
@@ -158,7 +155,7 @@ export async function getExpenseChartData(filter: ExpenseFilter) {
     // Daily trend for line chart
     const dailyTotals: { [key: string]: number } = {};
     expenses.forEach(exp => {
-      const dateKey = exp.date.toISOString().split('T')[0];
+      const dateKey = toDayString(exp.date);
       dailyTotals[dateKey] = (dailyTotals[dateKey] || 0) + exp.amount;
     });
 
@@ -181,11 +178,8 @@ export async function getFilteredIncome(filter: IncomeFilter) {
     };
 
     // Date range filter
-    if (filter.startDate || filter.endDate) {
-      where.date = {};
-      if (filter.startDate) where.date.gte = filter.startDate;
-      if (filter.endDate) where.date.lte = filter.endDate;
-    }
+    const dateRange = dayFilter(filter.startDate, filter.endDate);
+    if (dateRange) where.date = dateRange;
 
     // Amount range filter
     if (filter.minAmount !== undefined || filter.maxAmount !== undefined) {
@@ -240,8 +234,8 @@ export async function getIncomeSummary(filter: IncomeFilter) {
     const total = income.reduce((sum, inc) => sum + inc.amount, 0);
 
     // Calculate date range days
-    const startDate = filter.startDate || (income.length > 0 ? income[income.length - 1].date : new Date());
-    const endDate = filter.endDate || (income.length > 0 ? income[0].date : new Date());
+    const startDate = filter.startDate || (income.length > 0 ? income[income.length - 1].date : todayAsStoredDate());
+    const endDate = filter.endDate || (income.length > 0 ? income[0].date : todayAsStoredDate());
     const daysDiff = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
     const monthsDiff = Math.max(1, daysDiff / 30);
 
@@ -304,7 +298,7 @@ export async function getIncomeChartData(filter: IncomeFilter) {
     // Daily trend for line chart
     const dailyTotals: { [key: string]: number } = {};
     income.forEach(inc => {
-      const dateKey = inc.date.toISOString().split('T')[0];
+      const dateKey = toDayString(inc.date);
       dailyTotals[dateKey] = (dailyTotals[dateKey] || 0) + inc.amount;
     });
 

@@ -8,6 +8,7 @@ import {
   transactionFilterSchema,
   type TransactionFilter,
 } from '@/lib/validations';
+import { dayFilter, toDayString } from '@/lib/dates';
 
 // ==================== GET TRANSACTIONS ====================
 export async function getTransactions(filter?: TransactionFilter) {
@@ -17,15 +18,8 @@ export async function getTransactions(filter?: TransactionFilter) {
     if (filter) {
       const validatedFilter = transactionFilterSchema.parse(filter);
 
-      if (validatedFilter.startDate || validatedFilter.endDate) {
-        where.date = {};
-        if (validatedFilter.startDate) {
-          where.date.gte = validatedFilter.startDate;
-        }
-        if (validatedFilter.endDate) {
-          where.date.lte = validatedFilter.endDate;
-        }
-      }
+      const dateRange = dayFilter(validatedFilter.startDate, validatedFilter.endDate);
+      if (dateRange) where.date = dateRange;
 
       if (validatedFilter.categoryId) {
         where.categoryId = validatedFilter.categoryId;
@@ -255,7 +249,7 @@ export async function exportTransactionsToCSV(filter?: TransactionFilter) {
     const transactions = await getTransactions(filter);
 
     const csvData = transactions.map(tx => ({
-      Date: tx.date.toISOString().split('T')[0],
+      Date: toDayString(tx.date),
       Type: tx.kind,
       Amount: tx.amount.toFixed(2),
       Category: tx.category?.name || (tx.kind === 'TRANSFER' ? 'Transfer' : 'Split'),

@@ -7,7 +7,8 @@ import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
-import { formatCurrency, formatDate, formatDateForInput } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { parseDay, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
 import {
   getTransactions,
@@ -88,7 +89,7 @@ export default function TransfersPage() {
   async function handleSubmit(formData: FormData) {
     const data = {
       kind: 'TRANSFER' as const,
-      date: new Date(formData.get('date') as string),
+      date: parseDay(formData.get('date') as string),
       amount: parseFloat(formData.get('amount') as string),
       accountId: formData.get('fromAccountId') as string,
       toAccountId: formData.get('toAccountId') as string,
@@ -230,7 +231,7 @@ export default function TransfersPage() {
               label="Date"
               name="date"
               type="date"
-              defaultValue={editingTransfer ? formatDateForInput(editingTransfer.date) : formatDateForInput(new Date())}
+              defaultValue={editingTransfer ? toDayString(editingTransfer.date) : todayInAppTimeZone()}
               required
             />
 

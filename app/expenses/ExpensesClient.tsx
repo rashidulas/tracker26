@@ -20,9 +20,9 @@ import {
   Receipt,
   ArrowRight,
 } from 'lucide-react';
-import { format } from 'date-fns';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDate } from '@/lib/utils';
+import { formatDay, toDayString, todayInAppTimeZone } from '@/lib/dates';
 
 interface Expense {
   id: string;
@@ -62,8 +62,10 @@ export default function ExpensesClient({
   const searchParams = useSearchParams();
   const pathname = usePathname();
 
-  const now = new Date();
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const today = todayInAppTimeZone();
+  const currentMonthKey = today.slice(0, 7);
+  const monthLabel = (monthKey: string) =>
+    formatDay(`${monthKey}-01`, { month: 'long', year: 'numeric' });
   const selectedMonth = searchParams.get('month') || currentMonthKey;
 
   const [expenses, setExpenses] = useState(initialExpenses);
@@ -85,14 +87,12 @@ export default function ExpensesClient({
 
   const getMonthOptions = () => {
     const monthsMap = new Map<string, string>();
-    const currentMonthLabel = format(now, 'MMMM yyyy');
+    const currentMonthLabel = monthLabel(currentMonthKey);
     monthsMap.set(currentMonthKey, currentMonthLabel);
 
     initialExpenses.forEach((expense) => {
-      const d = new Date(expense.date);
-      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      const utcDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), 1);
-      const label = format(utcDate, 'MMMM yyyy');
+      const key = toDayString(expense.date).slice(0, 7);
+      const label = monthLabel(key);
       monthsMap.set(key, label);
     });
 
@@ -147,12 +147,11 @@ export default function ExpensesClient({
 
   const filteredExpenses = expenses.filter((expense) => {
     if (selectedMonth && selectedMonth !== 'all') {
-      const d = new Date(expense.date);
-      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      if (key !== selectedMonth) return false;
+      if (toDayString(expense.date).slice(0, 7) !== selectedMonth) return false;
     }
-    if (filters.startDate && new Date(expense.date) < new Date(filters.startDate)) return false;
-    if (filters.endDate && new Date(expense.date) > new Date(filters.endDate)) return false;
+    const expenseDay = toDayString(expense.date);
+    if (filters.startDate && expenseDay < filters.startDate) return false;
+    if (filters.endDate && expenseDay > filters.endDate) return false;
     if (filters.categoryId && expense.categoryId !== filters.categoryId) return false;
     if (filters.subcategoryId && expense.subcategoryId !== filters.subcategoryId) return false;
     if (filters.search) {

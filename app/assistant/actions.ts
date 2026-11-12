@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { assistantDraftSchema, type AssistantDraft } from '@/lib/assistant';
+import { parseDay } from '@/lib/dates';
 
 export async function confirmAssistantDraft(draft: AssistantDraft) {
   try {
@@ -46,7 +47,7 @@ export async function confirmAssistantDraft(draft: AssistantDraft) {
 
     await prisma.transaction.create({
       data: {
-        date: new Date(data.date),
+        date: parseDay(data.date),
         amount: data.amount,
         kind: data.kind,
         categoryId: data.categoryId,

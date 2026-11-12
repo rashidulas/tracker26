@@ -6,13 +6,13 @@ import {
   computeAccountBalance,
 } from '@/lib/accountBalance';
 import { signedFriendAmount } from '@/lib/friends';
-import { startOfMonth, endOfMonth, subMonths, eachDayOfInterval, format } from 'date-fns';
+import { todayInAppTimeZone, monthRange, toDayString, eachDay, formatDay } from '@/lib/dates';
 
 export async function getDashboardData() {
   try {
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
+    const today = todayInAppTimeZone();
+    const thisMonth = monthRange(today);
+    const monthStart = thisMonth.gte;
 
     const [
       monthIncomeAgg,
@@ -25,18 +25,18 @@ export async function getDashboardData() {
       splitTransactionsRaw,
     ] = await Promise.all([
       prisma.transaction.aggregate({
-        where: { kind: 'INCOME', date: { gte: monthStart, lte: monthEnd } },
+        where: { kind: 'INCOME', date: thisMonth },
         _sum: { amount: true },
       }),
       prisma.transaction.aggregate({
-        where: { kind: 'EXPENSE', date: { gte: monthStart, lte: monthEnd } },
+        where: { kind: 'EXPENSE', date: thisMonth },
         _sum: { amount: true },
       }),
       prisma.transaction.groupBy({
         by: ['categoryId'],
         where: {
           kind: 'EXPENSE',
-          date: { gte: monthStart, lte: monthEnd },
+          date: thisMonth,
           categoryId: { not: null },
         },
         _sum: { amount: true },
@@ -63,7 +63,7 @@ export async function getDashboardData() {
       prisma.transaction.findMany({
         where: {
           kind: 'EXPENSE',
-          date: { gte: monthStart, lte: monthEnd },
+          date: thisMonth,
         },
         select: { date: true, amount: true },
         orderBy: { date: 'asc' },
@@ -102,23 +102,21 @@ export async function getDashboardData() {
     // Monthly trend (12 months)
     const monthlyTrend = [];
     for (let i = 11; i >= 0; i--) {
-      const date = subMonths(now, i);
-      const start = startOfMonth(date);
-      const end = endOfMonth(date);
+      const range = monthRange(today, -i);
 
       const [income, expenses] = await Promise.all([
         prisma.transaction.aggregate({
-          where: { kind: 'INCOME', date: { gte: start, lte: end } },
+          where: { kind: 'INCOME', date: range },
           _sum: { amount: true },
         }),
         prisma.transaction.aggregate({
-          where: { kind: 'EXPENSE', date: { gte: start, lte: end } },
+          where: { kind: 'EXPENSE', date: range },
           _sum: { amount: true },
         }),
       ]);
 
       monthlyTrend.push({
-        month: start.toLocaleDateString('en-US', { month: 'short' }),
+        month: formatDay(range.gte, { month: 'short' }),
         income: income._sum.amount || 0,
         expenses: expenses._sum.amount || 0,
       });
@@ -146,8 +144,8 @@ export async function getDashboardData() {
       const currentBalance = balanceFor(a);
       const balanceAtMonthStart = balanceFor(
         a,
-        (t) => new Date(t.date) < monthStart,
-        (t) => new Date(t.date) < monthStart
+        (t) => t.date < monthStart,
+        (t) => t.date < monthStart
       );
 
       return {
@@ -191,24 +189,16 @@ export async function getDashboardData() {
     const friendsYouOwe = friends.reduce((s, f) => s + Math.max(0, -f.balance), 0);
 
     // Daily spending trend for area chart
-    const days = eachDayOfInterval({ start: monthStart, end: now > monthEnd ? monthEnd : now });
+    const days = eachDay(toDayString(monthStart), today);
     const dailyMap = new Map<string, number>();
     for (const t of dailyTransactions) {
-      const utcDate = new Date(
-        t.date.getUTCFullYear(),
-        t.date.getUTCMonth(),
-        t.date.getUTCDate(),
-        t.date.getUTCHours(),
-        t.date.getUTCMinutes(),
-        t.date.getUTCSeconds()
-      );
-      const key = format(utcDate, 'MMM dd');
+      const key = toDayString(t.date);
       dailyMap.set(key, (dailyMap.get(key) || 0) + t.amount);
     }
-    const dailySpending = days.map((d) => {
-      const key = format(d, 'MMM dd');
-      return { date: key, amount: dailyMap.get(key) || 0 };
-    });
+    const dailySpending = days.map((d) => ({
+      date: formatDay(d, { month: 'short', day: '2-digit' }),
+      amount: dailyMap.get(d) || 0,
+    }));
 
     return {
       success: true,
