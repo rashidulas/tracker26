@@ -25,7 +25,7 @@ import {
 } from '@/app/dashboards/actions';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import Modal from '@/components/Modal';
-import { updateTransaction, deleteTransaction } from '@/app/transactions/actions';
+import { deleteTransaction } from '@/app/transactions/actions';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';

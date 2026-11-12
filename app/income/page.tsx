@@ -5,7 +5,9 @@ import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
-import { deleteIncome, createIncome, updateIncome, getIncome, getCategoriesForSelect, getAccountsForSelect } from './actions';
+import { deleteIncome, createIncome, updateIncome, getIncome } from './actions';
+import { getCategoriesForSelect } from '@/app/categories/actions';
+import { getAccountsForSelect } from '@/app/accounts/actions';
 import PageHeader from '@/components/PageHeader';
 import { Plus, Edit2, Trash2, Filter, X } from 'lucide-react';
 import { formatDate, formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
@@ -614,7 +616,7 @@ export default function IncomePage() {
 
       const [incomeResult, categoriesResult, accountsResult] = await Promise.all([
         getIncome(Object.keys(filterObj).length > 0 ? filterObj : undefined),
-        getCategoriesForSelect(),
+        getCategoriesForSelect('INCOME'),
         getAccountsForSelect(),
       ]);
 

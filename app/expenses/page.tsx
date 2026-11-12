@@ -1,4 +1,6 @@
-import { getExpenses, getCategoriesForSelect, getAccountsForSelect } from './actions';
+import { getExpenses } from './actions';
+import { getCategoriesForSelect } from '@/app/categories/actions';
+import { getAccountsForSelect } from '@/app/accounts/actions';
 import ExpensesClient from './ExpensesClient';
 
 export const dynamic = 'force-dynamic';
@@ -7,7 +9,7 @@ export const revalidate = 0;
 export default async function ExpensesPage() {
   const [expensesResult, categoriesResult, accountsResult] = await Promise.all([
     getExpenses(),
-    getCategoriesForSelect(),
+    getCategoriesForSelect('EXPENSE'),
     getAccountsForSelect(),
   ]);
 

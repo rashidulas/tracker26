@@ -4,6 +4,7 @@ import {
   computeAccountBalance,
 } from '@/lib/accountBalance';
 import { signedFriendAmount } from '@/lib/friends';
+import { expenseCategoryAllocations } from '@/lib/transactions';
 import {
   startOfDay,
   endOfDay,
@@ -102,7 +103,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
             accountSplits: true,
           },
         },
-        transactionsTo: { select: { amount: true } },
+        transactionsTo: { where: { kind: 'TRANSFER' }, select: { amount: true } },
       },
       orderBy: { name: 'asc' },
     }),
@@ -138,16 +139,13 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       where: { kind: 'EXPENSE', date: { gte: monthStart, lte: monthEnd } },
       _sum: { amount: true },
     }),
-    prisma.transaction.groupBy({
-      by: ['categoryId'],
+    // Split expenses keep their categories in splitItems, so total in code.
+    prisma.transaction.findMany({
       where: {
         kind: 'EXPENSE',
         date: { gte: monthStart, lte: monthEnd },
-        categoryId: { not: null },
       },
-      _sum: { amount: true },
-      orderBy: { _sum: { amount: 'desc' } },
-      take: 8,
+      select: { amount: true, categoryId: true, splitItems: true },
     }),
     prisma.transaction.findMany({
       take: 20,
@@ -228,6 +226,15 @@ export async function getFinanceContext(): Promise<FinanceContext> {
   const monthExpenses = monthExpenseAgg._sum.amount || 0;
 
   const catMap = new Map(categories.map((c) => [c.id, c.name]));
+  const categoryTotals = new Map<string, number>();
+  for (const expense of expensesByCategory) {
+    for (const share of expenseCategoryAllocations(expense)) {
+      categoryTotals.set(share.categoryId, (categoryTotals.get(share.categoryId) || 0) + share.amount);
+    }
+  }
+  const topExpenseCategories = [...categoryTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8);
 
   return {
     today,
@@ -255,9 +262,9 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       monthExpenses,
       monthNet: monthIncome - monthExpenses,
     },
-    topExpenseCategories: expensesByCategory.map((e) => ({
-      name: catMap.get(e.categoryId!) || 'Unknown',
-      amount: e._sum.amount || 0,
+    topExpenseCategories: topExpenseCategories.map(([categoryId, amount]) => ({
+      name: catMap.get(categoryId) || 'Unknown',
+      amount,
     })),
     recentTransactions: recent.map((t) => ({
       date: t.date.toISOString().slice(0, 10),

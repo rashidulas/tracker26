@@ -1,6 +1,8 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
+import { categoryDeleteBlocker } from '@/lib/references';
+import { detachSubcategories } from '@/lib/transactions';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -91,6 +93,9 @@ export async function createCategory(formData: FormData) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
     }
+    if ((error as { code?: string })?.code === 'P2002') {
+      return { success: false, error: 'A category with this name and type already exists' };
+    }
     console.error('Error creating category:', error);
     return { success: false, error: 'Failed to create category' };
   }
@@ -148,10 +153,7 @@ export async function updateCategory(id: string, formData: FormData) {
 
       if (toDelete.length > 0) {
         const deleteIds = toDelete.map((s) => s.id);
-        await tx.transaction.updateMany({
-          where: { subcategoryId: { in: deleteIds } },
-          data: { subcategoryId: null },
-        });
+        await detachSubcategories(tx, deleteIds);
         await tx.subcategory.deleteMany({
           where: { id: { in: deleteIds } },
         });
@@ -180,6 +182,9 @@ export async function updateCategory(id: string, formData: FormData) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
     }
+    if ((error as { code?: string })?.code === 'P2002') {
+      return { success: false, error: 'A category with this name and type already exists' };
+    }
     console.error('Error updating category:', error);
     return { success: false, error: 'Failed to update category' };
   }
@@ -187,19 +192,17 @@ export async function updateCategory(id: string, formData: FormData) {
 
 export async function deleteCategory(id: string) {
   try {
-    // Check if category has transactions
-    const count = await prisma.transaction.count({
-      where: { categoryId: id },
+    const category = await prisma.category.findUnique({
+      where: { id },
+      select: { name: true },
     });
+    if (!category) return { success: false, error: 'Category not found' };
 
-    if (count > 0) {
-      return {
-        success: false,
-        error: `Cannot delete category. It has ${count} transaction(s). Please reassign or delete them first.`,
-      };
-    }
+    // Transactions, split-expense lines and budgets all point at categories.
+    const blocker = await categoryDeleteBlocker(prisma, id, category.name);
+    if (blocker) return { success: false, error: blocker };
 
-    // Subcategories cascade via schema relation
+    // Subcategories cascade via schema relation (none are in use, checked above)
     await prisma.category.delete({
       where: { id },
     });
@@ -207,9 +210,35 @@ export async function deleteCategory(id: string) {
     revalidatePath('/categories');
     revalidatePath('/expenses');
     revalidatePath('/income');
+    revalidatePath('/budgets');
     return { success: true };
   } catch (error) {
     console.error('Error deleting category:', error);
     return { success: false, error: 'Failed to delete category' };
+  }
+}
+
+/** Categories of one type, with subcategories, for pickers. */
+export async function getCategoriesForSelect(type: 'INCOME' | 'EXPENSE') {
+  try {
+    const categories = await prisma.category.findMany({
+      where: { type },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        icon: true,
+        color: true,
+        subcategories: {
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+    return { success: true, data: categories };
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    return { success: false, error: 'Failed to fetch categories' };
   }
 }

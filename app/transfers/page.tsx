@@ -14,8 +14,8 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-  getAccountsForSelect,
 } from '@/app/transactions/actions';
+import { getAccountsForSelect } from '@/app/accounts/actions';
 
 type Account = {
   id: string;
@@ -55,7 +55,7 @@ export default function TransfersPage() {
         getAccountsForSelect(),
       ]);
       setTransfers(transfersData as Transaction[]);
-      setAccounts(accountsData);
+      setAccounts(accountsData.success && accountsData.data ? accountsData.data : []);
     } catch (error) {
       toast.error('Failed to load data');
     } finally {
@@ -92,8 +92,8 @@ export default function TransfersPage() {
       amount: parseFloat(formData.get('amount') as string),
       accountId: formData.get('fromAccountId') as string,
       toAccountId: formData.get('toAccountId') as string,
-      notes: (formData.get('notes') as string) || undefined,
-      tags: [],
+      notes: (formData.get('notes') as string) ?? null,
+      // No tags: the module keeps existing tags (e.g. "payment") on edit.
     };
 
     if (data.accountId === data.toAccountId) {

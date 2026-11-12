@@ -1,37 +1,13 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
-import { z } from 'zod';
-
-const transactionSchema = z.object({
-  date: z.string().min(1, 'Date is required'),
-  amount: z.number().positive('Amount must be positive'),
-  categoryId: z.string().min(1, 'Category is required'),
-  subcategoryId: z.string().optional(),
-  accountId: z.string().optional(),
-  merchantOrSource: z.string().optional(),
-  notes: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-});
-
-async function resolveSubcategoryId(
-  categoryId: string,
-  subcategoryId?: string
-): Promise<{ ok: true; subcategoryId: string | null } | { ok: false; error: string }> {
-  if (!subcategoryId) return { ok: true, subcategoryId: null };
-
-  const sub = await prisma.subcategory.findFirst({
-    where: { id: subcategoryId, categoryId },
-    select: { id: true },
-  });
-
-  if (!sub) {
-    return { ok: false, error: 'Subcategory does not belong to the selected category' };
-  }
-
-  return { ok: true, subcategoryId: sub.id };
-}
+import {
+  createTransaction,
+  deleteTransaction,
+  updateTransaction,
+  type ExpenseInput,
+  type TransferPurpose,
+} from '@/lib/transactions';
 
 export async function getExpenses(filters?: {
   startDate?: string;
@@ -100,256 +76,71 @@ export async function getExpenses(filters?: {
   }
 }
 
+function expenseFromForm(formData: FormData): ExpenseInput {
+  const tags = (formData.get('tags') as string) || '';
+  return {
+    kind: 'EXPENSE',
+    date: (formData.get('date') as string) || '',
+    amount: parseFloat(formData.get('amount') as string),
+    categoryId: (formData.get('categoryId') as string) || null,
+    subcategoryId: (formData.get('subcategoryId') as string) || null,
+    accountId: (formData.get('accountId') as string) || null,
+    merchantOrSource: (formData.get('merchantOrSource') as string) ?? null,
+    notes: (formData.get('notes') as string) ?? null,
+    tags: tags.split(','),
+  };
+}
+
+function done(result: { success: boolean; error?: string }) {
+  return result.success ? { success: true } : { success: false, error: result.error };
+}
+
 export async function createExpense(formData: FormData) {
-  try {
-    const tags = formData.get('tags') as string;
-    const rawAccountId = formData.get('accountId') as string;
-    const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
-    const data = {
-      date: formData.get('date') as string,
-      amount: parseFloat(formData.get('amount') as string),
-      categoryId: formData.get('categoryId') as string,
-      subcategoryId: rawSubcategoryId || undefined,
-      accountId: rawAccountId || undefined,
-      merchantOrSource: formData.get('merchantOrSource') as string,
-      notes: formData.get('notes') as string,
-      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-    };
-
-    const validated = transactionSchema.parse(data);
-    const subResult = await resolveSubcategoryId(
-      validated.categoryId,
-      validated.subcategoryId
-    );
-    if (!subResult.ok) return { success: false, error: subResult.error };
-
-    await prisma.transaction.create({
-      data: {
-        date: new Date(validated.date),
-        amount: validated.amount,
-        kind: 'EXPENSE',
-        categoryId: validated.categoryId,
-        subcategoryId: subResult.subcategoryId,
-        accountId: validated.accountId || null,
-        merchantOrSource: validated.merchantOrSource,
-        notes: validated.notes,
-        tags: validated.tags || [],
-      },
-    });
-
-    revalidatePath('/expenses');
-    return { success: true };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { success: false, error: error.errors[0].message };
-    }
-    console.error('Error creating expense:', error);
-    return { success: false, error: 'Failed to create expense' };
-  }
+  return done(await createTransaction(expenseFromForm(formData)));
 }
 
 export async function updateExpense(id: string, formData: FormData) {
-  try {
-    const tags = formData.get('tags') as string;
-    const rawAccountId = formData.get('accountId') as string;
-    const rawSubcategoryId = (formData.get('subcategoryId') as string) || '';
-    const data = {
-      date: formData.get('date') as string,
-      amount: parseFloat(formData.get('amount') as string),
-      categoryId: formData.get('categoryId') as string,
-      subcategoryId: rawSubcategoryId || undefined,
-      accountId: rawAccountId || undefined,
-      merchantOrSource: formData.get('merchantOrSource') as string,
-      notes: formData.get('notes') as string,
-      tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-    };
-
-    const validated = transactionSchema.parse(data);
-    const subResult = await resolveSubcategoryId(
-      validated.categoryId,
-      validated.subcategoryId
-    );
-    if (!subResult.ok) return { success: false, error: subResult.error };
-
-    await prisma.transaction.update({
-      where: { id },
-      data: {
-        date: new Date(validated.date),
-        amount: validated.amount,
-        kind: 'EXPENSE',
-        categoryId: validated.categoryId,
-        subcategoryId: subResult.subcategoryId,
-        accountId: validated.accountId || null,
-        merchantOrSource: validated.merchantOrSource,
-        notes: validated.notes,
-        tags: validated.tags || [],
-      },
-    });
-
-    revalidatePath('/expenses');
-    return { success: true };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { success: false, error: error.errors[0].message };
-    }
-    console.error('Error updating expense:', error);
-    return { success: false, error: 'Failed to update expense' };
-  }
+  // A card payment opened from the Expenses list stays a transfer (see lib/transactions).
+  return done(await updateTransaction(id, expenseFromForm(formData)));
 }
 
 export async function deleteExpense(id: string) {
-  try {
-    await prisma.transaction.delete({
-      where: { id },
-    });
-
-    revalidatePath('/expenses');
-    return { success: true };
-  } catch (error) {
-    console.error('Error deleting expense:', error);
-    return { success: false, error: 'Failed to delete expense' };
-  }
+  return done(await deleteTransaction(id));
 }
 
-export async function getCategoriesForSelect() {
-  try {
-    const categories = await prisma.category.findMany({
-      where: {
-        type: 'EXPENSE',
-      },
-      select: {
-        id: true,
-        name: true,
-        icon: true,
-        color: true,
-        subcategories: {
-          orderBy: { name: 'asc' },
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: { name: 'asc' },
-    });
-    return { success: true, data: categories };
-  } catch (error) {
-    return { success: false, error: 'Failed to fetch categories' };
+async function createPurposeTransfer(formData: FormData, purpose: TransferPurpose) {
+  const fromAccountId = (formData.get('fromAccountId') as string) || '';
+  const toAccountId = (formData.get('toAccountId') as string) || '';
+  if (!fromAccountId) return { success: false, error: 'Please select the account to pay from' };
+  if (!toAccountId) {
+    return {
+      success: false,
+      error:
+        purpose === 'debt-payment'
+          ? 'Please select the credit card / debt account'
+          : 'Please select the account to pay to',
+    };
   }
+
+  return done(
+    await createTransaction({
+      kind: 'TRANSFER',
+      purpose,
+      date: (formData.get('date') as string) || '',
+      amount: parseFloat(formData.get('amount') as string),
+      accountId: fromAccountId,
+      toAccountId,
+      notes: (formData.get('notes') as string) || null,
+    })
+  );
 }
 
-export async function getAccountsForSelect() {
-  try {
-    const accounts = await prisma.account.findMany({
-      orderBy: { name: 'asc' },
-    });
-    return { success: true, data: accounts };
-  } catch (error) {
-    return { success: false, error: 'Failed to fetch accounts' };
-  }
-}
-
-/**
- * Payment Transfer:
- *  - Deducts `amount` from `fromAccountId`
- *  - Credits `amount` to `toAccountId`
- *  Creates a single TRANSFER transaction tagged as a payment between accounts.
- */
+/** Card payment: one TRANSFER from `fromAccountId` to `toAccountId`, tagged "payment". */
 export async function createPaymentTransfer(formData: FormData) {
-  try {
-    const amount = parseFloat(formData.get('amount') as string);
-    const fromAccountId = formData.get('fromAccountId') as string;
-    const toAccountId = formData.get('toAccountId') as string;
-    const date = formData.get('date') as string;
-    const notes = formData.get('notes') as string;
-
-    if (!amount || amount <= 0) return { success: false, error: 'Amount must be positive' };
-    if (!fromAccountId) return { success: false, error: 'Please select the account to pay from' };
-    if (!toAccountId) return { success: false, error: 'Please select the account to pay to' };
-    if (fromAccountId === toAccountId) return { success: false, error: 'From and To accounts cannot be the same' };
-
-    // Find or create "Payment" category for labelling
-    let paymentCategory = await prisma.category.findFirst({
-      where: { name: 'Payment', type: 'EXPENSE' },
-    });
-    if (!paymentCategory) {
-      paymentCategory = await prisma.category.create({
-        data: { name: 'Payment', type: 'EXPENSE', color: '#3b82f6', icon: '💸' },
-      });
-    }
-
-    await prisma.transaction.create({
-      data: {
-        date: new Date(date),
-        amount,
-        kind: 'TRANSFER',
-        categoryId: paymentCategory.id,
-        accountId: fromAccountId,
-        toAccountId: toAccountId,
-        merchantOrSource: 'Payment',
-        notes: notes || 'Account payment transfer',
-        tags: ['payment'],
-      },
-    });
-
-    revalidatePath('/expenses');
-    revalidatePath('/accounts');
-    revalidatePath('/dashboard');
-    return { success: true };
-  } catch (error) {
-    console.error('Error creating payment transfer:', error);
-    return { success: false, error: 'Failed to record payment' };
-  }
+  return createPurposeTransfer(formData, 'payment');
 }
 
-/**
- * Debt Payment Transfer:
- *  - Deducts `amount` from `fromAccountId` (e.g. Checking)
- *  - Credits `amount` to `toAccountId` (e.g. AMEX credit card account)
- *  Creates a single TRANSFER transaction that links both accounts.
- */
+/** Debt payment: one TRANSFER into a credit card / loan account, tagged "debt-payment". */
 export async function createDebtPaymentTransfer(formData: FormData) {
-  try {
-    const amount = parseFloat(formData.get('amount') as string);
-    const fromAccountId = formData.get('fromAccountId') as string;
-    const toAccountId = formData.get('toAccountId') as string;
-    const date = formData.get('date') as string;
-    const notes = formData.get('notes') as string;
-
-    if (!amount || amount <= 0) return { success: false, error: 'Amount must be positive' };
-    if (!fromAccountId) return { success: false, error: 'Please select the account to pay from' };
-    if (!toAccountId) return { success: false, error: 'Please select the credit card / debt account' };
-    if (fromAccountId === toAccountId) return { success: false, error: 'From and To accounts cannot be the same' };
-
-    // Find or create "Debt Payment" category for labelling
-    let debtCategory = await prisma.category.findFirst({
-      where: { name: 'Debt Payment', type: 'EXPENSE' },
-    });
-    if (!debtCategory) {
-      debtCategory = await prisma.category.create({
-        data: { name: 'Debt Payment', type: 'EXPENSE', color: '#8b5cf6', icon: '💳' },
-      });
-    }
-
-    // Create a TRANSFER transaction: money moves from checking → credit card
-    await prisma.transaction.create({
-      data: {
-        date: new Date(date),
-        amount,
-        kind: 'TRANSFER',
-        categoryId: debtCategory.id,
-        accountId: fromAccountId,      // money leaves here
-        toAccountId: toAccountId,      // money arrives here (credit card)
-        merchantOrSource: 'Debt Payment',
-        notes: notes || 'Debt payment transfer',
-        tags: ['debt-payment'],
-      },
-    });
-
-    revalidatePath('/expenses');
-    revalidatePath('/accounts');
-    revalidatePath('/dashboard');
-    return { success: true };
-  } catch (error) {
-    console.error('Error creating debt payment transfer:', error);
-    return { success: false, error: 'Failed to record debt payment' };
-  }
+  return createPurposeTransfer(formData, 'debt-payment');
 }
-

@@ -77,31 +77,35 @@ export async function createFriend(formData: FormData) {
     const color =
       validated.color || FRIEND_COLORS[existingCount % FRIEND_COLORS.length];
 
-    const friend = await prisma.friend.create({
-      data: {
-        name: validated.name.trim(),
-        notes: validated.notes?.trim() || null,
-        color,
-      },
-    });
-
     // Optional opening balance when creating a friend
     const openingAmount = parseFloat((formData.get('openingAmount') as string) || '');
     const openingType = formData.get('openingType') as string;
-    if (
+    const hasOpening =
       openingAmount > 0 &&
-      (openingType === 'THEY_OWE_ME' || openingType === 'I_OWE_THEM')
-    ) {
-      await prisma.friendEntry.create({
+      (openingType === 'THEY_OWE_ME' || openingType === 'I_OWE_THEM');
+
+    // Friend and opening entry are written together or not at all.
+    const friend = await prisma.$transaction(async (tx) => {
+      const created = await tx.friend.create({
         data: {
-          friendId: friend.id,
-          date: new Date(),
-          amount: openingAmount,
-          type: openingType,
-          description: 'Opening balance',
+          name: validated.name.trim(),
+          notes: validated.notes?.trim() || null,
+          color,
         },
       });
-    }
+      if (hasOpening) {
+        await tx.friendEntry.create({
+          data: {
+            friendId: created.id,
+            date: new Date(),
+            amount: openingAmount,
+            type: openingType as 'THEY_OWE_ME' | 'I_OWE_THEM',
+            description: 'Opening balance',
+          },
+        });
+      }
+      return created;
+    });
 
     revalidatePath('/friends');
     return { success: true, data: friend };

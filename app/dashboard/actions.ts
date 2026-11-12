@@ -6,6 +6,7 @@ import {
   computeAccountBalance,
 } from '@/lib/accountBalance';
 import { signedFriendAmount } from '@/lib/friends';
+import { expenseCategoryAllocations } from '@/lib/transactions';
 import { startOfMonth, endOfMonth, subMonths, eachDayOfInterval, format } from 'date-fns';
 
 export async function getDashboardData() {
@@ -17,7 +18,7 @@ export async function getDashboardData() {
     const [
       monthIncomeAgg,
       monthExpensesAgg,
-      expensesByCategory,
+      monthExpenses,
       recentTransactions,
       accounts,
       dailyTransactions,
@@ -32,14 +33,14 @@ export async function getDashboardData() {
         where: { kind: 'EXPENSE', date: { gte: monthStart, lte: monthEnd } },
         _sum: { amount: true },
       }),
-      prisma.transaction.groupBy({
-        by: ['categoryId'],
+      // Not a groupBy on categoryId: split expenses have categoryId null and
+      // carry their categories in splitItems.
+      prisma.transaction.findMany({
         where: {
           kind: 'EXPENSE',
           date: { gte: monthStart, lte: monthEnd },
-          categoryId: { not: null },
         },
-        _sum: { amount: true },
+        select: { amount: true, categoryId: true, splitItems: true },
       }),
       prisma.transaction.findMany({
         take: 10,
@@ -57,7 +58,10 @@ export async function getDashboardData() {
               accountSplits: true,
             },
           },
-          transactionsTo: { select: { amount: true, date: true } },
+          transactionsTo: {
+            where: { kind: 'TRANSFER' },
+            select: { amount: true, date: true },
+          },
         },
       }),
       prisma.transaction.findMany({
@@ -84,17 +88,25 @@ export async function getDashboardData() {
       }),
     ]);
 
+    const totalsByCategory = new Map<string, number>();
+    for (const expense of monthExpenses) {
+      for (const share of expenseCategoryAllocations(expense)) {
+        totalsByCategory.set(
+          share.categoryId,
+          (totalsByCategory.get(share.categoryId) || 0) + share.amount
+        );
+      }
+    }
+
     const categoriesMap = await prisma.category.findMany({
-      where: {
-        id: { in: expensesByCategory.map((e) => e.categoryId!).filter(Boolean) },
-      },
+      where: { id: { in: [...totalsByCategory.keys()] } },
     });
 
-    const categoryData = expensesByCategory.map((expense) => {
-      const category = categoriesMap.find((c) => c.id === expense.categoryId);
+    const categoryData = [...totalsByCategory.entries()].map(([categoryId, value]) => {
+      const category = categoriesMap.find((c) => c.id === categoryId);
       return {
         name: category?.name || 'Unknown',
-        value: expense._sum.amount || 0,
+        value,
         color: category?.color || '#gray',
       };
     });
