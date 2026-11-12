@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import Button from './Button';
-import { formatDateForInput } from '@/lib/utils';
+import { parseDay, toDayString } from '@/lib/dates';
 
 interface FilterPanelProps {
   children: React.ReactNode;
@@ -75,8 +75,8 @@ export function DateRangeFilter({
         <label className="block text-sm font-medium text-ink-secondary mb-1.5">Start Date</label>
         <input
           type="date"
-          value={startDate ? formatDateForInput(startDate) : ''}
-          onChange={(e) => onStartDateChange(e.target.value ? new Date(e.target.value) : undefined)}
+          value={startDate ? toDayString(startDate) : ''}
+          onChange={(e) => onStartDateChange(e.target.value ? parseDay(e.target.value) : undefined)}
           className={fieldClass}
         />
       </div>
@@ -84,8 +84,8 @@ export function DateRangeFilter({
         <label className="block text-sm font-medium text-ink-secondary mb-1.5">End Date</label>
         <input
           type="date"
-          value={endDate ? formatDateForInput(endDate) : ''}
-          onChange={(e) => onEndDateChange(e.target.value ? new Date(e.target.value) : undefined)}
+          value={endDate ? toDayString(endDate) : ''}
+          onChange={(e) => onEndDateChange(e.target.value ? parseDay(e.target.value) : undefined)}
           className={fieldClass}
         />
       </div>

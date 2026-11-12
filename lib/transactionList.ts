@@ -1,39 +1,30 @@
 // Shared helpers for the transaction list pages (expenses, income, transfers).
 //
-// Transaction dates are stored as UTC midnight of the calendar day the user
-// picked, so day/month keys are taken from the UTC parts of the date, while
-// "today" comes from the user's local clock.
+// Transaction dates are stored as UTC midnight of their calendar day (see
+// lib/dates.ts); "today" is today in the app timezone.
+
+import { addDays, toDayString, todayInAppTimeZone } from '@/lib/dates';
 
 export function dayKey(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toISOString().slice(0, 10);
+  return toDayString(date);
 }
 
 export function monthKey(date: Date | string): string {
   return dayKey(date).slice(0, 7);
 }
 
-function localKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 export function localTodayKey(now: Date = new Date()): string {
-  return localKey(now);
+  return todayInAppTimeZone(now);
 }
 
 export function currentMonthKey(now: Date = new Date()): string {
-  return localKey(now).slice(0, 7);
+  return todayInAppTimeZone(now).slice(0, 7);
 }
 
 export function dayLabel(key: string, now: Date = new Date()): string {
-  const today = localKey(now);
-  const y = new Date(now);
-  y.setDate(y.getDate() - 1);
+  const today = todayInAppTimeZone(now);
   if (key === today) return 'Today';
-  if (key === localKey(y)) return 'Yesterday';
+  if (key === addDays(today, -1)) return 'Yesterday';
 
   const d = new Date(`${key}T00:00:00Z`);
   const sameYear = key.slice(0, 4) === today.slice(0, 4);

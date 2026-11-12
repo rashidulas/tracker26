@@ -8,7 +8,8 @@ import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
-import { formatCurrency, formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
+import { parseDay, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
 import {
   createTransaction,
@@ -163,7 +164,7 @@ export default function TransfersClient({
   async function handleSubmit(formData: FormData) {
     const data = {
       kind: 'TRANSFER' as const,
-      date: new Date(formData.get('date') as string),
+      date: parseDay(formData.get('date') as string),
       amount: parseFloat(formData.get('amount') as string),
       accountId: formData.get('fromAccountId') as string,
       toAccountId: formData.get('toAccountId') as string,
@@ -319,7 +320,7 @@ export default function TransfersClient({
               name="date"
               type="date"
               defaultValue={
-                editingTransfer ? formatDateForInput(editingTransfer.date) : getLocalTodayForInput()
+                editingTransfer ? toDayString(editingTransfer.date) : todayInAppTimeZone()
               }
               required
             />

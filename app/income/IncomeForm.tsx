@@ -6,7 +6,7 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import { createIncome, updateIncome } from './actions';
 import { Plus, Trash2 } from 'lucide-react';
-import { formatDateForInput, getLocalTodayForInput } from '@/lib/utils';
+import { toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -76,8 +76,8 @@ export default function IncomeForm({
     resolver: zodResolver(incomeSchema),
     defaultValues: {
       date: income?.date
-        ? formatDateForInput(income.date)
-        : getLocalTodayForInput(),
+        ? toDayString(income.date)
+        : todayInAppTimeZone(),
       amount: income?.amount.toString() || '',
       categoryId: income?.categoryId || '',
       subcategoryId: income?.subcategoryId || '',

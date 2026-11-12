@@ -1,3 +1,5 @@
+import { toDayString } from '@/lib/dates';
+
 // Groups raw INCOME transactions into the rows shown on /income: one row per
 // logical income, whether it is split via accountSplits, a legacy splitGroupId,
 // or legacy sibling rows that only share a fingerprint.
@@ -43,7 +45,7 @@ export interface IncomeRow {
 
 function incomeFingerprint(item: IncomePart) {
   return [
-    new Date(item.date).toISOString().slice(0, 10),
+    toDayString(item.date),
     item.categoryId || '',
     item.subcategoryId || '',
     item.merchantOrSource || '',

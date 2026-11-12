@@ -9,6 +9,7 @@ import {
   transactionFilterSchema,
   type TransactionFilter,
 } from '@/lib/validations';
+import { dayFilter, isValidDay, parseDay, toDayString } from '@/lib/dates';
 
 // ==================== GET TRANSACTIONS ====================
 export async function getTransactions(filter?: TransactionFilter) {
@@ -18,15 +19,8 @@ export async function getTransactions(filter?: TransactionFilter) {
     if (filter) {
       const validatedFilter = transactionFilterSchema.parse(filter);
 
-      if (validatedFilter.startDate || validatedFilter.endDate) {
-        where.date = {};
-        if (validatedFilter.startDate) {
-          where.date.gte = validatedFilter.startDate;
-        }
-        if (validatedFilter.endDate) {
-          where.date.lte = validatedFilter.endDate;
-        }
-      }
+      const dateRange = dayFilter(validatedFilter.startDate, validatedFilter.endDate);
+      if (dateRange) where.date = dateRange;
 
       if (validatedFilter.categoryId) {
         where.categoryId = validatedFilter.categoryId;
@@ -267,7 +261,7 @@ const idListSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(500
 export async function duplicateTransactions(ids: string[], date: string) {
   try {
     const validIds = idListSchema.parse(ids);
-    const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(date);
+    if (!isValidDay(date)) return { success: false as const, error: 'Invalid date' };
     const sources = await prisma.transaction.findMany({ where: { id: { in: validIds } } });
     if (sources.length === 0) return { success: false as const, error: 'Transaction not found' };
 
@@ -279,7 +273,7 @@ export async function duplicateTransactions(ids: string[], date: string) {
       created.push(
         await prisma.transaction.create({
           data: {
-            date: new Date(day),
+            date: parseDay(date),
             amount: src.amount,
             kind: src.kind,
             categoryId: src.categoryId,
@@ -343,7 +337,7 @@ export async function exportTransactionsToCSV(filter?: TransactionFilter) {
     const transactions = await getTransactions(filter);
 
     const csvData = transactions.map(tx => ({
-      Date: tx.date.toISOString().split('T')[0],
+      Date: toDayString(tx.date),
       Type: tx.kind,
       Amount: tx.amount.toFixed(2),
       Category: tx.category?.name || (tx.kind === 'TRANSFER' ? 'Transfer' : 'Split'),

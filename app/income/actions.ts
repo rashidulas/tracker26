@@ -3,9 +3,10 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { isValidDay, parseDay, dayFilter, toDayString } from '@/lib/dates';
 
 const incomeSchema = z.object({
-  date: z.string().min(1, 'Date is required'),
+  date: z.string().refine(isValidDay, 'Please enter a valid date'),
   amount: z.number().positive('Amount must be positive'),
   categoryId: z.string().min(1, 'Category is required'),
   subcategoryId: z.string().optional(),
@@ -100,7 +101,7 @@ function incomeFingerprint(item: {
   tags: string[];
 }) {
   return [
-    new Date(item.date).toISOString().slice(0, 10),
+    toDayString(item.date),
     item.categoryId || '',
     item.subcategoryId || '',
     item.merchantOrSource || '',
@@ -185,11 +186,8 @@ export async function getIncome(filters?: {
 
     const where: any = { kind: 'INCOME' };
 
-    if (filters?.startDate || filters?.endDate) {
-      where.date = {};
-      if (filters.startDate) where.date.gte = new Date(filters.startDate);
-      if (filters.endDate) where.date.lte = new Date(filters.endDate);
-    }
+    const dateRange = dayFilter(filters?.startDate, filters?.endDate);
+    if (dateRange) where.date = dateRange;
 
     if (filters?.categoryId) {
       where.categoryId = filters.categoryId;
@@ -253,7 +251,7 @@ export async function createIncome(formData: FormData) {
 
     await prisma.transaction.create({
       data: {
-        date: new Date(validated.date),
+        date: parseDay(validated.date),
         amount: validated.amount,
         kind: 'INCOME',
         categoryId: validated.categoryId,
@@ -343,7 +341,7 @@ export async function updateIncome(id: string, formData: FormData) {
     await prisma.transaction.update({
       where: { id: keepId },
       data: {
-        date: new Date(validated.date),
+        date: parseDay(validated.date),
         amount: validated.amount,
         kind: 'INCOME',
         categoryId: validated.categoryId,

@@ -25,7 +25,8 @@ import {
   Trash2,
   ChevronRight,
 } from 'lucide-react';
-import { formatCurrency, formatDate, getLocalTodayForInput } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
+import { todayInAppTimeZone } from '@/lib/dates';
 
 type EntryType = 'THEY_OWE_ME' | 'I_OWE_THEM' | 'THEY_PAID_ME' | 'I_PAID_THEM';
 
@@ -156,7 +157,7 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
   // Entry form state
   const [entryAmount, setEntryAmount] = useState('');
   const [entryType, setEntryType] = useState<EntryType>('THEY_OWE_ME');
-  const [entryDate, setEntryDate] = useState(getLocalTodayForInput());
+  const [entryDate, setEntryDate] = useState(todayInAppTimeZone());
   const [entryDescription, setEntryDescription] = useState('');
 
   const totals = useMemo(() => {
@@ -190,7 +191,7 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
     setDetailFriend(friend);
     setEntryAmount('');
     setEntryType('THEY_OWE_ME');
-    setEntryDate(getLocalTodayForInput());
+    setEntryDate(todayInAppTimeZone());
     setEntryDescription('');
     setError('');
     setEntryModalOpen(true);

@@ -3,9 +3,10 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { isValidDay, parseDay, dayFilter } from '@/lib/dates';
 
 const transactionSchema = z.object({
-  date: z.string().min(1, 'Date is required'),
+  date: z.string().refine(isValidDay, 'Please enter a valid date'),
   amount: z.number().positive('Amount must be positive'),
   categoryId: z.string().min(1, 'Category is required'),
   subcategoryId: z.string().optional(),
@@ -64,11 +65,8 @@ export async function getExpenses(filters?: {
       ],
     };
 
-    if (filters?.startDate || filters?.endDate) {
-      baseWhere.date = {};
-      if (filters.startDate) baseWhere.date.gte = new Date(filters.startDate);
-      if (filters.endDate) baseWhere.date.lte = new Date(filters.endDate);
-    }
+    const dateRange = dayFilter(filters?.startDate, filters?.endDate);
+    if (dateRange) baseWhere.date = dateRange;
 
     if (filters?.categoryId) {
       baseWhere.categoryId = filters.categoryId;
@@ -139,7 +137,7 @@ export async function createExpense(formData: FormData) {
 
     const created = await prisma.transaction.create({
       data: {
-        date: new Date(validated.date),
+        date: parseDay(validated.date),
         amount: validated.amount,
         kind: 'EXPENSE',
         categoryId: validated.categoryId,
@@ -189,7 +187,7 @@ export async function updateExpense(id: string, formData: FormData) {
     const updated = await prisma.transaction.update({
       where: { id },
       data: {
-        date: new Date(validated.date),
+        date: parseDay(validated.date),
         amount: validated.amount,
         kind: 'EXPENSE',
         categoryId: validated.categoryId,
@@ -293,7 +291,7 @@ export async function createPaymentTransfer(formData: FormData) {
 
     const created = await prisma.transaction.create({
       data: {
-        date: new Date(date),
+        date: parseDay(date),
         amount,
         kind: 'TRANSFER',
         categoryId: paymentCategory.id,
@@ -346,7 +344,7 @@ export async function createDebtPaymentTransfer(formData: FormData) {
     // Create a TRANSFER transaction: money moves from checking → credit card
     const created = await prisma.transaction.create({
       data: {
-        date: new Date(date),
+        date: parseDay(date),
         amount,
         kind: 'TRANSFER',
         categoryId: debtCategory.id,
