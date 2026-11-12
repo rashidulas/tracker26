@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCurrency } from '@/lib/utils';
 import { useState } from 'react';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -89,13 +90,6 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
       default:
         return Briefcase;
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
   };
 
   const totalBalance = accounts.reduce((sum, account) => sum + account.currentBalance, 0);

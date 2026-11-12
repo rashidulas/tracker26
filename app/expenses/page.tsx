@@ -12,12 +12,8 @@ export default async function ExpensesPage() {
   ]);
 
   if (!expensesResult.success || !categoriesResult.success || !accountsResult.success) {
-    return (
-      <div className="page-shell">
-        <div className="p-4 bg-danger-dim border border-danger/25 rounded-2xl text-danger">
-          Error loading data
-        </div>
-      </div>
+    throw new Error(
+      expensesResult.error || categoriesResult.error || accountsResult.error || 'Error loading expenses'
     );
   }
 

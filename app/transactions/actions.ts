@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 import {
   transactionSchema,
   type TransactionInput,
@@ -246,6 +247,93 @@ export async function deleteTransaction(id: string) {
   } catch (error) {
     console.error('Error deleting transaction:', error);
     return { success: false, error: 'Failed to delete transaction' };
+  }
+}
+
+// ==================== BULK / LIST ACTIONS ====================
+const LIST_PATHS = ['/expenses', '/income', '/transfers', '/accounts', '/dashboard'];
+
+function revalidateLists() {
+  LIST_PATHS.forEach((path) => revalidatePath(path));
+}
+
+const idListSchema = z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(500);
+
+/**
+ * Copies transactions onto `date` (YYYY-MM-DD). When several ids are passed
+ * they are treated as one logical entry (e.g. a legacy split income) and the
+ * copies share a new split group.
+ */
+export async function duplicateTransactions(ids: string[], date: string) {
+  try {
+    const validIds = idListSchema.parse(ids);
+    const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(date);
+    const sources = await prisma.transaction.findMany({ where: { id: { in: validIds } } });
+    if (sources.length === 0) return { success: false as const, error: 'Transaction not found' };
+
+    const groupId =
+      sources.length > 1 ? `dup-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` : null;
+
+    const created = [];
+    for (const src of sources) {
+      created.push(
+        await prisma.transaction.create({
+          data: {
+            date: new Date(day),
+            amount: src.amount,
+            kind: src.kind,
+            categoryId: src.categoryId,
+            subcategoryId: src.subcategoryId,
+            accountId: src.accountId,
+            toAccountId: src.toAccountId,
+            merchantOrSource: src.merchantOrSource,
+            notes: src.notes,
+            tags: src.tags,
+            splitItems: src.splitItems,
+            accountSplits: src.accountSplits,
+            splitGroupId: groupId,
+          },
+          include: { category: true, subcategory: true, account: true, toAccount: true },
+        })
+      );
+    }
+
+    revalidateLists();
+    return { success: true as const, data: created };
+  } catch (error) {
+    console.error('Error duplicating transactions:', error);
+    return { success: false as const, error: 'Failed to duplicate' };
+  }
+}
+
+export async function deleteTransactions(ids: string[]) {
+  try {
+    const validIds = idListSchema.parse(ids);
+    const result = await prisma.transaction.deleteMany({ where: { id: { in: validIds } } });
+    revalidateLists();
+    return { success: true as const, count: result.count };
+  } catch (error) {
+    console.error('Error deleting transactions:', error);
+    return { success: false as const, error: 'Failed to delete transactions' };
+  }
+}
+
+/** Moves transactions to `categoryId`, only touching rows whose kind matches the category type. */
+export async function recategorizeTransactions(ids: string[], categoryId: string) {
+  try {
+    const validIds = idListSchema.parse(ids);
+    const category = await prisma.category.findUnique({ where: { id: categoryId } });
+    if (!category) return { success: false as const, error: 'Category not found' };
+
+    const result = await prisma.transaction.updateMany({
+      where: { id: { in: validIds }, kind: category.type },
+      data: { categoryId: category.id, subcategoryId: null },
+    });
+    revalidateLists();
+    return { success: true as const, count: result.count };
+  } catch (error) {
+    console.error('Error re-categorising transactions:', error);
+    return { success: false as const, error: 'Failed to re-categorise' };
   }
 }
 

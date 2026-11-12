@@ -1,13 +1,35 @@
 // Utility functions for the app
 
 // ==================== CURRENCY FORMATTING ====================
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+const currencyFormatters = new Map<string, Intl.NumberFormat>();
+
+/**
+ * The single currency formatter for the app.
+ * - default: two decimals ("$1,234.50")
+ * - `{ decimals: 0 }`: whole dollars for headline figures ("$1,235")
+ * - `{ signDisplay: 'always' }`: force a +/- sign
+ */
+export function formatCurrency(
+  amount: number,
+  options: { decimals?: 0 | 2; signDisplay?: 'auto' | 'always' | 'exceptZero' | 'never' } = {}
+): string {
+  const decimals = options.decimals ?? 2;
+  const signDisplay = options.signDisplay ?? 'auto';
+  const key = `${decimals}|${signDisplay}`;
+  let formatter = currencyFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+      signDisplay,
+    });
+    currencyFormatters.set(key, formatter);
+  }
+  // Avoid "-$0.00" from floating point noise
+  const value = Math.abs(amount) < 0.005 ? 0 : amount;
+  return formatter.format(value);
 }
 
 // Parse currency string to number (removes $ , and other non-numeric chars)

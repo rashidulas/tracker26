@@ -12,7 +12,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format } from 'date-fns';
-import { formatDate, formatDateForInput } from '@/lib/utils';
+import { formatDate, formatDateForInput, formatCurrency } from '@/lib/utils';
 
 const goalSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -218,13 +218,6 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
     if (result.success) {
       setGoals(goals.filter((g) => g.id !== id));
     }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
   };
 
   return (

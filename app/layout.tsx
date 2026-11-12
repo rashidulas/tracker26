@@ -46,7 +46,7 @@ export default function RootLayout({
         <ToastProvider>
           <div className="flex min-h-screen">
             <Navigation />
-            <main className="flex-1 lg:ml-64 pt-[calc(3rem+env(safe-area-inset-top))] lg:pt-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0 w-full max-w-full overflow-x-hidden min-h-screen">
+            <main className="flex-1 lg:ml-64 pt-[calc(3rem+env(safe-area-inset-top))] lg:pt-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0 w-full max-w-full overflow-x-clip min-h-screen">
               {children}
             </main>
           </div>

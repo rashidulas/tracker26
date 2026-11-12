@@ -19,6 +19,7 @@ import {
   Users,
   HandCoins,
   ChevronRight,
+  ArrowLeftRight,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -31,7 +32,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import DashboardViewSwitcher from '@/components/DashboardViewSwitcher';
 
 interface LiabilityItem {
@@ -40,6 +41,7 @@ interface LiabilityItem {
   institution: string | null;
   currentBalance: number;
   balanceAtMonthStart: number;
+  creditLimit?: number | null;
 }
 
 interface FriendSummary {
@@ -68,8 +70,10 @@ interface DashboardClientProps {
       date: Date;
       amount: number;
       kind: string;
+      merchantOrSource?: string | null;
       category: { name: string; icon: string | null; color: string } | null;
       account: { name: string } | null;
+      toAccount?: { name: string } | null;
     }>;
     dailySpending: Array<{ date: string; amount: number }>;
   };
@@ -108,22 +112,6 @@ function getCategoryIcon(name: string) {
   return CreditCard;
 }
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-function formatCurrencyFull(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount);
-}
-
 function MiniSparkline({ data, color }: { data: number[]; color: string }) {
   const chartData = data.map((v, i) => ({ x: i, y: v }));
   return (
@@ -150,7 +138,7 @@ function CustomTooltip({
   return (
     <div className="glass rounded-xl px-3 py-2 text-xs shadow-panel">
       <p className="text-ink-muted mb-1">{label}</p>
-      <p className="text-mint font-semibold money">{formatCurrencyFull(payload[0].value)}</p>
+      <p className="text-mint font-semibold money">{formatCurrency(payload[0].value)}</p>
     </div>
   );
 }
@@ -179,11 +167,11 @@ export default function DashboardClient({ data }: DashboardClientProps) {
   const summaryCards = [
     {
       title: 'Total Balance',
-      value: formatCurrency(data.totalBalance),
+      value: formatCurrency(data.totalBalance, { decimals: 0 }),
       change:
         netIncome >= 0
-          ? '+' + formatCurrency(netIncome) + ' this month'
-          : formatCurrency(netIncome) + ' this month',
+          ? '+' + formatCurrency(netIncome, { decimals: 0 }) + ' this month'
+          : formatCurrency(netIncome, { decimals: 0 }) + ' this month',
       changePositive: netIncome >= 0,
       icon: Wallet,
       sparkData: sparkBalance,
@@ -191,7 +179,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
     },
     {
       title: 'Monthly Income',
-      value: formatCurrency(data.monthIncome),
+      value: formatCurrency(data.monthIncome, { decimals: 0 }),
       change: `${incomeChange >= 0 ? '+' : ''}${incomeChange.toFixed(1)}% vs last month`,
       changePositive: incomeChange >= 0,
       icon: TrendingUp,
@@ -200,7 +188,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
     },
     {
       title: 'Monthly Expenses',
-      value: formatCurrency(data.monthExpenses),
+      value: formatCurrency(data.monthExpenses, { decimals: 0 }),
       change: `${expenseChange >= 0 ? '+' : ''}${expenseChange.toFixed(1)}% vs last month`,
       changePositive: expenseChange <= 0,
       icon: TrendingDown,
@@ -295,7 +283,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
             data.cashBalance >= 0 ? 'text-mint' : 'text-danger'
           }`}
         >
-          {formatCurrency(data.cashBalance)}
+          {formatCurrency(data.cashBalance, { decimals: 0 })}
         </p>
       </motion.div>
 
@@ -322,11 +310,19 @@ export default function DashboardClient({ data }: DashboardClientProps) {
             <div className="text-right flex-shrink-0">
               <p className="text-2xl sm:text-3xl font-semibold text-danger money">
                 {formatCurrency(
-                  data.creditCards.reduce((s, c) => s + Math.abs(c.currentBalance), 0)
+                  data.creditCards.reduce((s, c) => s + Math.abs(c.currentBalance), 0),
+                  { decimals: 0 }
                 )}
               </p>
               <p className="text-xs text-ink-muted mt-0.5">
                 {data.creditCards.length} card{data.creditCards.length !== 1 ? 's' : ''}
+                {(() => {
+                  const limited = data.creditCards.filter((c) => (c.creditLimit ?? 0) > 0);
+                  if (limited.length === 0) return null;
+                  const totalLimit = limited.reduce((s, c) => s + (c.creditLimit ?? 0), 0);
+                  const totalDebt = limited.reduce((s, c) => s + Math.abs(c.currentBalance), 0);
+                  return ` · ${((totalDebt / totalLimit) * 100).toFixed(0)}% of ${formatCurrency(totalLimit, { decimals: 0 })}`;
+                })()}
               </p>
             </div>
           </div>
@@ -335,9 +331,10 @@ export default function DashboardClient({ data }: DashboardClientProps) {
             {data.creditCards.map((card, i) => {
               const debt = Math.abs(card.currentBalance);
               const startDebt = Math.abs(card.balanceAtMonthStart);
-              const limit = 10000;
-              const pct = Math.min((debt / limit) * 100, 100);
-              const startPct = Math.min((startDebt / limit) * 100, 100);
+              const limit = card.creditLimit && card.creditLimit > 0 ? card.creditLimit : null;
+              const utilisation = limit ? (debt / limit) * 100 : 0;
+              const pct = Math.min(utilisation, 100);
+              const startPct = limit ? Math.min((startDebt / limit) * 100, 100) : 0;
               const delta = debt - startDebt;
               const barColor =
                 pct > 80
@@ -357,12 +354,21 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                     </div>
                     <div className="text-right pl-4 flex-shrink-0">
                       <p className="text-sm font-semibold text-danger money">
-                        {formatCurrencyFull(debt)}
+                        {formatCurrency(debt)}
                       </p>
-                      <p className="text-[10px] text-ink-muted">of $10,000</p>
+                      <p className="text-[10px] text-ink-muted">
+                        {limit ? (
+                          <>of {formatCurrency(limit, { decimals: 0 })}</>
+                        ) : (
+                          <Link href="/accounts" className="underline decoration-dotted hover:text-ink">
+                            No limit set
+                          </Link>
+                        )}
+                      </p>
                     </div>
                   </div>
 
+                  {limit && (
                   <div className="relative pt-4">
                     {startPct > 0 && (
                       <div
@@ -397,21 +403,28 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                       />
                     )}
                   </div>
+                  )}
 
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px] text-ink-muted money">{pct.toFixed(1)}% used</span>
+                  <div className="flex items-center justify-between gap-2 mt-2">
+                    <span
+                      className={`text-[10px] money ${utilisation > 100 ? 'text-danger font-medium' : 'text-ink-muted'}`}
+                    >
+                      {limit ? `${utilisation.toFixed(1)}% used` : 'Utilisation unknown'}
+                    </span>
                     {delta !== 0 && (
                       <span
                         className={`text-[10px] font-medium money ${
                           delta > 0 ? 'text-danger' : 'text-mint'
                         }`}
                       >
-                        {delta > 0 ? '↑' : '↓'} {formatCurrencyFull(Math.abs(delta))} this month
+                        {delta > 0 ? '↑' : '↓'} {formatCurrency(Math.abs(delta))} this month
                       </span>
                     )}
-                    <span className="text-[10px] text-ink-muted money">
-                      {formatCurrency(Math.max(limit - debt, 0))} avail.
-                    </span>
+                    {limit && (
+                      <span className="text-[10px] text-ink-muted money">
+                        {formatCurrency(Math.max(limit - debt, 0), { decimals: 0 })} avail.
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -468,7 +481,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-semibold text-warning money">
-                      {formatCurrencyFull(debt)}
+                      {formatCurrency(debt)}
                     </p>
                     {delta !== 0 && (
                       <p
@@ -476,7 +489,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                           delta > 0 ? 'text-danger' : 'text-mint'
                         }`}
                       >
-                        {delta > 0 ? '↑' : '↓'} {formatCurrencyFull(Math.abs(delta))} this month
+                        {delta > 0 ? '↑' : '↓'} {formatCurrency(Math.abs(delta))} this month
                       </p>
                     )}
                   </div>
@@ -566,7 +579,25 @@ export default function DashboardClient({ data }: DashboardClientProps) {
             <div className="space-y-0.5">
               {data.recentTransactions.map((tx, i) => {
                 const isIncome = tx.kind === 'INCOME';
-                const IconComp = tx.category ? getCategoryIcon(tx.category.name) : DollarSign;
+                const isTransfer = tx.kind === 'TRANSFER';
+                const IconComp = isTransfer
+                  ? ArrowLeftRight
+                  : tx.category
+                    ? getCategoryIcon(tx.category.name)
+                    : DollarSign;
+                const title = isTransfer
+                  ? tx.merchantOrSource || 'Transfer'
+                  : tx.merchantOrSource ||
+                    tx.category?.name ||
+                    (isIncome ? 'Income' : 'Expense');
+                const accountLabel = isTransfer
+                  ? `${tx.account?.name || '—'} → ${tx.toAccount?.name || '—'}`
+                  : tx.account?.name;
+                const subtitleParts = [
+                  formatDate(tx.date),
+                  !isTransfer && tx.merchantOrSource ? tx.category?.name : null,
+                  accountLabel,
+                ].filter(Boolean);
                 return (
                   <motion.div
                     key={tx.id}
@@ -578,7 +609,9 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                       style={{
-                        backgroundColor: tx.category?.color
+                        backgroundColor: isTransfer
+                          ? 'rgba(122, 162, 247, 0.12)'
+                          : tx.category?.color
                           ? `${tx.category.color}18`
                           : isIncome
                             ? 'rgba(61, 206, 166, 0.12)'
@@ -588,26 +621,27 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                       <IconComp
                         size={16}
                         style={{
-                          color: tx.category?.color || (isIncome ? MINT : DANGER),
+                          color: isTransfer
+                            ? 'var(--info)'
+                            : tx.category?.color || (isIncome ? MINT : DANGER),
                         }}
                       />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink truncate">
-                        {tx.category?.name || (isIncome ? 'Income' : 'Expense')}
+                        {title}
                       </p>
-                      <p className="text-xs text-ink-muted">
-                        {formatDate(tx.date)}
-                        {tx.account ? ` · ${tx.account.name}` : ''}
+                      <p className="text-xs text-ink-muted truncate">
+                        {subtitleParts.join(' · ')}
                       </p>
                     </div>
                     <p
-                      className={`text-sm font-semibold money ${
-                        isIncome ? 'text-mint' : 'text-ink-secondary'
+                      className={`text-sm font-semibold money shrink-0 ${
+                        isIncome ? 'text-mint' : isTransfer ? 'text-info' : 'text-ink-secondary'
                       }`}
                     >
-                      {isIncome ? '+' : '-'}
-                      {formatCurrencyFull(tx.amount)}
+                      {isIncome ? '+' : isTransfer ? '' : '−'}
+                      {formatCurrency(tx.amount)}
                     </p>
                   </motion.div>
                 );
@@ -653,7 +687,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                 Owed to you
               </p>
               <p className="text-lg font-semibold text-mint money">
-                {formatCurrency(data.friendsOwedToYou)}
+                {formatCurrency(data.friendsOwedToYou, { decimals: 0 })}
               </p>
             </div>
             <div className="rounded-xl border border-danger/20 bg-danger-dim/40 p-3">
@@ -661,7 +695,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                 You owe
               </p>
               <p className="text-lg font-semibold text-danger money">
-                {formatCurrency(data.friendsYouOwe)}
+                {formatCurrency(data.friendsYouOwe, { decimals: 0 })}
               </p>
             </div>
           </div>
@@ -707,7 +741,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                     >
                       {settled
                         ? '$0'
-                        : formatCurrency(Math.abs(friend.balance))}
+                        : formatCurrency(Math.abs(friend.balance), { decimals: 0 })}
                     </p>
                   </div>
                 );
@@ -793,7 +827,7 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                 }}
                 labelStyle={{ color: '#9aa1ad' }}
                 itemStyle={{ color: '#f0f2f5' }}
-                formatter={(value: number) => formatCurrencyFull(value)}
+                formatter={(value: number) => formatCurrency(value)}
               />
               <Area
                 type="monotone"

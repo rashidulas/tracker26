@@ -44,7 +44,7 @@ export async function getDashboardData() {
       prisma.transaction.findMany({
         take: 10,
         orderBy: { date: 'desc' },
-        include: { category: true, account: true },
+        include: { category: true, account: true, toAccount: true },
       }),
       prisma.account.findMany({
         include: {
@@ -156,6 +156,7 @@ export async function getDashboardData() {
         institution: a.institution,
         currentBalance,
         balanceAtMonthStart,
+        creditLimit: a.creditLimit ?? null,
       };
     };
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCurrency } from '@/lib/utils';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ImagePlus, Loader2, Send, X } from 'lucide-react';
 import Button from '@/components/Button';
@@ -20,12 +21,6 @@ type UiMessage = {
   draft?: UiDraft | null;
 };
 
-function formatMoney(amount: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount);
-}
 
 export default function FinanceAssistant({
   variant = 'card',
@@ -300,7 +295,7 @@ export default function FinanceAssistant({
             ? {
                 ...m,
                 draft: null,
-                content: `${m.content}\n\nSaved ${draft.kind === 'INCOME' ? 'income' : 'expense'} of ${formatMoney(draft.amount)}${
+                content: `${m.content}\n\nSaved ${draft.kind === 'INCOME' ? 'income' : 'expense'} of ${formatCurrency(draft.amount)}${
                   draft.accountName ? ` to ${draft.accountName}` : ''
                 }.`,
               }
@@ -403,7 +398,7 @@ export default function FinanceAssistant({
                   )}
                 </div>
                 <p className="text-lg font-semibold text-ink money">
-                  {formatMoney(m.draft.amount)}
+                  {formatCurrency(m.draft.amount)}
                 </p>
                 <p className="text-[11px] text-ink-muted">
                   {m.draft.categoryName || 'Category'} · {m.draft.date}

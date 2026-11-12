@@ -1,5 +1,6 @@
 'use client';
 
+import { formatCurrency } from '@/lib/utils';
 import { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
@@ -42,20 +43,8 @@ type Stats = {
   monthNet: number;
 };
 
-function money(n: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function moneyFull(n: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(n);
-}
+const money = (n: number) => formatCurrency(n, { decimals: 0 });
+const moneyFull = (n: number) => formatCurrency(n);
 
 const moodStyles = {
   positive: 'border-mint/30 bg-mint-dim text-mint',
