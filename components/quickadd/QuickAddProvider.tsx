@@ -13,8 +13,8 @@ import { useRouter } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
-import ExpenseForm, { type ExpenseSaveResult, type SubmitIntent } from '@/app/expenses/ExpenseForm';
-import { getQuickAddData } from '@/app/expenses/actions';
+import ExpenseForm, { type ExpenseSaveResult, type SubmitIntent } from '@/app/transactions/expenses/ExpenseForm';
+import { getQuickAddData } from '@/app/transactions/expenses/actions';
 import { useExpenseSaved } from './useExpenseSaved';
 
 type QuickAddData = NonNullable<Awaited<ReturnType<typeof getQuickAddData>>['data']>;

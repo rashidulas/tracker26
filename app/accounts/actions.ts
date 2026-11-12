@@ -147,8 +147,8 @@ export async function deleteAccount(id: string) {
     });
 
     revalidatePath('/accounts');
-    revalidatePath('/dashboard');
-    revalidatePath('/goals');
+    revalidatePath('/');
+    revalidatePath('/plan/goals');
     return { success: true };
   } catch (error) {
     console.error('Error deleting account:', error);

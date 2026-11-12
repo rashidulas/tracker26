@@ -3,9 +3,9 @@
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ToastProvider';
-import { deleteExpense } from '@/app/expenses/actions';
+import { deleteExpense } from '@/app/transactions/expenses/actions';
 import { emitExpenseEvent } from '@/lib/expenseEvents';
-import type { ExpenseSaveResult } from '@/app/expenses/ExpenseForm';
+import type { ExpenseSaveResult } from '@/app/transactions/expenses/ExpenseForm';
 import { formatCurrency } from '@/lib/utils';
 
 const money = (n: number) => formatCurrency(n);

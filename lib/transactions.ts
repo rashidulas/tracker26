@@ -32,15 +32,12 @@ export type TransactionDeps = {
 /** Pages that read transactions or balances derived from them. */
 export const TRANSACTION_PAGES = [
   '/',
-  '/dashboard',
+  '/insights',
   '/accounts',
-  '/expenses',
-  '/income',
-  '/transfers',
-  '/analytics',
-  '/budgets',
-  '/expenses-dashboard',
-  '/income-dashboard',
+  '/transactions/expenses',
+  '/transactions/income',
+  '/transactions/transfers',
+  '/plan/budgets',
   '/chat',
 ] as const;
 

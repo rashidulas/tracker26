@@ -103,7 +103,7 @@ test('expense: create, edit (amount, account, subcategory), delete', async () =>
     )
   );
   assert.deepEqual(balances(), { ...START, Checking: 950 });
-  for (const page of ['/dashboard', '/accounts', '/expenses']) {
+  for (const page of ['/', '/accounts', '/transactions/expenses']) {
     assert.ok(revalidated.includes(page), `revalidates ${page}`);
   }
 
@@ -510,7 +510,7 @@ test('transfer: create, edit (amount, destination), delete', async () => {
     )
   );
   assert.deepEqual(balances(), { Checking: 800, Savings: 700, Card: 0 });
-  assert.ok(revalidated.includes('/transfers'));
+  assert.ok(revalidated.includes('/transactions/transfers'));
 
   ok(
     await updateTransaction(
