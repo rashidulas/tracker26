@@ -7,6 +7,7 @@ import PageHeader from '@/components/PageHeader';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
+import Textarea from '@/components/Textarea';
 import Select from '@/components/Select';
 import { createGoal, updateGoal, deleteGoal, createContribution } from './actions';
 import { Plus, Edit2, Trash2, DollarSign, Target as TargetIcon } from 'lucide-react';
@@ -178,14 +179,11 @@ function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
         ]}
       />
 
-      <div>
-        <label className="block text-sm font-medium text-ink-secondary mb-1.5">Notes (Optional)</label>
-        <textarea
-          {...register('notes')}
-          className="w-full px-3 py-2 border border-graphite-border rounded-xl bg-graphite-surface-2/80 text-ink focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
-          rows={3}
-        />
-      </div>
+      <Textarea
+        label="Notes (Optional)"
+        {...register('notes')}
+        rows={3}
+      />
 
       <div className="flex gap-3 pt-4">
         <Button type="submit" disabled={isSubmitting} className="flex-1">
@@ -283,15 +281,17 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                     setEditingGoal(goal);
                     setIsGoalModalOpen(true);
                   }}
-                  className="p-1.5 rounded-lg text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                  className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                  aria-label={`Edit goal ${goal.name}`}
                 >
-                  <Edit2 size={16} />
+                  <Edit2 size={16} aria-hidden="true" />
                 </button>
                 <button
                   onClick={() => handleDelete(goal)}
-                  className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                  className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                  aria-label={`Delete goal ${goal.name}`}
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={16} aria-hidden="true" />
                 </button>
               </div>
             </div>

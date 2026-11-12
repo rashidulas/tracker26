@@ -4,6 +4,7 @@ import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Input from '@/components/Input';
+import Textarea from '@/components/Textarea';
 import Select from '@/components/Select';
 import Button from '@/components/Button';
 import {
@@ -673,13 +674,18 @@ export default function ExpenseForm({
 
       {/* Category picker */}
       <div>
-        <label className="block text-sm font-medium text-ink-secondary mb-2">
+        <p id={`${formId}-category-label`} className="block text-sm font-medium text-ink-secondary mb-2">
           Category
-        </label>
-        <div className="flex flex-wrap gap-2">
+        </p>
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-labelledby={`${formId}-category-label`}
+        >
           <button
             type="button"
             onClick={() => pickCategory(PAYMENT_SENTINEL)}
+            aria-pressed={isPayment}
             className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition-all duration-200 ${
               isPayment
                 ? 'bg-info-dim border-info/40 text-info'
@@ -692,6 +698,7 @@ export default function ExpenseForm({
           <button
             type="button"
             onClick={() => pickCategory(DEBT_PAYMENT_SENTINEL)}
+            aria-pressed={isDebtPayment}
             className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition-all duration-200 ${
               isDebtPayment
                 ? 'bg-mint-dim border-mint/40 text-mint'
@@ -836,13 +843,14 @@ export default function ExpenseForm({
 
       {!isTransfer && availableSubcategories.length > 0 && (
         <div>
-          <label className="block text-sm font-medium text-ink-secondary mb-2">
+          <p id={`${formId}-subcategory-label`} className="block text-sm font-medium text-ink-secondary mb-2">
             Subcategory <span className="text-ink-muted font-normal">(optional)</span>
-          </label>
-          <div className="flex flex-wrap gap-2">
+          </p>
+          <div className="flex flex-wrap gap-2" role="group" aria-labelledby={`${formId}-subcategory-label`}>
             <button
               type="button"
               onClick={() => setValue('subcategoryId', '')}
+              aria-pressed={!selectedSubcategoryId}
               className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
                 !selectedSubcategoryId
                   ? 'bg-graphite-surface border-mint/40 text-mint'
@@ -858,6 +866,7 @@ export default function ExpenseForm({
                   key={s.id}
                   type="button"
                   onClick={() => setValue('subcategoryId', s.id)}
+                  aria-pressed={active}
                   className={`px-3 py-1.5 rounded-full text-sm border transition-all ${
                     active
                       ? 'bg-mint-dim border-mint/40 text-mint'
@@ -955,17 +964,12 @@ export default function ExpenseForm({
               </div>
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-ink-secondary mb-1.5">
-              Notes <span className="text-ink-muted font-normal">(optional)</span>
-            </label>
-            <textarea
-              {...register('notes')}
-              className="w-full px-3.5 py-2.5 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors text-sm"
-              rows={2}
-              placeholder={isPayment ? 'e.g. Monthly transfer to savings' : 'e.g. Monthly minimum payment'}
-            />
-          </div>
+          <Textarea
+            label="Notes (optional)"
+            {...register('notes')}
+            rows={2}
+            placeholder={isPayment ? 'e.g. Monthly transfer to savings' : 'e.g. Monthly minimum payment'}
+          />
         </div>
       )}
 
@@ -996,17 +1000,12 @@ export default function ExpenseForm({
 
           {showDetails && (
             <div className="space-y-4 animate-fade-up">
-              <div>
-                <label className="block text-sm font-medium text-ink-secondary mb-1.5">
-                  Notes
-                </label>
-                <textarea
-                  {...register('notes')}
-                  className="w-full px-3.5 py-2.5 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors text-sm"
-                  rows={3}
-                  placeholder="Add notes…"
-                />
-              </div>
+              <Textarea
+                label="Notes"
+                {...register('notes')}
+                rows={3}
+                placeholder="Add notes…"
+              />
               <Input label="Tags" {...register('tags')} placeholder="business, deductible" />
             </div>
           )}

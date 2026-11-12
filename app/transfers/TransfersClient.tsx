@@ -8,7 +8,7 @@ import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { parseDay, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
 import {
@@ -270,6 +270,7 @@ export default function TransfersClient({
                 <TransactionRow
                   key={t.id}
                   id={t.id}
+                  label={`Transfer ${t.account?.name || ''} to ${t.toAccount?.name || ''}, ${formatCurrency(t.amount)}, ${formatDate(t.date)}`}
                   selection={selection}
                   busy={busyIds.has(t.id)}
                   leading={<ArrowLeftRight size={16} className="text-info" />}

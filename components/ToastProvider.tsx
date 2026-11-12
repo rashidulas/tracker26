@@ -227,14 +227,23 @@ function ToastContainer({
   onAction: (toast: Toast) => void;
 }) {
   return (
-    <div
-      className="fixed z-[80] inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom))] lg:bottom-6 lg:left-64 px-4 flex flex-col items-center gap-2 pointer-events-none"
-      role="status"
-      aria-live="polite"
-    >
-      {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onClose={onClose} onAction={onAction} />
-      ))}
+    // Bottom of the screen (above the mobile tab bar), never over the header.
+    // Errors and warnings go in an assertive region; everything else is polite.
+    <div className="fixed z-[80] inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom))] lg:bottom-6 lg:left-64 px-4 flex flex-col items-center gap-2 pointer-events-none">
+      <div role="alert" aria-live="assertive" className="w-full flex flex-col items-center gap-2">
+        {toasts
+          .filter((t) => t.type === 'error' || t.type === 'warning')
+          .map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onClose={onClose} onAction={onAction} />
+          ))}
+      </div>
+      <div role="status" aria-live="polite" className="w-full flex flex-col items-center gap-2">
+        {toasts
+          .filter((t) => t.type !== 'error' && t.type !== 'warning')
+          .map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onClose={onClose} onAction={onAction} />
+          ))}
+      </div>
     </div>
   );
 }
@@ -273,13 +282,13 @@ function ToastItem({
     <div
       className={`pointer-events-auto w-full max-w-sm flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-2xl border bg-graphite-elevated/95 text-ink shadow-panel backdrop-blur-xl animate-fade-up ${border[toast.type]}`}
     >
-      <div className={`flex-shrink-0 ${iconColor[toast.type]}`}>{icons[toast.type]}</div>
+      <div className={`flex-shrink-0 ${iconColor[toast.type]}`} aria-hidden="true">{icons[toast.type]}</div>
       <p className="flex-1 text-sm font-medium py-1">{toast.message}</p>
       {toast.action && (
         <button
           type="button"
           onClick={() => onAction(toast)}
-          className="flex-shrink-0 px-3 py-1.5 rounded-xl text-sm font-semibold text-mint hover:bg-mint-dim transition-colors"
+          className="flex-shrink-0 min-h-[44px] px-3 rounded-xl text-sm font-semibold text-mint hover:bg-mint-dim transition-colors"
         >
           {toast.action.label}
         </button>
@@ -287,10 +296,10 @@ function ToastItem({
       <button
         type="button"
         onClick={() => onClose(toast.id)}
-        className="flex-shrink-0 p-1.5 rounded-lg text-ink-muted hover:text-ink transition-colors"
-        aria-label="Dismiss"
+        className="flex-shrink-0 w-11 h-11 -my-1 inline-flex items-center justify-center rounded-lg text-ink-muted hover:text-ink transition-colors"
+        aria-label="Dismiss notification"
       >
-        <X className="w-4 h-4" />
+        <X className="w-4 h-4" aria-hidden="true" />
       </button>
     </div>
   );

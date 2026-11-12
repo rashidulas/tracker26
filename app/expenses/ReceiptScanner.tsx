@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { isValidDay, todayInAppTimeZone } from '@/lib/dates';
 import Input from '@/components/Input';
+import Textarea from '@/components/Textarea';
 import Select from '@/components/Select';
 import Button from '@/components/Button';
 import { createExpense } from './actions';
@@ -494,17 +495,12 @@ export default function ReceiptScanner({
           placeholder="e.g., Walmart"
         />
 
-        <div>
-          <label className="block text-sm font-medium text-ink-secondary mb-1">
-            Notes
-          </label>
-          <textarea
-            {...register('notes')}
-            className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors text-sm"
-            rows={2}
-            placeholder="Add notes..."
-          />
-        </div>
+        <Textarea
+          label="Notes"
+          {...register('notes')}
+          rows={2}
+          placeholder="Add notes..."
+        />
 
         <Input
           label="Tags (comma-separated)"

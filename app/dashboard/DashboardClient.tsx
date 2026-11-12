@@ -83,7 +83,7 @@ interface DashboardClientProps {
 const MINT = '#3dcea6';
 const DANGER = '#f07178';
 const GRID = '#262b36';
-const TICK = '#6b7280';
+const TICK = '#858b96';
 const EXPENSE_LINE = '#f07178';
 
 const fadeUp = {

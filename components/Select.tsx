@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useId } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
@@ -8,17 +8,31 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, className = '', ...props }, ref) => {
+  ({ label, error, options, className = '', id, ...props }, ref) => {
+    const generatedId = useId();
+    const selectId = id ?? generatedId;
+    const errorId = `${selectId}-error`;
+    const describedBy =
+      [props['aria-describedby'], error ? errorId : null].filter(Boolean).join(' ') ||
+      undefined;
+
     return (
       <div className="w-full">
         {label && (
-          <label className="block text-sm font-medium text-ink-secondary mb-1.5">
+          <label
+            htmlFor={selectId}
+            className="block text-sm font-medium text-ink-secondary mb-1.5"
+          >
             {label}
           </label>
         )}
         <div className="relative">
           <select
             ref={ref}
+            {...props}
+            id={selectId}
+            aria-invalid={error ? true : props['aria-invalid']}
+            aria-describedby={describedBy}
             className={`
               w-full px-3.5 py-2.5 pr-10 border border-graphite-border rounded-xl text-sm sm:text-base
               text-ink bg-[var(--surface-2)]
@@ -29,7 +43,6 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
               ${error ? 'border-danger/50' : ''}
               ${className}
             `}
-            {...props}
           >
             {options.map((option) => (
               <option
@@ -43,10 +56,15 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
           </select>
           <ChevronDown
             size={16}
+            aria-hidden="true"
             className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted"
           />
         </div>
-        {error && <p className="mt-1.5 text-sm text-danger">{error}</p>}
+        {error && (
+          <p id={errorId} className="mt-1.5 text-sm text-danger">
+            {error}
+          </p>
+        )}
       </div>
     );
   }

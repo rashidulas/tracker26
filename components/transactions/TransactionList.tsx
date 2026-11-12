@@ -153,6 +153,7 @@ export function ListToolbar({
           <Search
             size={16}
             className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted"
+            aria-hidden="true"
           />
           <input
             type="search"
@@ -167,10 +168,10 @@ export function ListToolbar({
             <button
               type="button"
               onClick={() => onQueryChange('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-hover"
+              className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 inline-flex items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-hover"
               aria-label="Clear search"
             >
-              <X size={14} />
+              <X size={14} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -199,8 +200,9 @@ export function ListToolbar({
             )}
             aria-pressed={selecting}
           >
-            <CheckSquare size={16} />
+            <CheckSquare size={16} aria-hidden="true" />
             <span className="hidden sm:inline">{selecting ? 'Done' : 'Select'}</span>
+            <span className="sr-only sm:hidden">{selecting ? 'Done selecting' : 'Select transactions'}</span>
           </button>
         </div>
       </div>
@@ -285,6 +287,7 @@ export function GroupedList<T>({
 
 export function TransactionRow({
   id,
+  label,
   selection,
   leading,
   title,
@@ -298,6 +301,8 @@ export function TransactionRow({
   busy,
 }: {
   id: string;
+  /** Plain-text description used in accessible names, e.g. "Groceries, $42.10, Nov 3". */
+  label?: string;
   selection: ReturnType<typeof useSelection>;
   leading: ReactNode;
   title: ReactNode;
@@ -328,13 +333,13 @@ export function TransactionRow({
         checked={isSelected}
         onChange={() => selection.toggle(id)}
         onClick={(e) => e.stopPropagation()}
-        aria-label="Select transaction"
+        aria-label={label ? `Select ${label}` : 'Select transaction'}
         className={cn(
           'w-4 h-4 accent-[var(--mint)] shrink-0',
           selection.selecting ? 'block' : 'hidden sm:block sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100'
         )}
       />
-      <div className="w-10 h-10 rounded-xl bg-graphite-surface-2 border border-graphite-border-subtle flex items-center justify-center text-base shrink-0">
+      <div aria-hidden="true" className="w-10 h-10 rounded-xl bg-graphite-surface-2 border border-graphite-border-subtle flex items-center justify-center text-base shrink-0">
         {leading}
       </div>
       <div className="min-w-0 flex-1">
@@ -350,17 +355,19 @@ export function TransactionRow({
         {amount}
       </p>
       {!selection.selecting && (
-        <RowActions onDuplicate={onDuplicate} onEdit={onEdit} onDelete={onDelete} />
+        <RowActions label={label} onDuplicate={onDuplicate} onEdit={onEdit} onDelete={onDelete} />
       )}
     </div>
   );
 }
 
 function RowActions({
+  label,
   onDuplicate,
   onEdit,
   onDelete,
 }: {
+  label?: string;
   onDuplicate?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -375,9 +382,14 @@ function RowActions({
     };
     document.addEventListener('mousedown', close);
     document.addEventListener('touchstart', close);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mousedown', close);
       document.removeEventListener('touchstart', close);
+      document.removeEventListener('keydown', onKey);
     };
   }, [open]);
 
@@ -395,23 +407,23 @@ function RowActions({
             key={a.label}
             type="button"
             onClick={a.run}
-            className={cn('p-2 rounded-xl text-ink-muted transition-colors', a.tone)}
-            aria-label={a.label}
+            className={cn('w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted transition-colors', a.tone)}
+            aria-label={label ? `${a.label} ${label}` : a.label}
             title={a.label}
           >
-            <a.icon size={15} />
+            <a.icon size={15} aria-hidden="true" />
           </button>
         ))}
       </div>
-      <div ref={ref} className="relative sm:hidden -mr-1.5">
+      <div ref={ref} className="relative sm:hidden -mr-2">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="p-2 rounded-xl text-ink-muted hover:text-ink hover:bg-graphite-surface-2"
-          aria-label="Row actions"
+          className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-ink hover:bg-graphite-surface-2"
+          aria-label={label ? `Actions for ${label}` : 'Row actions'}
           aria-expanded={open}
         >
-          <MoreVertical size={16} />
+          <MoreVertical size={16} aria-hidden="true" />
         </button>
         {open && (
           <div className="absolute right-0 top-full mt-1 z-20 w-40 rounded-xl border border-graphite-border bg-graphite-elevated shadow-panel py-1">
@@ -428,7 +440,7 @@ function RowActions({
                   a.label === 'Delete' && 'text-danger'
                 )}
               >
-                <a.icon size={15} />
+                <a.icon size={15} aria-hidden="true" />
                 {a.label}
               </button>
             ))}
@@ -465,10 +477,10 @@ export function BulkActionBar({
         <button
           type="button"
           onClick={onClear}
-          className="p-1.5 rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-hover"
+          className="w-11 h-11 inline-flex items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-hover"
           aria-label="Clear selection"
         >
-          <X size={16} />
+          <X size={16} aria-hidden="true" />
         </button>
         <p className="text-sm text-ink mr-auto">
           <span className="font-semibold">{count}</span> selected

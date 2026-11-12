@@ -481,11 +481,11 @@ export default function FinanceAssistant({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="p-2.5 rounded-xl text-ink-secondary hover:text-ink hover:bg-graphite-surface-2"
+          className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-secondary hover:text-ink hover:bg-graphite-surface-2"
           aria-label="Upload receipt"
           title="Upload receipt"
         >
-          <ImagePlus size={18} />
+          <ImagePlus size={18} aria-hidden="true" />
         </button>
         <input
           value={input}

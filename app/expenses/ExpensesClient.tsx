@@ -17,7 +17,7 @@ import {
   duplicateTransactions,
   recategorizeTransactions,
 } from '@/app/transactions/actions';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import {
   buildMonthOptions,
   currentMonthKey,
@@ -438,6 +438,7 @@ export default function ExpensesClient({
             <TransactionRow
               key={expense.id}
               id={expense.id}
+              label={`${expense.merchantOrSource || expense.category?.name || 'Expense'}, ${formatCurrency(expense.amount)}, ${formatDate(expense.date)}`}
               selection={selection}
               busy={busyIds.has(expense.id)}
               leading={expense.category?.icon || '💸'}

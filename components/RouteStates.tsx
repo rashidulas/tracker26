@@ -132,10 +132,10 @@ export function RouteError({
             Try again
           </button>
           <Link
-            href="/dashboard"
+            href="/"
             className="inline-flex items-center px-4 py-2.5 rounded-xl border border-graphite-border text-sm text-ink-secondary hover:text-ink hover:bg-graphite-surface-hover"
           >
-            Go to dashboard
+            Go to Home
           </Link>
         </div>
       </div>

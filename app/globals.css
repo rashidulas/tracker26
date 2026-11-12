@@ -12,7 +12,7 @@
   --border-subtle: #1c212b;
   --text: #f0f2f5;
   --text-secondary: #9aa1ad;
-  --text-muted: #6b7280;
+  --text-muted: #858b96; /* 4.8:1 on --surface-2, 5.3:1 on --surface (WCAG AA) */
   --mint: #3dcea6;
   --mint-bright: #5ee0b8;
   --mint-dim: rgba(61, 206, 166, 0.12);
@@ -59,6 +59,12 @@ button {
 @layer components {
   .page-shell {
     @apply w-full max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8;
+  }
+
+  /* Route loading/error states render a page-shell; inside a section layout that
+     already provides one, don't double the padding. */
+  .page-shell .page-shell {
+    @apply max-w-none p-0;
   }
 
   .floating-tab-bar {

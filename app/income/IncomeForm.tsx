@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
+import Textarea from '@/components/Textarea';
 import Select from '@/components/Select';
 import { createIncome, updateIncome } from './actions';
 import { Plus, Trash2 } from 'lucide-react';
@@ -278,9 +279,9 @@ export default function IncomeForm({
 
       <div>
         <div className="flex items-center justify-between gap-2 mb-1.5">
-          <label className="block text-sm font-medium text-ink-secondary">
+          <p className="block text-sm font-medium text-ink-secondary" aria-hidden="true">
             {isSplitMode ? 'Accounts' : 'Account'}
-          </label>
+          </p>
           <button
             type="button"
             onClick={addSplit}
@@ -304,6 +305,7 @@ export default function IncomeForm({
                 <div className="flex-1 min-w-0">
                   <Select
                     value={split.accountId}
+                    aria-label={isSplitMode ? `Account ${index + 1}` : 'Account'}
                     onChange={(e) => updateSplit(index, { accountId: e.target.value })}
                     options={[
                       { value: '', label: 'Select account...' },
@@ -329,8 +331,8 @@ export default function IncomeForm({
                   <button
                     type="button"
                     onClick={() => removeSplit(index)}
-                    className="mt-0.5 p-2.5 rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors shrink-0"
-                    aria-label="Remove account split"
+                    className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors shrink-0"
+                    aria-label={`Remove account split ${index + 1}`}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -359,17 +361,12 @@ export default function IncomeForm({
         placeholder="e.g., Company XYZ"
       />
 
-      <div>
-        <label className="block text-sm font-medium text-ink-secondary mb-1.5">
-          Notes (Optional)
-        </label>
-        <textarea
-          {...register('notes')}
-          className="w-full px-3 py-2 border border-graphite-border bg-graphite-surface-2/80 text-ink rounded-xl focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors"
-          rows={3}
-          placeholder="Add notes..."
-        />
-      </div>
+      <Textarea
+        label="Notes (Optional)"
+        {...register('notes')}
+        rows={3}
+        placeholder="Add notes..."
+      />
 
       <Input
         label="Tags (Optional, comma-separated)"

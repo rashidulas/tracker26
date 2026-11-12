@@ -247,14 +247,14 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
                     <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleEdit(category)}
-                        className="p-2 rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
                         aria-label={`Edit ${category.name}`}
                       >
                         <Pencil size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(category)}
-                        className="p-2 rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                         aria-label={`Delete ${category.name}`}
                       >
                         <Trash2 size={16} />

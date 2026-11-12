@@ -16,7 +16,7 @@ import {
   duplicateTransactions,
   recategorizeTransactions,
 } from '@/app/transactions/actions';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import {
   buildMonthOptions,
   currentMonthKey,
@@ -345,6 +345,7 @@ export default function IncomeClient({
             <TransactionRow
               key={item.memberIds.join('-')}
               id={item.id}
+              label={`${item.merchantOrSource || item.category?.name || 'Income'}, ${formatCurrency(item.amount)}, ${formatDate(item.date)}`}
               selection={selection}
               busy={busyIds.has(item.id)}
               leading={item.category?.icon || '💰'}
