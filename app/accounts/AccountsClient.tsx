@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import AccountForm from './AccountForm';
@@ -37,15 +39,32 @@ interface AccountsClientProps {
 }
 
 export default function AccountsClient({ initialAccounts }: AccountsClientProps) {
+  const router = useRouter();
+  const toast = useToast();
   const [accounts, setAccounts] = useState(initialAccounts);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
-  const [deleteError, setDeleteError] = useState('');
+  // Hidden while the delete waits out its Undo window.
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(() => new Set());
+
+  // Refreshed server data (balances, counts) replaces local state.
+  useEffect(() => {
+    setAccounts(initialAccounts);
+  }, [initialAccounts]);
+
+  const setPending = (id: string, on: boolean) =>
+    setPendingDelete((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   const handleSuccess = () => {
+    toast.success(editingAccount ? 'Account updated' : 'Account added');
     setIsModalOpen(false);
     setEditingAccount(null);
-    window.location.reload();
+    router.refresh();
   };
 
   const handleEdit = (account: Account) => {
@@ -58,19 +77,23 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this account?')) return;
-
-    setDeleteError('');
-    const result = await deleteAccount(id);
-
-    if (result.success) {
-      setAccounts(accounts.filter((a) => a.id !== id));
-    } else {
-      setDeleteError(result.error || 'Failed to delete account');
-      setTimeout(() => setDeleteError(''), 5000);
-    }
+  const handleDelete = (account: Account) => {
+    setPending(account.id, true);
+    toast.deferred({
+      message: `Deleted ${account.name}`,
+      commit: () => deleteAccount(account.id),
+      errorMessage: 'Failed to delete account',
+      onUndo: () => setPending(account.id, false),
+      onFailed: () => setPending(account.id, false),
+      onCommitted: () => {
+        setAccounts((prev) => prev.filter((a) => a.id !== account.id));
+        setPending(account.id, false);
+        router.refresh();
+      },
+    });
   };
+
+  const visibleAccounts = accounts.filter((a) => !pendingDelete.has(a.id));
 
   const getTypeIcon = (type: string): LucideIcon => {
     switch (type) {
@@ -98,7 +121,7 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
     }).format(amount);
   };
 
-  const totalBalance = accounts.reduce((sum, account) => sum + account.currentBalance, 0);
+  const totalBalance = visibleAccounts.reduce((sum, account) => sum + account.currentBalance, 0);
 
   const accountSections: Array<{
     key: Account['type'];
@@ -116,7 +139,7 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
   const sections = accountSections
     .map((section) => ({
       ...section,
-      accounts: accounts
+      accounts: visibleAccounts
         .filter((a) => section.types.includes(a.type))
         .sort((a, b) => a.name.localeCompare(b.name)),
     }))
@@ -144,8 +167,9 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
               <Edit2 size={16} />
             </button>
             <button
-              onClick={() => handleDelete(account.id)}
+              onClick={() => handleDelete(account)}
               className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+              aria-label={`Delete ${account.name}`}
             >
               <Trash2 size={16} />
             </button>
@@ -201,12 +225,6 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
         }
       />
 
-      {deleteError && (
-        <div className="mb-4 p-3 bg-danger-dim border border-danger/25 rounded-2xl text-danger text-sm">
-          {deleteError}
-        </div>
-      )}
-
       {/* Total Balance Card */}
       <div className="panel shadow-panel p-6 mb-6 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-mint-dim via-transparent to-transparent pointer-events-none" />
@@ -220,7 +238,7 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
           <p className="text-3xl sm:text-4xl font-semibold text-ink money">
             {formatCurrency(totalBalance)}
           </p>
-          <p className="text-sm text-ink-muted mt-2">Across {accounts.length} account(s)</p>
+          <p className="text-sm text-ink-muted mt-2">Across {visibleAccounts.length} account(s)</p>
         </div>
       </div>
 
@@ -242,7 +260,7 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
         ))}
       </div>
 
-      {accounts.length === 0 && (
+      {visibleAccounts.length === 0 && (
         <div className="panel shadow-panel p-12 text-center">
           <Wallet size={48} className="mx-auto text-ink-muted mb-4" />
           <p className="text-ink-muted">No accounts yet. Add your first account!</p>

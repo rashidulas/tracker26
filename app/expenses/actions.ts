@@ -91,30 +91,46 @@ function expenseFromForm(formData: FormData): ExpenseInput {
   };
 }
 
-function done(result: { success: boolean; error?: string }) {
-  return result.success ? { success: true } : { success: false, error: result.error };
+const rowInclude = {
+  category: true,
+  subcategory: true,
+  account: true,
+  toAccount: true,
+} as const;
+
+/** Return the saved row with relations so the UI can update without a reload. */
+async function withRow(
+  result: { success: true; data: { id: string } } | { success: false; error: string }
+) {
+  if (!result.success) return { success: false as const, error: result.error };
+  const row = await prisma.transaction.findUnique({
+    where: { id: result.data.id },
+    include: rowInclude,
+  });
+  return { success: true as const, data: row ?? undefined };
 }
 
 export async function createExpense(formData: FormData) {
-  return done(await createTransaction(expenseFromForm(formData)));
+  return withRow(await createTransaction(expenseFromForm(formData)));
 }
 
 export async function updateExpense(id: string, formData: FormData) {
   // A card payment opened from the Expenses list stays a transfer (see lib/transactions).
-  return done(await updateTransaction(id, expenseFromForm(formData)));
+  return withRow(await updateTransaction(id, expenseFromForm(formData)));
 }
 
 export async function deleteExpense(id: string) {
-  return done(await deleteTransaction(id));
+  const result = await deleteTransaction(id);
+  return result.success ? { success: true as const } : { success: false as const, error: result.error };
 }
 
 async function createPurposeTransfer(formData: FormData, purpose: TransferPurpose) {
   const fromAccountId = (formData.get('fromAccountId') as string) || '';
   const toAccountId = (formData.get('toAccountId') as string) || '';
-  if (!fromAccountId) return { success: false, error: 'Please select the account to pay from' };
+  if (!fromAccountId) return { success: false as const, error: 'Please select the account to pay from' };
   if (!toAccountId) {
     return {
-      success: false,
+      success: false as const,
       error:
         purpose === 'debt-payment'
           ? 'Please select the credit card / debt account'
@@ -122,7 +138,7 @@ async function createPurposeTransfer(formData: FormData, purpose: TransferPurpos
     };
   }
 
-  return done(
+  return withRow(
     await createTransaction({
       kind: 'TRANSFER',
       purpose,
@@ -143,4 +159,82 @@ export async function createPaymentTransfer(formData: FormData) {
 /** Debt payment: one TRANSFER into a credit card / loan account, tagged "debt-payment". */
 export async function createDebtPaymentTransfer(formData: FormData) {
   return createPurposeTransfer(formData, 'debt-payment');
+}
+
+/**
+ * Everything the global quick-add form needs: categories, accounts, and past
+ * merchants (most recent first) with the category / account used last time for
+ * each, plus the account last used per category.
+ */
+export async function getQuickAddData() {
+  try {
+    const [categories, accounts, recent] = await Promise.all([
+      prisma.category.findMany({
+        where: { type: 'EXPENSE' },
+        select: {
+          id: true,
+          name: true,
+          icon: true,
+          color: true,
+          subcategories: { orderBy: { name: 'asc' }, select: { id: true, name: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.account.findMany({
+        select: { id: true, name: true, type: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.transaction.findMany({
+        where: { kind: 'EXPENSE' },
+        select: {
+          merchantOrSource: true,
+          categoryId: true,
+          subcategoryId: true,
+          accountId: true,
+        },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: 500,
+      }),
+    ]);
+
+    const merchants: Array<{
+      name: string;
+      categoryId: string | null;
+      subcategoryId: string | null;
+      accountId: string | null;
+    }> = [];
+    const seen = new Set<string>();
+    const accountByCategory: Record<string, string> = {};
+
+    for (const t of recent) {
+      if (t.categoryId && t.accountId && !accountByCategory[t.categoryId]) {
+        accountByCategory[t.categoryId] = t.accountId;
+      }
+      const name = t.merchantOrSource?.trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merchants.push({
+        name,
+        categoryId: t.categoryId,
+        subcategoryId: t.subcategoryId,
+        accountId: t.accountId,
+      });
+    }
+
+    return {
+      success: true as const,
+      data: {
+        categories,
+        accounts,
+        merchants: merchants.slice(0, 200),
+        accountByCategory,
+        lastAccountId: recent.find((t) => t.accountId)?.accountId ?? null,
+      },
+    };
+  } catch (error) {
+    console.error('Error loading quick-add data:', error);
+    return { success: false as const, error: 'Failed to load expense form data' };
+  }
 }

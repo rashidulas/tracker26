@@ -15,7 +15,9 @@ import {
   Users,
   MessageCircle,
   X,
+  Plus,
 } from 'lucide-react';
+import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 
 const desktopNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -29,11 +31,14 @@ const desktopNavItems = [
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
 ];
 
-const mobileTabs = [
+type MobileTab = { href: string; label: string; icon: typeof LayoutDashboard };
+
+const mobileTabsLeft: MobileTab[] = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
   { href: '/expenses', label: 'Expenses', icon: TrendingDown },
-  { href: '/chat', label: 'Chat', icon: MessageCircle },
-] as const;
+];
+
+const mobileTabsRight: MobileTab[] = [{ href: '/chat', label: 'Chat', icon: MessageCircle }];
 
 const moreItems = [
   { href: '/friends', label: 'Friends', icon: Users, hint: 'IOUs and shared money' },
@@ -54,6 +59,7 @@ function isActivePath(pathname: string, href: string) {
 export default function Navigation() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const quickAdd = useQuickAdd();
 
   const moreActive = moreItems.some((item) => isActivePath(pathname, item.href));
 
@@ -69,6 +75,31 @@ export default function Navigation() {
       document.body.style.overflow = prev;
     };
   }, [moreOpen]);
+
+  const renderTab = (tab: MobileTab) => {
+    const Icon = tab.icon;
+    const active = isActivePath(pathname, tab.href);
+    return (
+      <Link
+        key={tab.href}
+        href={tab.href}
+        className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-2xl transition-all duration-200 ${
+          active ? 'text-mint' : 'text-ink-muted active:text-ink-secondary'
+        }`}
+      >
+        <span
+          className={`relative flex items-center justify-center w-11 h-8 rounded-full transition-all duration-200 ${
+            active ? 'bg-mint-dim' : ''
+          }`}
+        >
+          <Icon size={22} strokeWidth={active ? 2.35 : 1.75} />
+        </span>
+        <span className={`text-[10px] tracking-wide ${active ? 'font-semibold' : 'font-medium'}`}>
+          {tab.label}
+        </span>
+      </Link>
+    );
+  };
 
   return (
     <>
@@ -164,34 +195,20 @@ export default function Navigation() {
           aria-label="Primary"
         >
           <div className="flex items-stretch justify-between gap-1 px-2 py-2">
-            {mobileTabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = isActivePath(pathname, tab.href);
-              return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-2xl transition-all duration-200 ${
-                    active ? 'text-mint' : 'text-ink-muted active:text-ink-secondary'
-                  }`}
-                >
-                  <span
-                    className={`relative flex items-center justify-center w-11 h-8 rounded-full transition-all duration-200 ${
-                      active ? 'bg-mint-dim' : ''
-                    }`}
-                  >
-                    <Icon size={22} strokeWidth={active ? 2.35 : 1.75} />
-                  </span>
-                  <span
-                    className={`text-[10px] tracking-wide ${
-                      active ? 'font-semibold' : 'font-medium'
-                    }`}
-                  >
-                    {tab.label}
-                  </span>
-                </Link>
-              );
-            })}
+            {mobileTabsLeft.map(renderTab)}
+
+            <div className="flex-1 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={quickAdd.open}
+                className="-mt-7 w-14 h-14 rounded-full bg-mint text-graphite flex items-center justify-center border-4 border-graphite shadow-[0_8px_24px_-6px_var(--mint-glow)] active:scale-95 transition-transform"
+                aria-label="Add expense"
+              >
+                <Plus size={26} strokeWidth={2.6} />
+              </button>
+            </div>
+
+            {mobileTabsRight.map(renderTab)}
 
             <button
               type="button"
