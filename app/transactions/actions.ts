@@ -94,9 +94,9 @@ export async function createTransaction(data: TransactionInput) {
         },
       });
 
-      revalidatePath('/transfers');
+      revalidatePath('/transactions/transfers');
       revalidatePath('/accounts');
-      revalidatePath('/dashboard');
+      revalidatePath('/');
       return { success: true, data: transaction };
     }
 
@@ -122,9 +122,9 @@ export async function createTransaction(data: TransactionInput) {
         },
       });
 
-      revalidatePath('/expenses');
+      revalidatePath('/transactions/expenses');
       revalidatePath('/accounts');
-      revalidatePath('/dashboard');
+      revalidatePath('/');
       return { success: true, data: transaction };
     }
 
@@ -142,9 +142,9 @@ export async function createTransaction(data: TransactionInput) {
       },
     });
 
-    revalidatePath(validated.kind === 'INCOME' ? '/income' : '/expenses');
+    revalidatePath(validated.kind === 'INCOME' ? '/transactions/income' : '/transactions/expenses');
     revalidatePath('/accounts');
-    revalidatePath('/dashboard');
+    revalidatePath('/');
     return { success: true, data: transaction };
   } catch (error) {
     console.error('Error creating transaction:', error);
@@ -172,9 +172,9 @@ export async function updateTransaction(id: string, data: TransactionInput) {
         },
       });
 
-      revalidatePath('/transfers');
+      revalidatePath('/transactions/transfers');
       revalidatePath('/accounts');
-      revalidatePath('/dashboard');
+      revalidatePath('/');
       return { success: true, data: transaction };
     }
 
@@ -199,9 +199,9 @@ export async function updateTransaction(id: string, data: TransactionInput) {
         },
       });
 
-      revalidatePath('/expenses');
+      revalidatePath('/transactions/expenses');
       revalidatePath('/accounts');
-      revalidatePath('/dashboard');
+      revalidatePath('/');
       return { success: true, data: transaction };
     }
 
@@ -220,9 +220,9 @@ export async function updateTransaction(id: string, data: TransactionInput) {
       },
     });
 
-    revalidatePath(validated.kind === 'INCOME' ? '/income' : '/expenses');
+    revalidatePath(validated.kind === 'INCOME' ? '/transactions/income' : '/transactions/expenses');
     revalidatePath('/accounts');
-    revalidatePath('/dashboard');
+    revalidatePath('/');
     return { success: true, data: transaction };
   } catch (error) {
     console.error('Error updating transaction:', error);
@@ -237,11 +237,11 @@ export async function deleteTransaction(id: string) {
       where: { id },
     });
 
-    revalidatePath('/expenses');
-    revalidatePath('/income');
-    revalidatePath('/transfers');
+    revalidatePath('/transactions/expenses');
+    revalidatePath('/transactions/income');
+    revalidatePath('/transactions/transfers');
     revalidatePath('/accounts');
-    revalidatePath('/dashboard');
+    revalidatePath('/');
     return { success: true };
   } catch (error) {
     console.error('Error deleting transaction:', error);

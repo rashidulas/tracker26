@@ -86,13 +86,25 @@ function ToastContainer({
   toasts: Toast[];
   onRemove: (id: string) => void;
 }) {
-  if (toasts.length === 0) return null;
+  // The live regions are always mounted so screen readers announce new toasts.
+  // On mobile they sit below the fixed 3rem header; on desktop, top-right.
+  const position =
+    'fixed z-[80] inset-x-4 top-[calc(3.5rem+env(safe-area-inset-top))] lg:inset-x-auto lg:right-4 lg:top-4 sm:left-auto sm:w-full sm:max-w-md flex flex-col gap-2 pointer-events-none';
+  const urgent = toasts.filter((t) => t.type === 'error' || t.type === 'warning');
+  const polite = toasts.filter((t) => t.type !== 'error' && t.type !== 'warning');
 
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-md">
-      {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
-      ))}
+    <div className={position}>
+      <div role="alert" aria-live="assertive" aria-atomic="false" className="flex flex-col gap-2">
+        {urgent.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
+        ))}
+      </div>
+      <div role="status" aria-live="polite" aria-atomic="false" className="flex flex-col gap-2">
+        {polite.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -115,19 +127,20 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   return (
     <div
       className={`
-        flex items-start gap-3 p-4 rounded-xl border shadow-panel backdrop-blur-xl
+        pointer-events-auto flex items-start gap-3 p-4 pr-2 rounded-xl border shadow-panel backdrop-blur-xl
         animate-slide-in-right
         ${styles[toast.type]}
       `}
     >
-      <div className="flex-shrink-0 mt-0.5">{icons[toast.type]}</div>
+      <div className="flex-shrink-0 mt-0.5" aria-hidden="true">{icons[toast.type]}</div>
       <p className="flex-1 text-sm font-medium">{toast.message}</p>
       <button
         onClick={() => onRemove(toast.id)}
-        className="flex-shrink-0 hover:opacity-70 transition-opacity"
-        aria-label="Close"
+        type="button"
+        className="flex-shrink-0 -my-2 w-11 h-11 inline-flex items-center justify-center rounded-lg hover:opacity-70 transition-opacity"
+        aria-label="Dismiss notification"
       >
-        <X className="w-4 h-4" />
+        <X className="w-4 h-4" aria-hidden="true" />
       </button>
     </div>
   );

@@ -59,10 +59,10 @@ export async function confirmAssistantDraft(draft: AssistantDraft) {
       },
     });
 
-    revalidatePath('/dashboard');
-    revalidatePath('/analytics');
-    revalidatePath('/expenses');
-    revalidatePath('/income');
+    revalidatePath('/');
+    revalidatePath('/insights');
+    revalidatePath('/transactions/expenses');
+    revalidatePath('/transactions/income');
     revalidatePath('/accounts');
     revalidatePath('/chat');
 

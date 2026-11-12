@@ -12,7 +12,7 @@
   --border-subtle: #1c212b;
   --text: #f0f2f5;
   --text-secondary: #9aa1ad;
-  --text-muted: #6b7280;
+  --text-muted: #858b96; /* 4.8:1 on --surface-2, 5.3:1 on --surface (WCAG AA) */
   --mint: #3dcea6;
   --mint-bright: #5ee0b8;
   --mint-dim: rgba(61, 206, 166, 0.12);

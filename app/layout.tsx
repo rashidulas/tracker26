@@ -27,8 +27,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
 };
 
@@ -46,7 +44,7 @@ export default function RootLayout({
         <ToastProvider>
           <div className="flex min-h-screen">
             <Navigation />
-            <main className="flex-1 lg:ml-64 pt-[calc(3rem+env(safe-area-inset-top))] lg:pt-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0 w-full max-w-full overflow-x-hidden min-h-screen">
+            <main id="main-content" tabIndex={-1} className="focus:outline-none flex-1 lg:ml-64 pt-[calc(3rem+env(safe-area-inset-top))] lg:pt-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-0 w-full max-w-full overflow-x-hidden min-h-screen">
               {children}
             </main>
           </div>

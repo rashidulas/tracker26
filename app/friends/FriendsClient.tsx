@@ -491,10 +491,10 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
                             <button
                               type="button"
                               onClick={() => handleDeleteEntry(entry.id)}
-                              className="p-1.5 rounded-lg text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                              className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
                               aria-label="Delete entry"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={14} aria-hidden="true" />
                             </button>
                           </div>
                         </div>
