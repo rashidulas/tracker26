@@ -1,95 +1,55 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/transactions';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { budgetInputSchema } from '@/lib/validations';
+import { budgetMonthDate, isValidMonthKey, shiftMonthKey } from '@/lib/budgets';
+import { loadBudgetHint, loadBudgetMonth } from '@/lib/budgetData';
+import { isValidDay, todayInAppTimeZone } from '@/lib/dates';
 
-const monthKey = z.string().regex(/^\d{4}-\d{2}$/, 'Invalid month');
-
-/** Budgets are keyed by the first instant of the month in UTC. */
-function monthStart(key: string) {
-  const [y, m] = key.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, 1));
-}
-
-function previousMonthKey(key: string) {
-  const d = monthStart(key);
-  d.setUTCMonth(d.getUTCMonth() - 1);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+/** Pages that show budget figures. */
+function revalidateBudgets() {
+  revalidatePath('/plan/budgets');
+  revalidatePath('/');
 }
 
 export async function getBudgetMonth(key: string) {
   try {
-    const month = monthStart(monthKey.parse(key));
-    const next = new Date(month);
-    next.setUTCMonth(next.getUTCMonth() + 1);
-
-    const [categories, budgets, spending] = await Promise.all([
-      prisma.category.findMany({
-        where: { type: 'EXPENSE' },
-        select: { id: true, name: true, icon: true },
-        orderBy: { name: 'asc' },
-      }),
-      prisma.budget.findMany({ where: { month } }),
-      // Totalled in code: category-split expenses keep their categories in
-      // splitItems, and only your share of an expense split with friends counts.
-      prisma.transaction.findMany({
-        where: { kind: 'EXPENSE', date: { gte: month, lt: next } },
-        select: { amount: true, categoryId: true, splitItems: true, sharedAmount: true },
-      }),
-    ]);
-
-    const budgetByCategory = new Map(budgets.map((b) => [b.categoryId, b]));
-    const spentByCategory = new Map<string, number>();
-    const addSpent = (key: string, amount: number) =>
-      spentByCategory.set(key, (spentByCategory.get(key) ?? 0) + amount);
-    for (const expense of spending) {
-      const shares = expenseCategoryAllocations(expense);
-      if (shares.length === 0) addSpent('uncategorized', myShareOfExpense(expense));
-      for (const share of shares) addSpent(share.categoryId, share.amount);
-    }
-
-    const rows = categories.map((c) => ({
-      categoryId: c.id,
-      name: c.name,
-      icon: c.icon,
-      budgetId: budgetByCategory.get(c.id)?.id ?? null,
-      limit: budgetByCategory.get(c.id)?.amount ?? null,
-      spent: spentByCategory.get(c.id) ?? 0,
-    }));
-
-    return {
-      success: true as const,
-      data: {
-        month: key,
-        rows,
-        uncategorizedSpent: spentByCategory.get('uncategorized') ?? 0,
-        hasPreviousBudgets:
-          budgets.length === 0 &&
-          (await prisma.budget.count({ where: { month: monthStart(previousMonthKey(key)) } })) > 0,
-      },
-    };
+    if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
+    return { success: true as const, data: await loadBudgetMonth(key, todayInAppTimeZone()) };
   } catch (error) {
     console.error('Error loading budgets:', error);
     return { success: false as const, error: 'Failed to load budgets' };
   }
 }
 
-export async function setBudget(key: string, categoryId: string, amount: number | null) {
+/**
+ * Create, update or remove a category's budget for a month. An amount of null
+ * or 0 removes it. rolloverEnabled left undefined keeps the current setting.
+ */
+export async function setBudget(input: z.input<typeof budgetInputSchema>) {
+  const parsed = budgetInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false as const, error: parsed.error.issues[0]?.message ?? 'Invalid budget' };
+  }
+  const { month: key, categoryId, amount, rolloverEnabled } = parsed.data;
   try {
-    const month = monthStart(monthKey.parse(key));
-    if (amount === null || amount <= 0) {
+    const month = budgetMonthDate(key);
+    if (!amount) {
       await prisma.budget.deleteMany({ where: { month, categoryId } });
     } else {
-      const value = z.number().positive().finite().parse(amount);
+      const category = await prisma.category.findUnique({ where: { id: categoryId } });
+      if (!category || category.type !== 'EXPENSE') {
+        return { success: false as const, error: 'Budgets need an expense category' };
+      }
       await prisma.budget.upsert({
         where: { month_categoryId: { month, categoryId } },
-        create: { month, categoryId, amount: value },
-        update: { amount: value },
+        create: { month, categoryId, amount, rolloverEnabled: rolloverEnabled ?? false },
+        update: { amount, ...(rolloverEnabled === undefined ? {} : { rolloverEnabled }) },
       });
     }
-    revalidatePath('/plan/budgets');
+    revalidateBudgets();
     return { success: true as const };
   } catch (error) {
     console.error('Error saving budget:', error);
@@ -97,23 +57,59 @@ export async function setBudget(key: string, categoryId: string, amount: number 
   }
 }
 
+/** Turn rollover on or off for an existing budget. */
+export async function setBudgetRollover(key: string, categoryId: string, rolloverEnabled: boolean) {
+  try {
+    if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
+    const { count } = await prisma.budget.updateMany({
+      where: { month: budgetMonthDate(key), categoryId },
+      data: { rolloverEnabled },
+    });
+    if (count === 0) return { success: false as const, error: 'Set a budget amount first' };
+    revalidateBudgets();
+    return { success: true as const };
+  } catch (error) {
+    console.error('Error saving rollover:', error);
+    return { success: false as const, error: 'Failed to save rollover' };
+  }
+}
+
+/** Copies last month's budgets (amount and rollover) into categories with no budget yet. */
 export async function copyPreviousMonth(key: string) {
   try {
-    const month = monthStart(monthKey.parse(key));
-    const previous = await prisma.budget.findMany({
-      where: { month: monthStart(previousMonthKey(key)) },
-    });
-    for (const b of previous) {
-      await prisma.budget.upsert({
-        where: { month_categoryId: { month, categoryId: b.categoryId } },
-        create: { month, categoryId: b.categoryId, amount: b.amount },
-        update: {},
+    if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
+    const month = budgetMonthDate(key);
+    const [previous, existing] = await Promise.all([
+      prisma.budget.findMany({ where: { month: budgetMonthDate(shiftMonthKey(key, -1)) } }),
+      prisma.budget.findMany({ where: { month }, select: { categoryId: true } }),
+    ]);
+    const taken = new Set(existing.map((b) => b.categoryId));
+    const toCopy = previous.filter((b) => !taken.has(b.categoryId));
+    if (toCopy.length > 0) {
+      await prisma.budget.createMany({
+        data: toCopy.map((b) => ({
+          month,
+          categoryId: b.categoryId,
+          amount: b.amount,
+          rolloverEnabled: b.rolloverEnabled ?? false,
+        })),
       });
     }
-    revalidatePath('/plan/budgets');
-    return { success: true as const, copied: previous.length };
+    revalidateBudgets();
+    return { success: true as const, copied: toCopy.length };
   } catch (error) {
     console.error('Error copying budgets:', error);
     return { success: false as const, error: 'Failed to copy last month' };
+  }
+}
+
+/** For the expense form: what is left in a category's budget in the month of `day`. */
+export async function getBudgetHint(categoryId: string, day: string) {
+  try {
+    if (!/^[a-f\d]{24}$/i.test(categoryId) || !isValidDay(day)) return null;
+    return await loadBudgetHint(categoryId, day);
+  } catch (error) {
+    console.error('Error loading budget hint:', error);
+    return null;
   }
 }

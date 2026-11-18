@@ -1,6 +1,7 @@
 import { getBudgetMonth } from './actions';
 import BudgetsClient from './BudgetsClient';
 import { currentMonthKey } from '@/lib/transactionList';
+import { isValidMonthKey } from '@/lib/budgets';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -11,7 +12,7 @@ export default async function BudgetsPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const { month } = await searchParams;
-  const key = month && /^\d{4}-\d{2}$/.test(month) ? month : currentMonthKey();
+  const key = isValidMonthKey(month) ? month : currentMonthKey();
   const result = await getBudgetMonth(key);
 
   if (!result.success) {

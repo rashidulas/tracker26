@@ -20,6 +20,7 @@ const emptyData = {
   monthlyTrend: [],
   recentTransactions: [],
   dailySpending: [],
+  budget: null,
 };
 
 export default async function DashboardPage() {

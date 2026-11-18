@@ -2,7 +2,7 @@
 // Dates follow lib/dates.ts: calendar days stored as UTC midnight, "today" in APP_TIMEZONE.
 
 import { prisma } from '@/lib/prisma';
-import { myShareOfExpense } from '@/lib/transactions';
+import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/transactions';
 import {
   addDays,
   eachDay,
@@ -55,25 +55,40 @@ function rangeStart(range: InsightsRange, today: DayString): DayString | null {
   }
 }
 
+type CategoryInfo = { id: string; name: string; icon: string | null };
+
+/**
+ * Totals by category. A split expense counts toward each split item's
+ * category (lib/transactions.ts expenseCategoryAllocations).
+ */
 function totalsBy(
   rows: Array<{
     amount: number;
-    category: { id: string; name: string; icon: string | null } | null;
-  }>
+    categoryId: string | null;
+    splitItems?: { categoryId: string; amount: number }[] | null;
+    category: CategoryInfo | null;
+  }>,
+  categories: Map<string, CategoryInfo>
 ): CategoryTotal[] {
   const map = new Map<string, CategoryTotal>();
-  for (const row of rows) {
-    const id = row.category?.id ?? 'uncategorized';
+  const add = (id: string, info: CategoryInfo | null | undefined, amount: number) => {
     const entry = map.get(id) ?? {
       id,
-      name: row.category?.name ?? 'Uncategorized',
-      icon: row.category?.icon ?? null,
+      name: info?.name ?? (id === 'uncategorized' ? 'Uncategorized' : 'Unknown'),
+      icon: info?.icon ?? null,
       amount: 0,
       count: 0,
     };
-    entry.amount += row.amount;
+    entry.amount += amount;
     entry.count += 1;
     map.set(id, entry);
+  };
+  for (const row of rows) {
+    const shares = expenseCategoryAllocations(row);
+    if (shares.length === 0) add('uncategorized', null, row.amount);
+    for (const share of shares) {
+      add(share.categoryId, row.category?.id === share.categoryId ? row.category : categories.get(share.categoryId), share.amount);
+    }
   }
   return Array.from(map.values()).sort((a, b) => b.amount - a.amount);
 }
@@ -89,19 +104,32 @@ export async function getInsights(
     const select = {
       amount: true,
       date: true,
+      categoryId: true,
+      splitItems: true,
       category: { select: { id: true, name: true, icon: true } },
     } as const;
 
-    const [expenseRows, income] = await Promise.all([
+    const [expenseRows, income, categoryList] = await Promise.all([
       prisma.transaction.findMany({
         where: { kind: 'EXPENSE', date },
         select: { ...select, sharedAmount: true },
         orderBy: { date: 'asc' },
       }),
       prisma.transaction.findMany({ where: { kind: 'INCOME', date }, select, orderBy: { date: 'asc' } }),
+      prisma.category.findMany({ select: { id: true, name: true, icon: true } }),
     ]);
-    // Your share: what friends owe you back for a split expense isn't your spending.
-    const expenses = expenseRows.map((e) => ({ ...e, amount: myShareOfExpense(e) }));
+    const categories = new Map(categoryList.map((c) => [c.id, c]));
+    // Your share: what friends owe you back for a split expense isn't your
+    // spending. Split items are scaled the same way.
+    const expenses = expenseRows.map((e) => {
+      const mine = myShareOfExpense(e);
+      const ratio = e.amount > 0 ? mine / e.amount : 1;
+      return {
+        ...e,
+        amount: mine,
+        splitItems: (e.splitItems ?? []).map((s) => ({ ...s, amount: s.amount * ratio })),
+      };
+    });
 
     const first =
       start ??
@@ -137,8 +165,8 @@ export async function getInsights(
         incomeTotal: income.reduce((s, i) => s + i.amount, 0),
         incomeCount: income.length,
         days: Math.max(1, days.length),
-        expenseByCategory: totalsBy(expenses),
-        incomeBySource: totalsBy(income),
+        expenseByCategory: totalsBy(expenses, categories),
+        incomeBySource: totalsBy(income, categories),
         dailyExpenses,
       },
     };

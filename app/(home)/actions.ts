@@ -6,6 +6,7 @@ import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/transactions
 import { loadAccountBalances } from '@/lib/ledgerBalances';
 import { goalProgress } from '@/lib/goals';
 import { todayInAppTimeZone, monthRange, toDayString, eachDay, formatDay } from '@/lib/dates';
+import { loadBudgetOverview } from '@/lib/budgetData';
 
 /** Spending from an aggregate: your share, not what friends owe you back. */
 function spentFrom(agg: { _sum: { amount: number | null; sharedAmount: number | null } }) {
@@ -28,6 +29,7 @@ export async function getDashboardData() {
       dailyTransactions,
       friendsRaw,
       goalsRaw,
+      budget,
     ] = await Promise.all([
       prisma.transaction.aggregate({
         where: { kind: 'INCOME', date: thisMonth },
@@ -71,6 +73,10 @@ export async function getDashboardData() {
           contributions: { select: { amount: true, transactionId: true } },
         },
         orderBy: { name: 'asc' },
+      }),
+      loadBudgetOverview(today).catch((error) => {
+        console.error('Error loading budget overview:', error);
+        return null;
       }),
     ]);
 
@@ -204,6 +210,7 @@ export async function getDashboardData() {
         monthlyTrend,
         recentTransactions,
         dailySpending,
+        budget,
       },
     };
   } catch (error) {

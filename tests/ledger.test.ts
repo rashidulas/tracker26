@@ -609,3 +609,12 @@ test('every money page is revalidated', () => {
     assert.ok((TRANSACTION_PAGES as readonly string[]).includes(page), page);
   }
 });
+
+test('budgets count only your share of a split expense', async () => {
+  const { tallySpending, spendingIn, monthKeyOf } = await import('../lib/budgets');
+  ok(await createTransaction(dinner({ friendSplits: [{ friendId: ids.alex, amount: 45 }] }), deps));
+  const rows = db.data.transaction as never as Parameters<typeof tallySpending>[0];
+  const { byMonth } = tallySpending(rows);
+  assert.equal(byMonth.get(monthKeyOf(rows[0].date))!.get(ids.dining), 15);
+  assert.equal(spendingIn(rows[0]), 15);
+});

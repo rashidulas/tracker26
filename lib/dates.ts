@@ -111,6 +111,23 @@ export function startOfMonthDay(day: DayString, offset = 0): DayString {
   return toDayString(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1)));
 }
 
+/** Number of days in the month containing `day`. */
+export function daysInMonth(day: DayString): number {
+  const d = parseDay(day);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+}
+
+/** Monday of the week containing `day`. */
+export function startOfWeekDay(day: DayString): DayString {
+  const weekday = parseDay(day).getUTCDay(); // 0 = Sunday
+  return addDays(day, -((weekday + 6) % 7));
+}
+
+/** UTC bounds for the Monday-to-`day` span of the week containing `day`. */
+export function weekToDateRange(day: DayString): DateRange {
+  return { gte: parseDay(startOfWeekDay(day)), lt: dayRange(day).lt };
+}
+
 /** UTC bounds for a single calendar day. */
 export function dayRange(day: DayString): DateRange {
   const gte = parseDay(day);
