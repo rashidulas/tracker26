@@ -1,13 +1,18 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import {
-  collectFromTransactionsForAccount,
-  computeAccountBalance,
-} from '@/lib/accountBalance';
 import { signedFriendAmount } from '@/lib/friends';
-import { expenseCategoryAllocations } from '@/lib/transactions';
+import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/transactions';
+import { loadAccountBalances } from '@/lib/ledgerBalances';
+import { goalProgress } from '@/lib/goals';
 import { todayInAppTimeZone, monthRange, toDayString, eachDay, formatDay } from '@/lib/dates';
+import { loadSuggestions, loadUpcoming } from '@/lib/recurringQueries';
+import { loadBudgetOverview } from '@/lib/budgetData';
+
+/** Spending from an aggregate: your share, not what friends owe you back. */
+function spentFrom(agg: { _sum: { amount: number | null; sharedAmount: number | null } }) {
+  return (agg._sum.amount || 0) - (agg._sum.sharedAmount || 0);
+}
 
 export async function getDashboardData() {
   try {
@@ -21,9 +26,14 @@ export async function getDashboardData() {
       monthExpenses,
       recentTransactions,
       accounts,
+      accountsAtMonthStart,
       dailyTransactions,
       friendsRaw,
-      splitTransactionsRaw,
+      goalsRaw,
+      budget,
+      trendRows,
+      upcoming,
+      suggestions,
     ] = await Promise.all([
       prisma.transaction.aggregate({
         where: { kind: 'INCOME', date: thisMonth },
@@ -31,7 +41,7 @@ export async function getDashboardData() {
       }),
       prisma.transaction.aggregate({
         where: { kind: 'EXPENSE', date: thisMonth },
-        _sum: { amount: true },
+        _sum: { amount: true, sharedAmount: true },
       }),
       // Not a groupBy on categoryId: split expenses have categoryId null and
       // carry their categories in splitItems.
@@ -40,52 +50,48 @@ export async function getDashboardData() {
           kind: 'EXPENSE',
           date: thisMonth,
         },
-        select: { amount: true, categoryId: true, splitItems: true },
+        select: { amount: true, categoryId: true, splitItems: true, sharedAmount: true },
       }),
       prisma.transaction.findMany({
         take: 10,
         orderBy: { date: 'desc' },
         include: { category: true, account: true, toAccount: true },
       }),
-      prisma.account.findMany({
-        include: {
-          transactionsFrom: {
-            select: {
-              amount: true,
-              kind: true,
-              date: true,
-              accountId: true,
-              accountSplits: true,
-            },
-          },
-          transactionsTo: {
-            where: { kind: 'TRANSFER' },
-            select: { amount: true, date: true },
-          },
-        },
-      }),
+      loadAccountBalances(prisma),
+      loadAccountBalances(prisma, { before: monthStart }),
       prisma.transaction.findMany({
         where: {
           kind: 'EXPENSE',
           date: thisMonth,
         },
-        select: { date: true, amount: true },
+        select: { date: true, amount: true, sharedAmount: true, recurringId: true },
         orderBy: { date: 'asc' },
       }),
       prisma.friend.findMany({
         include: { entries: true },
         orderBy: { name: 'asc' },
       }),
-      prisma.transaction.findMany({
-        where: { kind: { in: ['INCOME', 'EXPENSE'] } },
-        select: {
-          amount: true,
-          kind: true,
-          date: true,
-          accountId: true,
-          accountSplits: true,
+      prisma.goal.findMany({
+        include: {
+          account: { select: { name: true } },
+          contributions: { select: { amount: true, transactionId: true } },
         },
+        orderBy: { name: 'asc' },
       }),
+      loadBudgetOverview(today).catch((error) => {
+        console.error('Error loading budget overview:', error);
+        return null;
+      }),
+      // 12-month trend, split into recurring and everyday spending.
+      prisma.transaction.findMany({
+        where: {
+          kind: { in: ['INCOME', 'EXPENSE'] },
+          date: { gte: monthRange(today, -11).gte, lt: thisMonth.lt },
+        },
+        select: { kind: true, amount: true, sharedAmount: true, date: true, recurringId: true },
+      }),
+      loadUpcoming(today),
+      loadSuggestions(today),
     ]);
 
     const totalsByCategory = new Map<string, number>();
@@ -111,76 +117,47 @@ export async function getDashboardData() {
       };
     });
 
-    // Monthly trend (12 months)
+    // Monthly trend (12 months). "Recurring" is spending posted from (or
+    // linked to) a recurring entry; "everyday" is the rest.
     const monthlyTrend = [];
     for (let i = 11; i >= 0; i--) {
       const range = monthRange(today, -i);
-
-      const [income, expenses] = await Promise.all([
-        prisma.transaction.aggregate({
-          where: { kind: 'INCOME', date: range },
-          _sum: { amount: true },
-        }),
-        prisma.transaction.aggregate({
-          where: { kind: 'EXPENSE', date: range },
-          _sum: { amount: true },
-        }),
-      ]);
-
+      let income = 0;
+      let recurring = 0;
+      let everyday = 0;
+      for (const t of trendRows) {
+        if (t.date < range.gte || t.date >= range.lt) continue;
+        if (t.kind === 'INCOME') income += t.amount;
+        else if (t.recurringId) recurring += myShareOfExpense(t);
+        else everyday += myShareOfExpense(t);
+      }
       monthlyTrend.push({
         month: formatDay(range.gte, { month: 'short' }),
-        income: income._sum.amount || 0,
-        expenses: expenses._sum.amount || 0,
+        income,
+        expenses: recurring + everyday,
+        recurring,
+        everyday,
       });
     }
 
-    const withSplits = splitTransactionsRaw.filter(
-      (t) => (t.accountSplits || []).length > 0
-    );
-
-    const balanceFor = (
-      a: (typeof accounts)[number],
-      fromFilter?: (t: (typeof a.transactionsFrom)[number]) => boolean,
-      toFilter?: (t: (typeof a.transactionsTo)[number]) => boolean
-    ) => {
-      const linked = fromFilter
-        ? a.transactionsFrom.filter(fromFilter)
-        : a.transactionsFrom;
-      const splitPool = fromFilter ? withSplits.filter(fromFilter) : withSplits;
-      const from = collectFromTransactionsForAccount(a.id, linked, splitPool);
-      const to = toFilter ? a.transactionsTo.filter(toFilter) : a.transactionsTo;
-      return computeAccountBalance(a.startingBalance, from, to, a.id);
-    };
-
-    const mapLiability = (a: (typeof accounts)[number]) => {
-      const currentBalance = balanceFor(a);
-      const balanceAtMonthStart = balanceFor(
-        a,
-        (t) => t.date < monthStart,
-        (t) => t.date < monthStart
-      );
-
-      return {
-        id: a.id,
-        name: a.name,
-        institution: a.institution,
-        currentBalance,
-        balanceAtMonthStart,
-        creditLimit: a.creditLimit ?? null,
-      };
-    };
+    const startById = new Map(accountsAtMonthStart.map((a) => [a.id, a.currentBalance]));
+    const mapLiability = (a: (typeof accounts)[number]) => ({
+      id: a.id,
+      name: a.name,
+      institution: a.institution,
+      currentBalance: a.currentBalance,
+      balanceAtMonthStart: startById.get(a.id) ?? a.startingBalance,
+      creditLimit: a.creditLimit ?? null,
+    });
 
     const creditCards = accounts.filter((a) => a.type === 'CREDIT_CARD').map(mapLiability);
     const loans = accounts.filter((a) => a.type === 'LOAN').map(mapLiability);
 
-    const cashBalance = accounts
-      .filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN')
-      .reduce((sum, a) => sum + balanceFor(a), 0);
+    const cashAccounts = accounts.filter((a) => a.type !== 'CREDIT_CARD' && a.type !== 'LOAN');
+    const cashBalance = cashAccounts.reduce((sum, a) => sum + a.currentBalance, 0);
+    const earmarkedForGoals = accounts.reduce((sum, a) => sum + a.earmarked, 0);
 
-    const totalBalance = accounts.reduce(
-      (sum, account) => sum + balanceFor(account),
-      0
-    );
+    const totalBalance = accounts.reduce((sum, account) => sum + account.currentBalance, 0);
 
     const friends = friendsRaw
       .map((f) => {
@@ -201,34 +178,63 @@ export async function getDashboardData() {
     const friendsOwedToYou = friends.reduce((s, f) => s + Math.max(0, f.balance), 0);
     const friendsYouOwe = friends.reduce((s, f) => s + Math.max(0, -f.balance), 0);
 
+    const goals = goalsRaw
+      .map(goalProgress)
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        targetAmount: g.targetAmount,
+        saved: g.totalContributions,
+        transferred: g.transferred,
+        earmarked: g.earmarked,
+        progress: g.progress,
+        dueDate: g.dueDate,
+        accountName: g.account?.name ?? null,
+      }))
+      // Unfinished goals first, closest to done at the top.
+      .sort((a, b) => Number(a.progress >= 100) - Number(b.progress >= 100) || b.progress - a.progress);
+
     // Daily spending trend for area chart
     const days = eachDay(toDayString(monthStart), today);
-    const dailyMap = new Map<string, number>();
+    const dailyMap = new Map<string, { recurring: number; everyday: number }>();
     for (const t of dailyTransactions) {
       const key = toDayString(t.date);
-      dailyMap.set(key, (dailyMap.get(key) || 0) + t.amount);
+      const day = dailyMap.get(key) ?? { recurring: 0, everyday: 0 };
+      if (t.recurringId) day.recurring += myShareOfExpense(t);
+      else day.everyday += myShareOfExpense(t);
+      dailyMap.set(key, day);
     }
-    const dailySpending = days.map((d) => ({
-      date: formatDay(d, { month: 'short', day: '2-digit' }),
-      amount: dailyMap.get(d) || 0,
-    }));
+    const dailySpending = days.map((d) => {
+      const day = dailyMap.get(d) ?? { recurring: 0, everyday: 0 };
+      return {
+        date: formatDay(d, { month: 'short', day: '2-digit' }),
+        amount: day.recurring + day.everyday,
+        recurring: day.recurring,
+        everyday: day.everyday,
+      };
+    });
 
     return {
       success: true,
       data: {
         monthIncome: monthIncomeAgg._sum.amount || 0,
-        monthExpenses: monthExpensesAgg._sum.amount || 0,
+        monthExpenses: spentFrom(monthExpensesAgg),
         totalBalance,
         cashBalance,
+        earmarkedForGoals,
         creditCards,
         loans,
         friends,
         friendsOwedToYou,
         friendsYouOwe,
+        goals,
         categoryData,
         monthlyTrend,
         recentTransactions,
         dailySpending,
+        budget,
+        upcoming,
+        suggestionCount: suggestions.length,
       },
     };
   } catch (error) {

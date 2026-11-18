@@ -52,6 +52,13 @@ interface ScanResult {
   notes: string;
   tags: string[];
   confidence: 'high' | 'medium' | 'low';
+  /** Defaults the user set for this merchant (Settings → Merchants). */
+  merchantDefaults?: {
+    name: string;
+    categoryId: string | null;
+    subcategoryId: string | null;
+    accountId: string | null;
+  } | null;
 }
 
 export default function ReceiptScanner({
@@ -149,14 +156,21 @@ export default function ReceiptScanner({
       const data: ScanResult = result.data;
       setScanResult(data);
 
-      setValue('merchantOrSource', data.merchant || '');
+      const known = data.merchantDefaults;
+      setValue('merchantOrSource', known?.name || data.merchant || '');
       setValue('date', isValidDay(data.date) ? data.date : todayInAppTimeZone());
       setValue('amount', data.totalAmount?.toString() || '');
-      setValue('categoryId', findCategoryId(data.category || ''));
+      const defaultCategory =
+        known?.categoryId && categories.some((c) => c.id === known.categoryId) ? known.categoryId : null;
+      setValue('categoryId', defaultCategory ?? findCategoryId(data.category || ''));
       setValue('notes', data.notes || '');
       setValue('tags', data.tags?.join(', ') || '');
 
-      if (accounts.length > 0) {
+      const defaultAccount =
+        known?.accountId && accounts.some((a) => a.id === known.accountId) ? known.accountId : null;
+      if (defaultAccount) {
+        setValue('accountId', defaultAccount);
+      } else if (accounts.length > 0) {
         setValue('accountId', accounts[0].id);
       }
 

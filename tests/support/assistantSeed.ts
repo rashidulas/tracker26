@@ -95,19 +95,40 @@ export function seedAssistantData() {
   tx({ date: '2026-11-03', kind: 'EXPENSE', amount: 180, categoryId: groceries.id, accountId: discover.id, merchantOrSource: 'Costco' });
   tx({ date: '2026-11-10', kind: 'EXPENSE', amount: 60, categoryId: dining.id, accountId: chase.id, merchantOrSource: 'Steakhouse' });
   tx({ date: '2026-11-12', kind: 'EXPENSE', amount: 25, categoryId: household.id, accountId: checking.id, merchantOrSource: 'Hardware store' });
+  // Split with a friend: 40 left the card, 25 of it is the friend's, so your spending is 15.
+  tx({ date: '2026-11-14', kind: 'EXPENSE', amount: 40, sharedAmount: 25, categoryId: dining.id, accountId: chase.id, merchantOrSource: 'Pizza place' });
 
-  db.seed('budget', { month: parseDay('2026-11-01'), categoryId: groceries.id, amount: 200 });
-  db.seed('budget', { month: parseDay('2026-11-01'), categoryId: dining.id, amount: 50 });
+  // Groceries roll over: nothing was spent in October, so November gets 200 + 200.
+  db.seed('budget', { month: parseDay('2026-10-01'), categoryId: groceries.id, amount: 200, rolloverEnabled: true });
+  db.seed('budget', { month: parseDay('2026-11-01'), categoryId: groceries.id, amount: 200, rolloverEnabled: true });
+  db.seed('budget', { month: parseDay('2026-11-01'), categoryId: dining.id, amount: 50, rolloverEnabled: false });
 
+  // Netflix is set up as a recurring entry; the paycheck is not (only detected).
+  db.seed('recurringTransaction', {
+    name: 'Netflix',
+    kind: 'EXPENSE',
+    amount: 15.49,
+    categoryId: subscriptions.id,
+    accountId: discover.id,
+    merchantOrSource: 'Netflix',
+    frequency: 'MONTHLY',
+    startDate: parseDay('2026-08-20'),
+    nextDueDate: parseDay('2026-11-20'),
+  });
+
+  // "Always use Groceries for Costco".
+  db.seed('merchant', { name: 'Costco', normalizedName: 'costco', defaultCategoryId: groceries.id });
+
+  // Earmarked from Savings (no transfer): Savings keeps the money but 350 is set aside.
   const goal = db.seed('goal', { name: 'Emergency fund', targetAmount: 1000, dueDate: parseDay('2027-05-17') });
-  db.seed('goal', { name: 'Vacation', targetAmount: 300, dueDate: null });
+  db.seed('goal', { name: 'Vacation', targetAmount: 300, dueDate: null, accountId: savings.id });
   db.seed('goalContribution', { goalId: goal.id, date: parseDay('2026-09-01'), amount: 200, fromAccountId: savings.id });
   db.seed('goalContribution', { goalId: goal.id, date: parseDay('2026-10-01'), amount: 150, fromAccountId: savings.id });
 
   const alex = db.seed('friend', { name: 'Alex' });
   const sam = db.seed('friend', { name: 'Sam' });
   db.seed('friendEntry', { friendId: alex.id, date: parseDay('2026-10-01'), amount: 50, type: 'THEY_OWE_ME', description: 'Concert tickets' });
-  db.seed('friendEntry', { friendId: alex.id, date: parseDay('2026-10-15'), amount: 20, type: 'THEY_PAID_ME', description: 'Part payment' });
+  db.seed('friendEntry', { friendId: alex.id, date: parseDay('2026-10-15'), amount: 20, type: 'THEY_PAID_ME', description: 'Part payment', accountId: checking.id });
   db.seed('friendEntry', { friendId: sam.id, date: parseDay('2026-11-01'), amount: 15, type: 'I_OWE_THEM', description: 'Lunch' });
 
   return {

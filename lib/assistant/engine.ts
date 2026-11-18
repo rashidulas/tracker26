@@ -43,6 +43,7 @@ import { cacheBreakpoint, providerOptionsFor, type AssistantProvider } from '@/l
 export type AssistantUIMessage = UIMessage<never, UIDataTypes, InferUITools<AssistantTools>>;
 
 export const MAX_STEPS = 10;
+const MAX_MERCHANT_DEFAULTS = 150;
 
 // ==================== PROMPT CONTEXT ====================
 
@@ -50,16 +51,40 @@ export async function loadPromptContext(
   db: AssistantToolDeps['db'],
   settings: { today: DayString; timeZone: string; currency: string }
 ): Promise<PromptContext> {
-  const [accounts, categories, subcategories] = await Promise.all([
+  const [accounts, categories, subcategories, merchants] = await Promise.all([
     db.account.findMany({ select: { id: true, name: true, type: true }, orderBy: { name: 'asc' } }),
     db.category.findMany({ select: { id: true, name: true, type: true }, orderBy: { name: 'asc' } }),
     db.subcategory.findMany({
       select: { id: true, name: true, categoryId: true },
       orderBy: { name: 'asc' },
     }),
+    // Same filter as lib/merchantLookup.ts listMerchantDefaults.
+    db.merchant.findMany({
+      where: { OR: [{ defaultCategoryId: { not: null } }, { defaultAccountId: { not: null } }] },
+      select: {
+        name: true,
+        defaultCategoryId: true,
+        defaultSubcategoryId: true,
+        defaultAccountId: true,
+      },
+      orderBy: { name: 'asc' },
+      take: MAX_MERCHANT_DEFAULTS,
+    }),
   ]);
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
   return {
     ...settings,
+    merchantDefaults: merchants.map((m) => {
+      const category = m.defaultCategoryId ? categoryById.get(m.defaultCategoryId) ?? null : null;
+      const account = m.defaultAccountId ? accountById.get(m.defaultAccountId) ?? null : null;
+      return {
+        name: m.name,
+        category,
+        subcategoryId: category ? m.defaultSubcategoryId : null,
+        account: account ? { id: account.id, name: account.name } : null,
+      };
+    }),
     accounts,
     categories: categories.map((c) => ({
       ...c,

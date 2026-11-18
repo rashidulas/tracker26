@@ -19,11 +19,13 @@ const MODELS = [
   'goal',
   'friend',
   'friendEntry',
+  'merchant',
+  'recurringTransaction',
+  'recurringPosting',
+  'dismissedRecurringSuggestion',
   'idempotencyKey',
 ] as const;
 
-/** Fields with a unique index: create throws on a duplicate, like MongoDB. */
-const UNIQUE: Partial<Record<ModelName, string[]>> = { idempotencyKey: ['key'] };
 type ModelName = (typeof MODELS)[number];
 
 const DEFAULTS: Record<ModelName, Doc> = {
@@ -36,19 +38,52 @@ const DEFAULTS: Record<ModelName, Doc> = {
     accountId: null,
     toAccountId: null,
     merchantOrSource: null,
+    merchantId: null,
+    recurringId: null,
     notes: null,
     tags: [],
     splitItems: [],
     accountSplits: [],
     splitGroupId: null,
+    sharedAmount: null,
   },
-  goalContribution: { notes: null },
+  goalContribution: { notes: null, transactionId: null },
   budget: {},
-  goal: { dueDate: null },
+  goal: { dueDate: null, accountId: null },
   friend: { notes: null, color: '#7aa2f7' },
-  friendEntry: { description: null, notes: null },
+  friendEntry: { description: null, notes: null, transactionId: null, accountId: null },
+  merchant: { defaultCategoryId: null, defaultSubcategoryId: null, defaultAccountId: null },
+  recurringTransaction: {
+    categoryId: null,
+    subcategoryId: null,
+    toAccountId: null,
+    merchantId: null,
+    merchantOrSource: null,
+    notes: null,
+    endDate: null,
+    autoPost: false,
+    active: true,
+  },
+  recurringPosting: { transactionId: null },
+  dismissedRecurringSuggestion: {},
   idempotencyKey: {},
 };
+
+/** Unique indexes the code relies on (field lists). */
+const UNIQUE: Partial<Record<ModelName, string[][]>> = {
+  merchant: [['normalizedName']],
+  recurringPosting: [['recurringId', 'dueDate']],
+  dismissedRecurringSuggestion: [['key']],
+  idempotencyKey: [['key']],
+};
+
+/** Compound unique keys used in where clauses, e.g. name_type. */
+const COMPOUND_KEYS = new Set(['name_type', 'recurringId_dueDate']);
+
+/** Thrown like Prisma's P2002 when a unique index would be violated. */
+export class UniqueConstraintError extends Error {
+  code = 'P2002';
+}
 
 let counter = 0;
 export function newId() {
@@ -81,7 +116,7 @@ export function matches(doc: Doc, where: Where): boolean {
       if (list.some((w: Where) => matches(doc, w))) return false;
       continue;
     }
-    if (key === 'name_type') {
+    if (COMPOUND_KEYS.has(key)) {
       if (!matches(doc, cond)) return false;
       continue;
     }
@@ -155,6 +190,10 @@ export class FakeDb {
     goal: [],
     friend: [],
     friendEntry: [],
+    merchant: [],
+    recurringTransaction: [],
+    recurringPosting: [],
+    dismissedRecurringSuggestion: [],
     idempotencyKey: [],
   };
   private inTransaction = false;
@@ -164,6 +203,15 @@ export class FakeDb {
   private guardWrite(model: string, op: string) {
     if (!this.inTransaction) {
       throw new Error(`FakeDb: ${model}.${op} called outside $transaction`);
+    }
+  }
+
+  private checkUnique(name: ModelName, doc: Doc) {
+    for (const fields of UNIQUE[name] ?? []) {
+      const clash = this.data[name].some(
+        (other) => other !== doc && fields.every((f) => eq(other[f], doc[f]))
+      );
+      if (clash) throw new UniqueConstraintError(`FakeDb: unique ${name}(${fields.join(', ')})`);
     }
   }
 
@@ -196,11 +244,6 @@ export class FakeDb {
         rows().filter((d) => matches(d, where)).length,
       create: async ({ data, select }: { data: Doc; select?: any }) => {
         self.guardWrite(name, 'create');
-        for (const field of UNIQUE[name] ?? []) {
-          if (rows().some((d) => eq(d[field], data[field]))) {
-            throw new Error(`FakeDb: unique constraint failed on ${name}.${field}`);
-          }
-        }
         const now = new Date();
         const doc = {
           ...clone(DEFAULTS[name]),
@@ -209,6 +252,7 @@ export class FakeDb {
           updatedAt: now,
           ...clone(data),
         };
+        self.checkUnique(name, doc);
         rows().push(doc);
         return project(doc, select);
       },
@@ -261,6 +305,10 @@ export class FakeDb {
   goal = this.model('goal');
   friend = this.model('friend');
   friendEntry = this.model('friendEntry');
+  merchant = this.model('merchant');
+  recurringTransaction = this.model('recurringTransaction');
+  recurringPosting = this.model('recurringPosting');
+  dismissedRecurringSuggestion = this.model('dismissedRecurringSuggestion');
   idempotencyKey = this.model('idempotencyKey');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {

@@ -20,7 +20,12 @@ import {
   HandCoins,
   ChevronRight,
   ArrowLeftRight,
+  CalendarClock,
+  Target,
 } from 'lucide-react';
+import { useState } from 'react';
+import UpcomingList from '@/components/recurring/UpcomingList';
+import type { UpcomingItem } from '@/lib/recurring';
 import {
   AreaChart,
   Area,
@@ -34,6 +39,8 @@ import {
 } from 'recharts';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { formatDay, todayInAppTimeZone } from '@/lib/dates';
+import type { BudgetOverview } from '@/lib/budgetData';
+import BudgetPanel from './BudgetPanel';
 
 interface LiabilityItem {
   id: string;
@@ -52,19 +59,40 @@ interface FriendSummary {
   entryCount: number;
 }
 
+interface GoalSummary {
+  id: string;
+  name: string;
+  targetAmount: number;
+  saved: number;
+  transferred: number;
+  earmarked: number;
+  progress: number;
+  dueDate: Date | null;
+  accountName: string | null;
+}
+
 interface DashboardClientProps {
   data: {
     monthIncome: number;
     monthExpenses: number;
     totalBalance: number;
     cashBalance: number;
+    /** Goal contributions set aside inside accounts (not transferred). */
+    earmarkedForGoals: number;
+    goals: GoalSummary[];
     creditCards: LiabilityItem[];
     loans: LiabilityItem[];
     friends: FriendSummary[];
     friendsOwedToYou: number;
     friendsYouOwe: number;
     categoryData: Array<{ name: string; value: number; color: string }>;
-    monthlyTrend: Array<{ month: string; income: number; expenses: number }>;
+    monthlyTrend: Array<{
+      month: string;
+      income: number;
+      expenses: number;
+      recurring: number;
+      everyday: number;
+    }>;
     recentTransactions: Array<{
       id: string;
       date: Date;
@@ -75,7 +103,10 @@ interface DashboardClientProps {
       account: { name: string } | null;
       toAccount?: { name: string } | null;
     }>;
-    dailySpending: Array<{ date: string; amount: number }>;
+    dailySpending: Array<{ date: string; amount: number; recurring: number; everyday: number }>;
+    upcoming: UpcomingItem[];
+    suggestionCount: number;
+    budget: BudgetOverview | null;
   };
 }
 
@@ -143,7 +174,79 @@ function CustomTooltip({
   );
 }
 
+const RECURRING_COLOR = '#bb9af7';
+
+type SpendingView = 'all' | 'everyday' | 'recurring';
+
+const SPENDING_VIEWS: { value: SpendingView; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'everyday', label: 'Everyday' },
+  { value: 'recurring', label: 'Recurring' },
+];
+
+/** Switch charts between all spending, everyday spending and recurring bills. */
+function SpendingViewToggle({
+  value,
+  onChange,
+  label,
+}: {
+  value: SpendingView;
+  onChange: (v: SpendingView) => void;
+  label: string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex p-0.5 rounded-lg bg-graphite-surface-2/90 border border-graphite-border-subtle"
+    >
+      {SPENDING_VIEWS.map((v) => (
+        <button
+          key={v.value}
+          type="button"
+          aria-pressed={value === v.value}
+          onClick={() => onChange(v.value)}
+          className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
+            value === v.value ? 'bg-mint-dim text-mint font-medium' : 'text-ink-secondary hover:text-ink'
+          }`}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SplitTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; dataKey: string; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const names: Record<string, string> = { amount: 'Total', everyday: 'Everyday', recurring: 'Recurring' };
+  return (
+    <div className="glass rounded-xl px-3 py-2 text-xs shadow-panel space-y-0.5">
+      <p className="text-ink-muted mb-1">{label}</p>
+      {payload.map((p) => (
+        <p key={p.dataKey} className="money font-semibold" style={{ color: p.color }}>
+          {payload.length > 1 ? `${names[p.dataKey] ?? p.dataKey} ` : ''}
+          {formatCurrency(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardClient({ data }: DashboardClientProps) {
+  const [dailyView, setDailyView] = useState<SpendingView>('all');
+  const [trendView, setTrendView] = useState<SpendingView>('all');
+  const hasRecurring =
+    data.dailySpending.some((d) => d.recurring > 0) ||
+    data.monthlyTrend.some((m) => m.recurring > 0);
   const netIncome = data.monthIncome - data.monthExpenses;
   const incomeChange =
     data.monthlyTrend.length >= 2
@@ -199,6 +302,8 @@ export default function DashboardClient({ data }: DashboardClientProps) {
 
   return (
     <div className="space-y-6 lg:space-y-8">
+      {data.budget && <BudgetPanel budget={data.budget} />}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
         {summaryCards.map((card, i) => {
           const Icon = card.icon;
@@ -265,14 +370,77 @@ export default function DashboardClient({ data }: DashboardClientProps) {
             <p className="text-[10px] text-ink-muted/80">Checking, savings &amp; other</p>
           </div>
         </div>
-        <p
-          className={`text-xl font-semibold money ${
-            data.cashBalance >= 0 ? 'text-mint' : 'text-danger'
-          }`}
-        >
-          {formatCurrency(data.cashBalance, { decimals: 0 })}
-        </p>
+        <div className="text-right">
+          <p
+            className={`text-xl font-semibold money ${
+              data.cashBalance >= 0 ? 'text-mint' : 'text-danger'
+            }`}
+          >
+            {formatCurrency(data.cashBalance, { decimals: 0 })}
+          </p>
+          {data.earmarkedForGoals > 0 && (
+            <p className="text-[11px] text-ink-muted money">
+              {formatCurrency(data.cashBalance - data.earmarkedForGoals, { decimals: 0 })} available
+              · {formatCurrency(data.earmarkedForGoals, { decimals: 0 })} for goals
+            </p>
+          )}
+        </div>
       </motion.div>
+
+      {(data.upcoming.length > 0 || data.suggestionCount > 0) && (
+        <motion.section
+          custom={3}
+          initial="hidden"
+          animate="visible"
+          variants={fadeUp}
+          className="panel shadow-panel p-5 sm:p-6"
+          aria-labelledby="dashboard-upcoming"
+        >
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <div>
+              <div className="flex items-center gap-2.5 mb-1">
+                <div className="w-8 h-8 rounded-lg bg-info-dim border border-info/15 flex items-center justify-center">
+                  <CalendarClock size={15} className="text-info" aria-hidden="true" />
+                </div>
+                <h2 id="dashboard-upcoming" className="text-lg font-semibold text-ink font-display">
+                  Upcoming
+                </h2>
+              </div>
+              <p className="text-xs text-ink-muted pl-[42px]">Recurring entries due in the next 14 days</p>
+            </div>
+            <Link
+              href="/plan/recurring"
+              className="inline-flex items-center gap-1 text-xs text-mint hover:text-mint-bright transition-colors shrink-0 pt-1"
+            >
+              Manage
+              <ChevronRight size={14} />
+            </Link>
+          </div>
+          <UpcomingList items={data.upcoming} limit={6} />
+          {data.upcoming.length > 6 && (
+            <p className="text-xs text-ink-muted mt-2">
+              +{data.upcoming.length - 6} more on the{' '}
+              <Link href="/plan/recurring" className="text-mint hover:text-mint-bright">
+                Recurring page
+              </Link>
+            </p>
+          )}
+          {data.suggestionCount > 0 && (
+            <Link
+              href="/plan/recurring#suggestions-heading"
+              className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-info/20 bg-info-dim/40 px-3.5 py-2.5 text-sm text-info hover:border-info/40 transition-colors"
+            >
+              <span>
+                {data.suggestionCount} charge{data.suggestionCount === 1 ? '' : 's'} in your history{' '}
+                {data.suggestionCount === 1 ? 'looks' : 'look'} recurring
+              </span>
+              <span className="inline-flex items-center gap-0.5 text-xs shrink-0">
+                Review <ChevronRight size={14} />
+              </span>
+            </Link>
+          )}
+        </motion.section>
+      )}
 
       {data.creditCards.length > 0 && (
         <motion.div
@@ -497,12 +665,23 @@ export default function DashboardClient({ data }: DashboardClientProps) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
           <div>
             <h2 className="text-lg font-semibold text-ink font-display">Spending Over Time</h2>
-            <p className="text-xs text-ink-muted mt-0.5">Daily expenses this month</p>
+            <p className="text-xs text-ink-muted mt-0.5">
+              Daily expenses this month
+              {hasRecurring && dailyView === 'all' ? ' · recurring part in purple' : ''}
+            </p>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-ink-secondary">
-            <div className="w-2 h-2 rounded-full bg-mint" />
-            Spending
-          </div>
+          {hasRecurring ? (
+            <SpendingViewToggle
+              value={dailyView}
+              onChange={setDailyView}
+              label="Daily spending: show all, everyday or recurring"
+            />
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-ink-secondary">
+              <div className="w-2 h-2 rounded-full bg-mint" />
+              Spending
+            </div>
+          )}
         </div>
         <div className="h-[280px] sm:h-[320px]">
           {data.dailySpending.length > 0 ? (
@@ -515,6 +694,10 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                   <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={MINT} stopOpacity={0.28} />
                     <stop offset="95%" stopColor={MINT} stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="recurringGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={RECURRING_COLOR} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={RECURRING_COLOR} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID} />
@@ -531,14 +714,27 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                   tick={{ fill: TICK, fontSize: 11 }}
                   tickFormatter={(v) => `$${v}`}
                 />
-                <RechartsTooltip content={<CustomTooltip />} />
-                <Area
-                  type="monotone"
-                  dataKey="amount"
-                  stroke={MINT}
-                  strokeWidth={2}
-                  fill="url(#spendGradient)"
-                />
+                <RechartsTooltip content={hasRecurring ? <SplitTooltip /> : <CustomTooltip />} />
+                {/* "All": the total in mint, with the recurring part drawn from
+                    zero in purple, so the gap between them is everyday spending. */}
+                {dailyView !== 'recurring' ? (
+                  <Area
+                    type="monotone"
+                    dataKey={dailyView === 'everyday' ? 'everyday' : 'amount'}
+                    stroke={MINT}
+                    strokeWidth={2}
+                    fill="url(#spendGradient)"
+                  />
+                ) : null}
+                {hasRecurring && dailyView !== 'everyday' ? (
+                  <Area
+                    type="monotone"
+                    dataKey="recurring"
+                    stroke={RECURRING_COLOR}
+                    strokeWidth={2}
+                    fill="url(#recurringGradient)"
+                  />
+                ) : null}
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -758,21 +954,111 @@ export default function DashboardClient({ data }: DashboardClientProps) {
         animate="visible"
         variants={fadeUp}
         className="panel shadow-panel p-5 sm:p-6"
+        aria-labelledby="dashboard-goals-heading"
+      >
+        <div className="flex items-start justify-between mb-5 gap-2">
+          <div>
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-mint-dim border border-mint/15 flex items-center justify-center">
+                <Target size={15} className="text-mint" aria-hidden="true" />
+              </div>
+              <h2 id="dashboard-goals-heading" className="text-lg font-semibold text-ink font-display">
+                Goals
+              </h2>
+            </div>
+            <p className="text-xs text-ink-muted pl-[42px]">Savings progress</p>
+          </div>
+          <Link
+            href="/plan/goals"
+            className="inline-flex items-center gap-1 text-xs text-mint hover:text-mint-bright transition-colors shrink-0 pt-1"
+          >
+            Open
+            <ChevronRight size={14} aria-hidden="true" />
+          </Link>
+        </div>
+
+        {data.goals.length > 0 ? (
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {data.goals.slice(0, 6).map((goal) => (
+              <li key={goal.id} className="min-w-0">
+                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                  <p className="text-sm font-medium text-ink truncate">{goal.name}</p>
+                  <p className="text-xs text-ink-muted money shrink-0">
+                    <span className="text-ink">{formatCurrency(goal.saved, { decimals: 0 })}</span>
+                    {' / '}
+                    {formatCurrency(goal.targetAmount, { decimals: 0 })}
+                  </p>
+                </div>
+                <div
+                  className="h-2 w-full rounded-full bg-graphite-surface-2 border border-graphite-border-subtle overflow-hidden"
+                  role="progressbar"
+                  aria-label={`${goal.name} progress`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(goal.progress)}
+                >
+                  <div
+                    className="h-full rounded-full bg-mint"
+                    style={{ width: `${goal.progress}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-ink-muted mt-1 truncate">
+                  {Math.round(goal.progress)}%
+                  {goal.accountName
+                    ? ` · in ${goal.accountName}`
+                    : goal.earmarked > 0
+                    ? ' · earmarked'
+                    : ''}
+                  {goal.dueDate && ` · due ${formatDate(goal.dueDate)}`}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 text-ink-muted">
+            <Target size={26} className="mb-2 opacity-40" aria-hidden="true" />
+            <p className="text-sm mb-1">No goals yet</p>
+            <Link
+              href="/plan/goals"
+              className="mt-3 text-sm text-mint hover:text-mint-bright transition-colors"
+            >
+              Add a goal
+            </Link>
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div
+        custom={7}
+        initial="hidden"
+        animate="visible"
+        variants={fadeUp}
+        className="panel shadow-panel p-5 sm:p-6"
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
           <div>
             <h2 className="text-lg font-semibold text-ink font-display">Income vs Expenses</h2>
             <p className="text-xs text-ink-muted mt-0.5">12-month trend overview</p>
           </div>
-          <div className="flex items-center gap-4 text-xs text-ink-secondary">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-secondary">
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-mint" />
               Income
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-danger" />
-              Expenses
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: trendView === 'recurring' ? RECURRING_COLOR : EXPENSE_LINE }}
+              />
+              {trendView === 'all' ? 'Expenses' : trendView === 'everyday' ? 'Everyday expenses' : 'Recurring expenses'}
             </div>
+            {hasRecurring && (
+              <SpendingViewToggle
+                value={trendView}
+                onChange={setTrendView}
+                label="Expenses trend: show all, everyday or recurring"
+              />
+            )}
           </div>
         </div>
         <div className="h-[280px] sm:h-[320px]">
@@ -825,8 +1111,9 @@ export default function DashboardClient({ data }: DashboardClientProps) {
               />
               <Area
                 type="monotone"
-                dataKey="expenses"
-                stroke={EXPENSE_LINE}
+                dataKey={trendView === 'all' ? 'expenses' : trendView}
+                name={trendView === 'all' ? 'Expenses' : trendView === 'everyday' ? 'Everyday' : 'Recurring'}
+                stroke={trendView === 'recurring' ? RECURRING_COLOR : EXPENSE_LINE}
                 strokeWidth={2}
                 fill="url(#expenseGrad)"
               />

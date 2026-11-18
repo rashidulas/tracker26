@@ -8,8 +8,12 @@
  * Money rules match the rest of the app:
  *   - spending is EXPENSE rows, income is INCOME rows; transfers (including
  *     card payments) are never counted as either
+ *   - spending is your share: what friends owe you for an expense
+ *     (sharedAmount) is left out, as on the Budgets page (lib/expenseAllocations)
  *   - a split expense spreads its amount over its split items' categories
  *     (expenseCategoryAllocations)
+ *   - balances, budgets, goals and recurring entries come from the same
+ *     modules the app's pages use (ledgerBalances, budgetData, goals, recurring)
  *   - an income/expense with account splits spreads its amount over those
  *     accounts (amountAttributedToAccount)
  *   - dates are calendar days (lib/dates.ts); ranges are inclusive of both ends
@@ -19,19 +23,23 @@
  * instructions tell the model never to follow instructions found in it.
  */
 import type { Prisma, PrismaClient, TransactionKind } from '@prisma/client';
-import { computeBalancesForAccounts } from '@/lib/accountBalance';
+import { loadBudgetMonth, type BudgetDb } from '@/lib/budgetData';
 import {
   addDays,
   dayFilter,
   eachDay,
   isValidDay,
   parseDay,
-  startOfMonthDay,
   toDayString,
   type DayString,
 } from '@/lib/dates';
+import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/expenseAllocations';
 import { signedFriendAmount } from '@/lib/friends';
-import { expenseCategoryAllocations } from '@/lib/transactions';
+import { goalProgress as computeGoalProgress } from '@/lib/goals';
+import { loadAccountBalances } from '@/lib/ledgerBalances';
+import { buildUpcoming } from '@/lib/recurring';
+import { detectRecurring } from '@/lib/recurringDetection';
+import { FREQUENCY_LABELS, type Frequency } from '@/lib/recurringSchedule';
 
 // ==================== CONTEXT ====================
 
@@ -45,6 +53,8 @@ export type ReadDb = Pick<
   | 'goalContribution'
   | 'friend'
   | 'friendEntry'
+  | 'recurringTransaction'
+  | 'dismissedRecurringSuggestion'
 >;
 
 export type ReadContext = {
@@ -99,14 +109,6 @@ function checkRange(range: DayRangeInput, label = 'Date range') {
 function weekStart(day: DayString): DayString {
   const dow = parseDay(day).getUTCDay(); // 0 = Sunday
   return addDays(day, -((dow + 6) % 7));
-}
-
-function addMonths(day: DayString, n: number): DayString {
-  const d = parseDay(day);
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth() + n;
-  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-  return toDayString(new Date(Date.UTC(y, m, Math.min(d.getUTCDate(), lastDay))));
 }
 
 function daysBetween(a: DayString, b: DayString) {
@@ -226,6 +228,7 @@ const amountFields = {
   merchantOrSource: true,
   splitItems: true,
   accountSplits: true,
+  sharedAmount: true,
 } satisfies Prisma.TransactionSelect;
 
 type AmountRow = Prisma.TransactionGetPayload<{ select: typeof amountFields }>;
@@ -234,8 +237,9 @@ type Share = { categoryId: string | null; accountId: string | null; amount: numb
 
 /**
  * How one transaction's amount is spread over (category, account) pairs.
- * Category splits and account splits are applied proportionally, so the
- * shares always add back up to the transaction amount.
+ * Category splits and account splits are applied proportionally. For an
+ * expense the shares add up to your share (amount minus what friends owe);
+ * for income and transfers, to the full amount.
  */
 export function shares(t: {
   amount: number;
@@ -244,6 +248,7 @@ export function shares(t: {
   accountId: string | null;
   splitItems?: { categoryId: string; amount: number }[] | null;
   accountSplits?: { accountId: string; amount: number }[] | null;
+  sharedAmount?: number | null;
 }): Share[] {
   const cats: { categoryId: string | null; amount: number }[] =
     t.kind === 'EXPENSE'
@@ -251,7 +256,8 @@ export function shares(t: {
       : t.categoryId
       ? [{ categoryId: t.categoryId, amount: t.amount }]
       : [];
-  const catList = cats.length ? cats : [{ categoryId: null, amount: t.amount }];
+  const total = t.kind === 'EXPENSE' ? myShareOfExpense(t) : t.amount;
+  const catList = cats.length ? cats : [{ categoryId: null, amount: total }];
   const accts =
     t.kind !== 'TRANSFER' && (t.accountSplits?.length ?? 0) > 0
       ? t.accountSplits!
@@ -324,6 +330,9 @@ export async function searchTransactions(ctx: ReadContext, input: SearchInput) {
       date: toDayString(t.date),
       kind: t.kind,
       amount: round2(t.amount),
+      ...(t.kind === 'EXPENSE' && (t.sharedAmount ?? 0) > 0
+        ? { yourShare: round2(myShareOfExpense(t)), friendsOwe: round2(t.sharedAmount!) }
+        : {}),
       merchant: clip(t.merchantOrSource, 80),
       category:
         t.splitItems.length > 0
@@ -580,6 +589,9 @@ type AccountRow = {
   type: string;
   institution?: string | null;
   balance: number;
+  /** Balance minus money set aside for goals (only when something is set aside). */
+  earmarkedForGoals?: number;
+  available?: number;
   /** Credit cards and loans: amount owed (never negative). */
   owed?: number;
   creditLimit?: number | null;
@@ -587,26 +599,12 @@ type AccountRow = {
   utilizationPct?: number | null;
 };
 
+/** Same figures as the Accounts page (lib/ledgerBalances.ts). */
 export async function accountBalances(ctx: ReadContext) {
-  const [accounts, transactions] = await Promise.all([
-    ctx.db.account.findMany({
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        institution: true,
-        startingBalance: true,
-        creditLimit: true,
-      },
-      orderBy: { name: 'asc' },
-    }),
-    ctx.db.transaction.findMany({
-      select: { amount: true, kind: true, accountId: true, toAccountId: true, accountSplits: true },
-    }),
-  ]);
-  const balances = computeBalancesForAccounts(accounts, transactions);
+  const accounts = await loadAccountBalances(ctx.db);
 
   const assets = new Total();
+  const available = new Total();
   const cardDebt = new Total();
   const loanDebt = new Total();
   const net = new Total();
@@ -614,14 +612,17 @@ export async function accountBalances(ctx: ReadContext) {
   const owedOnLimitedCards = new Total();
 
   const rows = accounts.map((a): AccountRow => {
-    const balance = round2(balances.get(a.id)?.balance ?? a.startingBalance);
+    const balance = round2(a.currentBalance);
     net.add(balance);
-    const base = {
+    const base: AccountRow = {
       id: a.id,
       name: a.name,
       type: a.type,
       ...(a.institution ? { institution: clip(a.institution, 60) } : {}),
       balance,
+      ...(a.earmarked > 0
+        ? { earmarkedForGoals: round2(a.earmarked), available: round2(a.available) }
+        : {}),
     };
     if (a.type === 'CREDIT_CARD') {
       const owed = round2(Math.max(0, -balance));
@@ -644,6 +645,7 @@ export async function accountBalances(ctx: ReadContext) {
       return { ...base, owed: round2(Math.max(0, -balance)) };
     }
     assets.add(balance);
+    available.add(a.available);
     return base;
   });
 
@@ -652,6 +654,8 @@ export async function accountBalances(ctx: ReadContext) {
     totals: {
       /** Checking, savings, cash and investment balances. */
       assets: assets.value,
+      /** Assets minus money set aside for goals. */
+      availableAssets: available.value,
       creditCardDebt: cardDebt.value,
       loanDebt: loanDebt.value,
       /** Sum of every account balance (debts are negative). */
@@ -665,104 +669,79 @@ export async function accountBalances(ctx: ReadContext) {
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** Same figures as the Budgets page (lib/budgetData.ts): rollover, pacing, your share. */
 export async function budgetStatus(ctx: ReadContext, input: { month?: string }) {
   const month = input.month ?? ctx.today.slice(0, 7);
   if (!MONTH_RE.test(month)) bad(`month "${month}" must look like YYYY-MM`);
-  const first = `${month}-01`;
-  const last = addDays(startOfMonthDay(first, 1), -1);
 
-  const [lookups, budgets, rows] = await Promise.all([
-    loadLookups(ctx.db),
-    ctx.db.budget.findMany({ where: { month: parseDay(first) } }),
-    ctx.db.transaction.findMany({
-      where: { kind: 'EXPENSE', date: dayFilter(first, last) },
-      select: amountFields,
-    }),
-  ]);
-
-  const spent = new Map<string, Total>();
-  const all = new Total();
-  for (const row of rows) {
-    for (const s of shares(row)) {
-      const key = s.categoryId ?? 'none';
-      if (!spent.has(key)) spent.set(key, new Total());
-      spent.get(key)!.add(s.amount);
-      all.add(s.amount);
-    }
-  }
-
-  const budgeted = new Total();
-  const spentInBudgeted = new Total();
-  const budgetRows = budgets
-    .map((b) => {
-      const s = spent.get(b.categoryId)?.value ?? 0;
-      budgeted.add(b.amount);
-      spentInBudgeted.add(s);
-      const usedPct = pct(s, b.amount);
-      return {
-        categoryId: b.categoryId,
-        category: lookups.categories.get(b.categoryId)?.name ?? '(deleted category)',
-        budget: round2(b.amount),
-        spent: s,
-        remaining: round2(b.amount - s),
-        usedPct,
-        status: s > b.amount ? 'over' : (usedPct ?? 0) >= 80 ? 'near-limit' : 'ok',
-      };
-    })
-    .sort((a, b) => (b.usedPct ?? 0) - (a.usedPct ?? 0));
-
-  const budgetedIds = new Set(budgets.map((b) => b.categoryId));
-  const unbudgeted = [...spent.entries()]
-    .filter(([id]) => !budgetedIds.has(id))
-    .map(([id, t]) => ({
-      category: id === 'none' ? '(uncategorised)' : lookups.categories.get(id)?.name ?? '(deleted category)',
-      spent: t.value,
-    }))
-    .sort((a, b) => b.spent - a.spent);
-
-  const daysInMonth = daysBetween(first, last) + 1;
-  const isCurrent = ctx.today >= first && ctx.today <= last;
-  const daysElapsed = isCurrent ? daysBetween(first, ctx.today) + 1 : ctx.today > last ? daysInMonth : 0;
+  const data = await loadBudgetMonth(month, ctx.today, ctx.db as unknown as BudgetDb);
+  const budgeted = data.rows.filter((r) => r.budget);
 
   return {
     month,
-    daysInMonth,
-    daysElapsed,
-    monthElapsedPct: pct(daysElapsed, daysInMonth),
-    totals: {
-      budgeted: budgeted.value,
-      spentInBudgetedCategories: spentInBudgeted.value,
-      remaining: round2(budgeted.value - spentInBudgeted.value),
-      totalSpending: all.value,
+    pacing: {
+      daysInMonth: data.pacing.daysInMonth,
+      daysElapsed: data.pacing.daysElapsed,
+      monthElapsedPct: Math.round(data.pacing.fraction * 1000) / 10,
+      isCurrentMonth: data.pacing.isCurrent,
     },
-    budgets: budgetRows,
-    unbudgetedSpending: unbudgeted.slice(0, 15),
-    ...(budgets.length === 0 ? { note: `No budgets are set for ${month}.` } : {}),
+    totals: {
+      budgeted: round2(data.totals.budgeted),
+      /** Budgets plus amounts rolled over from earlier months. */
+      available: round2(data.totals.available),
+      spentInBudgetedCategories: round2(data.totals.spentInBudgets),
+      remaining: round2(data.totals.remaining),
+      totalSpending: round2(data.totals.totalSpent),
+      categoriesOver: data.totals.overCount,
+    },
+    budgets: budgeted
+      .map((r) => ({
+        categoryId: r.categoryId,
+        category: r.name,
+        budget: round2(r.budget!.amount),
+        ...(r.budget!.rolloverEnabled ? { rolledOver: round2(r.budget!.carryIn) } : {}),
+        available: round2(r.budget!.available),
+        spent: round2(r.spent),
+        remaining: round2(r.budget!.remaining),
+        // used is Infinity when nothing is available but money was spent.
+        usedPct: Number.isFinite(r.budget!.used) ? Math.round(r.budget!.used * 1000) / 10 : null,
+        /** over | near (close to the limit) | ahead (spending faster than the month) | ok */
+        status: r.budget!.status,
+      }))
+      .sort((a, b) => (b.usedPct ?? Infinity) - (a.usedPct ?? Infinity)),
+    unbudgetedSpending: data.rows
+      .filter((r) => !r.budget && r.spent > 0)
+      .map((r) => ({ category: r.name, spent: round2(r.spent) }))
+      .sort((a, b) => b.spent - a.spent)
+      .slice(0, 15),
+    ...(data.uncategorizedSpent > 0 ? { uncategorizedSpent: round2(data.uncategorizedSpent) } : {}),
+    ...(budgeted.length === 0 ? { note: `No budgets are set for ${month}.` } : {}),
   };
 }
 
 // ==================== GOALS ====================
 
+/** Same progress figures as the Goals page (lib/goals.ts). */
 export async function goalProgress(ctx: ReadContext) {
-  const [goals, contributions] = await Promise.all([
+  const [goals, contributions, accounts] = await Promise.all([
     ctx.db.goal.findMany({ orderBy: { name: 'asc' } }),
-    ctx.db.goalContribution.findMany({ select: { goalId: true, amount: true, date: true } }),
+    ctx.db.goalContribution.findMany({
+      select: { goalId: true, amount: true, date: true, transactionId: true },
+    }),
+    ctx.db.account.findMany({ select: { id: true, name: true } }),
   ]);
-  const byGoal = new Map<string, { total: Total; last: DayString | null; count: number }>();
-  for (const c of contributions) {
-    const entry = byGoal.get(c.goalId) ?? { total: new Total(), last: null, count: 0 };
-    entry.total.add(c.amount);
-    entry.count += 1;
-    const day = toDayString(c.date);
-    if (!entry.last || day > entry.last) entry.last = day;
-    byGoal.set(c.goalId, entry);
-  }
+  const accountName = new Map(accounts.map((a) => [a.id, a.name]));
 
   return {
     goals: goals.map((g) => {
-      const c = byGoal.get(g.id);
-      const saved = c?.total.value ?? 0;
-      const remaining = round2(Math.max(0, g.targetAmount - saved));
+      const mine = contributions.filter((c) => c.goalId === g.id);
+      const p = computeGoalProgress({ targetAmount: g.targetAmount, contributions: mine });
+      const saved = round2(p.totalContributions);
+      const remaining = round2(p.remaining);
+      const last = mine.reduce<DayString | null>((max, c) => {
+        const d = toDayString(c.date);
+        return !max || d > max ? d : max;
+      }, null);
       const due = g.dueDate ? toDayString(g.dueDate) : null;
       const daysLeft = due ? daysBetween(ctx.today, due) : null;
       const monthsLeft = daysLeft !== null && daysLeft > 0 ? daysLeft / 30.4375 : null;
@@ -771,17 +750,22 @@ export async function goalProgress(ctx: ReadContext) {
         name: clip(g.name, 80),
         target: round2(g.targetAmount),
         saved,
+        /** Moved into the goal's account by transfer. */
+        transferred: round2(p.transferred),
+        /** Set aside in place on the source account. */
+        earmarked: round2(p.earmarked),
         remaining,
-        progressPct: pct(Math.min(saved, g.targetAmount), g.targetAmount),
-        complete: saved >= g.targetAmount,
+        progressPct: Math.round(p.progress * 10) / 10,
+        complete: remaining === 0,
+        account: g.accountId ? accountName.get(g.accountId) ?? null : null,
         dueDate: due,
         daysLeft,
         ...(remaining > 0 && monthsLeft
           ? { neededPerMonth: round2(remaining / Math.max(monthsLeft, 1)) }
           : {}),
         ...(remaining > 0 && daysLeft !== null && daysLeft < 0 ? { overdue: true } : {}),
-        contributions: c?.count ?? 0,
-        lastContribution: c?.last ?? null,
+        contributions: mine.length,
+        lastContribution: last,
       };
     }),
   };
@@ -841,27 +825,13 @@ export async function friendBalances(ctx: ReadContext, input: { friendId?: strin
 
 // ==================== RECURRING ====================
 
-type Cadence = { name: string; min: number; max: number; next: (d: DayString) => DayString };
-
-const CADENCES: Cadence[] = [
-  { name: 'weekly', min: 6, max: 8, next: (d) => addDays(d, 7) },
-  { name: 'every two weeks', min: 13, max: 15, next: (d) => addDays(d, 14) },
-  { name: 'monthly', min: 26, max: 35, next: (d) => addMonths(d, 1) },
-  { name: 'quarterly', min: 84, max: 98, next: (d) => addMonths(d, 3) },
-  { name: 'yearly', min: 350, max: 380, next: (d) => addMonths(d, 12) },
-];
-
-function median(values: number[]) {
-  const s = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
+/** How much history pattern detection looks at (same as the Recurring page). */
+const DETECTION_DAYS = 800;
 
 /**
- * Income and expenses that repeat on a regular schedule, inferred from the
- * last ~13 months: same kind and merchant, at least 3 times, with most gaps
- * matching one cadence. There is no recurring-transaction table, so this is
- * a projection, not a schedule the user set up.
+ * Bills, subscriptions and paychecks due in the next `days` days, from the
+ * user's recurring entries (lib/recurring.ts), plus repeating patterns the
+ * app has noticed but the user has not set up yet (lib/recurringDetection.ts).
  */
 export async function upcomingRecurring(
   ctx: ReadContext,
@@ -869,86 +839,92 @@ export async function upcomingRecurring(
 ) {
   const days = Math.min(Math.max(Math.round(input.days ?? 30), 1), 365);
   const horizon = addDays(ctx.today, days);
-  const since = addDays(ctx.today, -400);
 
-  const [lookups, rows] = await Promise.all([
+  const [lookups, entries, history, existing, dismissed] = await Promise.all([
     loadLookups(ctx.db),
+    ctx.db.recurringTransaction.findMany({
+      where: { active: true, nextDueDate: { lte: parseDay(horizon) } },
+    }),
     ctx.db.transaction.findMany({
       where: {
-        kind: input.kind ? input.kind : { in: ['EXPENSE', 'INCOME'] },
-        date: dayFilter(since, ctx.today),
-        merchantOrSource: { not: null },
+        kind: { in: ['INCOME', 'EXPENSE'] },
+        date: { gte: parseDay(addDays(ctx.today, -DETECTION_DAYS)) },
       },
-      select: amountFields,
+      select: {
+        id: true,
+        date: true,
+        amount: true,
+        kind: true,
+        merchantOrSource: true,
+        merchantId: true,
+        categoryId: true,
+        subcategoryId: true,
+        accountId: true,
+        recurringId: true,
+        splitItems: true,
+      },
       orderBy: { date: 'asc' },
     }),
+    ctx.db.recurringTransaction.findMany({
+      select: { kind: true, merchantOrSource: true, amount: true, active: true },
+    }),
+    ctx.db.dismissedRecurringSuggestion.findMany({ select: { key: true } }),
   ]);
 
-  const series = new Map<string, AmountRow[]>();
-  for (const row of rows) {
-    const m = merchantKey(row.merchantOrSource);
-    if (!m) continue;
-    const key = `${row.kind}|${m}`;
-    if (!series.has(key)) series.set(key, []);
-    series.get(key)!.push(row);
-  }
+  const name = (id: string | null, map: Map<string, { name: string }>) =>
+    id ? map.get(id)?.name ?? null : null;
 
-  const items = [];
-  for (const list of series.values()) {
-    // One occurrence per day (two coffees on one day are not a schedule).
-    const byDay = new Map<string, AmountRow>();
-    for (const r of list) byDay.set(toDayString(r.date), r);
-    const dates = [...byDay.keys()].sort();
-    if (dates.length < 3) continue;
+  const upcoming = buildUpcoming(
+    entries.map((e) => ({
+      ...e,
+      category: e.categoryId
+        ? { name: name(e.categoryId, lookups.categories) ?? '(deleted category)', color: '', icon: null }
+        : null,
+      account: { name: name(e.accountId, lookups.accounts) ?? '(deleted account)' },
+    })),
+    ctx.today,
+    days
+  ).filter((i) => !input.kind || i.kind === input.kind);
 
-    const gaps = dates.slice(1).map((d, i) => daysBetween(dates[i], d));
-    const cadence = CADENCES.find((c) => {
-      const fits = gaps.filter((g) => g >= c.min && g <= c.max).length;
-      return fits / gaps.length >= 0.7;
-    });
-    if (!cadence) continue;
-
-    const lastDay = dates[dates.length - 1];
-    let expected = cadence.next(lastDay);
-    let missed = 0;
-    // If the expected day passed more than a cadence-width ago, it probably stopped.
-    while (expected < ctx.today && daysBetween(expected, ctx.today) > cadence.max - cadence.min + 3) {
-      expected = cadence.next(expected);
-      missed += 1;
-    }
-    if (missed > 0) continue;
-    if (expected > horizon) continue;
-
-    const recent = dates.slice(-3).map((d) => byDay.get(d)!.amount);
-    const typical = round2(median(recent));
-    const last = byDay.get(lastDay)!;
-    const spread = Math.max(...recent) - Math.min(...recent);
-    items.push({
-      merchant: clip(last.merchantOrSource, 80),
-      kind: last.kind,
-      cadence: cadence.name,
-      expectedDate: expected,
-      status: expected < ctx.today ? 'overdue' : expected === ctx.today ? 'due-today' : 'upcoming',
-      expectedAmount: typical,
-      amountVaries: typical > 0 && spread / typical > 0.1,
-      lastDate: lastDay,
-      lastAmount: round2(last.amount),
-      occurrences: dates.length,
-      category: last.categoryId ? lookups.categories.get(last.categoryId)?.name ?? null : null,
-      account: last.accountId ? lookups.accounts.get(last.accountId)?.name ?? null : null,
-    });
-  }
-  items.sort((a, b) => a.expectedDate.localeCompare(b.expectedDate) || b.expectedAmount - a.expectedAmount);
+  const suggestions = detectRecurring(history, {
+    today: ctx.today,
+    existing,
+    dismissed: dismissed.map((d) => d.key),
+  }).filter((s) => (!input.kind || s.kind === input.kind) && s.nextDueDate <= horizon);
 
   const expenses = new Total();
   const income = new Total();
-  for (const i of items) (i.kind === 'EXPENSE' ? expenses : income).add(i.expectedAmount);
+  for (const i of upcoming) {
+    if (i.kind === 'EXPENSE') expenses.add(i.amount);
+    if (i.kind === 'INCOME') income.add(i.amount);
+  }
 
   return {
     from: ctx.today,
     to: horizon,
-    note: 'Inferred from past transactions with the same merchant; not a schedule the user set up.',
-    totals: { expectedExpenses: expenses.value, expectedIncome: income.value },
-    items,
+    /** From the user's recurring entries (Plan › Recurring). */
+    scheduled: upcoming.map((i) => ({
+      name: clip(i.name, 80),
+      kind: i.kind,
+      amount: round2(i.amount),
+      dueDate: i.dueDate,
+      status: i.overdue ? 'overdue' : i.dueDate === ctx.today ? 'due-today' : 'upcoming',
+      postsAutomatically: i.autoPost,
+      category: i.categoryName,
+      account: i.accountName,
+    })),
+    totals: { scheduledExpenses: expenses.value, scheduledIncome: income.value },
+    /** Repeating patterns found in past transactions that are not set up as recurring entries. */
+    notSetUpYet: suggestions.slice(0, 10).map((s) => ({
+      merchant: clip(s.merchantName, 80),
+      kind: s.kind,
+      frequency: FREQUENCY_LABELS[s.frequency as Frequency] ?? s.frequency,
+      expectedAmount: round2(s.amount),
+      expectedDate: s.nextDueDate,
+      lastDate: s.lastDate,
+      occurrences: s.occurrences,
+      category: name(s.categoryId, lookups.categories),
+      account: name(s.accountId, lookups.accounts),
+    })),
   };
 }

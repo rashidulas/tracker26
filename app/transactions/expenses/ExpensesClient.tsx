@@ -1,15 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Filter, X, Camera, Receipt, ArrowRight } from 'lucide-react';
+import { Plus, Filter, X, Camera, Receipt, ArrowRight, Users } from 'lucide-react';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
 import { useToast } from '@/components/ToastProvider';
-import ExpenseForm from './ExpenseForm';
+import ExpenseForm, { type FriendOption } from './ExpenseForm';
 import ReceiptScanner from './ReceiptScanner';
 import {
   deleteTransactions,
@@ -39,8 +39,15 @@ import {
 } from '@/components/transactions/TransactionList';
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 import { useExpenseSaved } from '@/components/quickadd/useExpenseSaved';
-import { onExpenseEvent, type ExpenseRow } from '@/lib/expenseEvents';
-import type { ExpenseSaveResult } from './ExpenseForm';
+import {
+  onExpenseEvent,
+  type ExpenseFriendShare,
+  type ExpenseRow,
+} from '@/lib/expenseEvents';
+import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/expenseAllocations';
+import type { ExpenseSaveResult, MerchantSuggestion } from './ExpenseForm';
+import { useMerchantRulePrompt } from '@/components/merchants/MerchantRulePrompt';
+import { normalizeMerchantName } from '@/lib/merchants';
 
 interface Expense {
   id: string;
@@ -53,14 +60,23 @@ interface Expense {
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
+  splitItems?: Array<{ categoryId: string; amount: number }> | null;
   category: { id: string; name: string; icon: string | null } | null;
   subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
   toAccount: { id: string; name: string } | null;
+  sharedAmount?: number | null;
+  friendEntries?: ExpenseFriendShare[];
+}
+
+/** Your spending on a row: a split expense counts only your share. */
+function myShare(e: Pick<Expense, 'kind' | 'amount' | 'sharedAmount'>) {
+  return e.kind === 'EXPENSE' ? myShareOfExpense(e) : e.amount;
 }
 
 interface ExpensesClientProps {
   initialExpenses: Expense[];
+  friends?: FriendOption[];
   categories: Array<{
     id: string;
     name: string;
@@ -69,16 +85,35 @@ interface ExpensesClientProps {
     subcategories?: Array<{ id: string; name: string }>;
   }>;
   accounts: Array<{ id: string; name: string }>;
+  merchants?: MerchantSuggestion[];
+}
+
+/** The part of an expense that belongs to `categoryId` (split items included). */
+function categoryShare(
+  e: {
+    amount: number;
+    categoryId: string | null;
+    splitItems?: Array<{ categoryId: string; amount: number }> | null;
+    sharedAmount?: number | null;
+  },
+  categoryId: string
+): number {
+  return expenseCategoryAllocations(e)
+    .filter((s) => s.categoryId === categoryId)
+    .reduce((sum, s) => sum + s.amount, 0);
 }
 
 const EMPTY_FILTERS = { startDate: '', endDate: '', categoryId: '', subcategoryId: '' };
 
 export default function ExpensesClient({
   initialExpenses,
+  friends = [],
   categories,
   accounts,
+  merchants = [],
 }: ExpensesClientProps) {
   const router = useRouter();
+  const merchantRule = useMerchantRulePrompt();
   const searchParams = useSearchParams();
   const toast = useToast();
   const quickAdd = useQuickAdd();
@@ -99,6 +134,11 @@ export default function ExpensesClient({
           return;
         }
         const row = event.row as ExpenseRow & Expense;
+        // Card and debt payments are transfers; they belong on the Transfers list.
+        if (row.kind !== 'EXPENSE') {
+          setExpenses((prev) => prev.filter((e) => e.id !== row.id));
+          return;
+        }
         setExpenses((prev) => [row, ...prev.filter((e) => e.id !== row.id)]);
       }),
     []
@@ -143,7 +183,7 @@ export default function ExpensesClient({
         const key = dayKey(expense.date);
         if (filters.startDate && key < filters.startDate) return false;
         if (filters.endDate && key > filters.endDate) return false;
-        if (filters.categoryId && expense.categoryId !== filters.categoryId) return false;
+        if (filters.categoryId && categoryShare(expense, filters.categoryId) === 0) return false;
         if (filters.subcategoryId && expense.subcategoryId !== filters.subcategoryId) return false;
         return matchesSearch(
           debouncedQuery,
@@ -154,6 +194,7 @@ export default function ExpensesClient({
             expense.subcategory?.name,
             expense.account?.name,
             expense.toAccount?.name,
+            ...(expense.friendEntries ?? []).map((f) => f.friend.name),
             ...expense.tags,
           ],
           expense.amount
@@ -162,9 +203,16 @@ export default function ExpensesClient({
     [expenses, pendingDelete, month, filters, debouncedQuery]
   );
 
+  // With a category filter, a split expense counts only its share of that category.
+  const amountInView = useCallback(
+    // and a friend-split expense counts only your share.
+    (e: Expense) => (filters.categoryId ? categoryShare(e, filters.categoryId) : myShare(e)),
+    [filters.categoryId]
+  );
+
   const groups = useMemo(
-    () => groupByDay(filteredExpenses, (e) => e.date, (e) => e.amount),
-    [filteredExpenses]
+    () => groupByDay(filteredExpenses, (e) => e.date, amountInView),
+    [filteredExpenses, amountInView]
   );
 
   const selection = useSelection(filteredExpenses.map((e) => e.id));
@@ -172,7 +220,8 @@ export default function ExpensesClient({
     .filter((e) => selection.selected.has(e.id))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + amountInView(e), 0);
+  const hasSplits = filteredExpenses.some((e) => (e.sharedAmount ?? 0) > 0);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}`;
 
@@ -274,6 +323,28 @@ export default function ExpensesClient({
         `Moved ${result.count} to ${category.name}` +
           (skipped > 0 ? ` (${skipped} transfer${skipped === 1 ? '' : 's'} skipped)` : '')
       );
+      // All from one merchant: offer to make it that merchant's default.
+      const names = expenses
+        .filter((e) => moved.has(e.id) && e.kind === 'EXPENSE' && e.merchantOrSource)
+        .map((e) => e.merchantOrSource as string);
+      const keys = new Set(names.map((n) => normalizeMerchantName(n)));
+      const memory = names.length
+        ? merchants.find((m) => normalizeMerchantName(m.name) === normalizeMerchantName(names[0]))
+        : undefined;
+      if (
+        result.count > 0 &&
+        names.length === result.count &&
+        keys.size === 1 &&
+        !(memory?.hasDefault && memory.categoryId === categoryId && !memory.subcategoryId)
+      ) {
+        merchantRule.offer({
+          merchantId: memory?.merchantId ?? null,
+          merchantName: names[0],
+          categoryId,
+          subcategoryId: null,
+          categoryLabel: `${category.icon ? `${category.icon} ` : ''}${category.name}`,
+        });
+      }
     } else {
       toast.error(result.error);
     }
@@ -395,7 +466,7 @@ export default function ExpensesClient({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-ink-muted mb-1">
-              Total this view
+              {hasSplits ? 'Your share this view' : 'Total this view'}
             </p>
             <p className="text-3xl font-semibold text-danger money tracking-tight">
               {formatCurrency(totalExpenses)}
@@ -470,6 +541,21 @@ export default function ExpensesClient({
                       )}
                     </>
                   )}
+                  {(expense.friendEntries?.length ?? 0) > 0 && (
+                    <>
+                      <span className="text-graphite-border">·</span>
+                      <span
+                        className="inline-flex items-center gap-1 truncate text-info"
+                        title={`Your share ${formatCurrency(myShare(expense))}`}
+                      >
+                        <Users size={11} className="shrink-0" aria-hidden="true" />
+                        Split with {expense.friendEntries!.map((f) => f.friend.name).join(', ')}
+                        <span className="hidden sm:inline text-ink-muted">
+                          · you {formatCurrency(myShare(expense))}
+                        </span>
+                      </span>
+                    </>
+                  )}
                   {expense.tags.length > 0 && (
                     <span className="hidden md:inline truncate text-ink-muted/80">
                       · {expense.tags.map((t) => `#${t}`).join(' ')}
@@ -521,6 +607,8 @@ export default function ExpensesClient({
           expense={editingExpense || undefined}
           categories={categories}
           accounts={accounts}
+          merchants={merchants}
+          friends={friends}
           onSuccess={handleSuccess}
           onCancel={closeModal}
           hideActions

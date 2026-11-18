@@ -4,12 +4,13 @@ import TabNav from '@/components/TabNav';
 const tabs = [
   { href: '/plan/budgets', label: 'Budgets' },
   { href: '/plan/goals', label: 'Goals' },
+  { href: '/plan/recurring', label: 'Recurring' },
 ];
 
 export default function PlanLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="page-shell">
-      <PageHeader title="Plan" subtitle="Monthly budgets and savings goals" />
+      <PageHeader title="Plan" subtitle="Budgets, savings goals and recurring entries" />
       <TabNav tabs={tabs} label="Plan views" />
       {children}
     </div>

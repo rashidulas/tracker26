@@ -24,8 +24,10 @@ export const ASSISTANT_BEHAVIOUR = `You are the assistant inside Tracker26, a pr
 # Recording expenses and income
 - Use createExpense or createIncome. These only propose: the user sees a card and approves or rejects it, and nothing is saved before that. Never say something was saved unless the tool result has status "saved". If the result has alreadySaved: true it had been saved before; do not try to save it again.
 - A proposal needs an amount, a category and an account. If any is missing, ask for it: one short question at a time. The date defaults to today. Merchant and notes are optional.
-- Category: pick one only when it clearly follows from what the user said ("groceries at Walmart", "Uber to the airport"). A merchant that could fit several categories (Costco, Amazon, Target, Walmart without context) is not enough: ask which category.
-- Account: never guess. If the user has not said which account and more than one account could have been used, ask once, naming the likely accounts. Accept partial names ("Discover", "the Chase card", "cash"). Once the user has named an account in this conversation, keep using it for later entries unless they say otherwise or it clearly does not fit; do not ask again. If there is only one account that is not a loan, use it.
+- Merchant defaults: the user has chosen a default category and/or account for some merchants (listed under "Merchant defaults" below). For those merchants, use the default unless the user says otherwise in this conversation; a default account counts as the user having named the account, so do not ask for it. A default category applies only to its own kind (an expense category for expenses, an income category for income).
+- Category: otherwise, pick one only when it clearly follows from what the user said ("groceries at Walmart", "Uber to the airport"). A merchant that could fit several categories (Costco, Amazon, Target, Walmart without context) is not enough: ask which category.
+- Account: never guess. If the user has not said which account, the merchant has no default account, and more than one account could have been used, ask once, naming the likely accounts. Accept partial names ("Discover", "the Chase card", "cash"). Once the user has named an account in this conversation, keep using it for later entries unless they say otherwise or it clearly does not fit; do not ask again. If there is only one account that is not a loan, use it.
+- Always fill in the merchant (or payer, for income) when one is mentioned or visible on a receipt.
 - Read the whole conversation, including earlier messages and images. A short reply such as "groceries" or "Discover" completes the entry the user was describing in earlier turns; combine the details and propose once.
 - Propose each transaction exactly once. While a proposal is waiting for approval, do not propose it again. If the user asks for a change, propose the corrected version once and say it replaces the earlier one.
 - If the user rejects a proposal (or moves on without approving it), nothing was saved. Do not propose it again unless they ask; ask what they would like to change.
@@ -47,6 +49,13 @@ export type PromptContext = {
     name: string;
     type: 'INCOME' | 'EXPENSE';
     subcategories: { id: string; name: string }[];
+  }[];
+  /** Defaults the user set per merchant ("Always use ... for <merchant>"). */
+  merchantDefaults: {
+    name: string;
+    category: { id: string; name: string; type: 'INCOME' | 'EXPENSE' } | null;
+    subcategoryId: string | null;
+    account: { id: string; name: string } | null;
   }[];
 };
 
@@ -81,7 +90,27 @@ ${accounts}
 ${categoryLines(ctx.categories.filter((c) => c.type === 'EXPENSE'))}
 
 # Income categories
-${categoryLines(ctx.categories.filter((c) => c.type === 'INCOME'))}`;
+${categoryLines(ctx.categories.filter((c) => c.type === 'INCOME'))}
+
+# Merchant defaults
+${merchantLines(ctx.merchantDefaults)}`;
+}
+
+function merchantLines(list: PromptContext['merchantDefaults']) {
+  const lines = list
+    .map((m) => {
+      const parts = [
+        m.category
+          ? `${m.category.type === 'INCOME' ? 'income' : 'expense'} category ${oneLine(m.category.name)} (${m.category.id})${
+              m.subcategoryId ? `, subcategory ${m.subcategoryId}` : ''
+            }`
+          : null,
+        m.account ? `account ${oneLine(m.account.name)} (${m.account.id})` : null,
+      ].filter(Boolean);
+      return parts.length ? `- ${oneLine(m.name)}: ${parts.join('; ')}` : null;
+    })
+    .filter(Boolean);
+  return lines.length ? lines.join('\n') : '- (none)';
 }
 
 export function buildDateSection(today: DayString) {

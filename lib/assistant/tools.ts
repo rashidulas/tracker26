@@ -177,14 +177,14 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
 
     accountBalances: tool({
       description:
-        'Current balance of every account, credit card debt, available credit and utilisation, loan balances, and totals.',
+        'Current balance of every account (including friend settlements), money set aside for goals and what is available, credit card debt, available credit and utilisation, loan balances, and totals. Same figures as the Accounts page.',
       inputSchema: z.object({}),
       execute: () => safely('accountBalances', () => accountBalances(ctx)),
     }),
 
     budgetStatus: tool({
       description:
-        'Budgets for a month: each budgeted category with budget, spent, remaining and % used, plus unbudgeted spending and how far through the month it is.',
+        'Budgets for a month, as on the Budgets page: each budgeted category with budget, amount rolled over, available, spent (your share), remaining, % used and status (over, near, ahead of pace, ok), plus unbudgeted spending and how far through the month it is.',
       inputSchema: z.object({
         month: z
           .string()
@@ -196,7 +196,7 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
     }),
 
     goalProgress: tool({
-      description: 'Savings goals: target, saved so far, remaining, due date and the monthly amount needed to finish on time.',
+      description: 'Savings goals: target, saved so far (transferred and earmarked), remaining, linked account, due date and the monthly amount needed to finish on time.',
       inputSchema: z.object({}),
       execute: () => safely('goalProgress', () => goalProgress(ctx)),
     }),
@@ -210,7 +210,7 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
 
     upcomingRecurring: tool({
       description:
-        'Bills, subscriptions and paychecks expected in the next N days, inferred from repeating past transactions with the same merchant.',
+        'Bills, subscriptions and paychecks due in the next N days from the recurring entries the user set up, plus repeating patterns found in past transactions that are not set up as recurring entries yet.',
       inputSchema: z.object({
         days: z.number().int().min(1).max(365).optional().describe('Look-ahead in days (default 30).'),
         kind: z.enum(['EXPENSE', 'INCOME']).optional(),

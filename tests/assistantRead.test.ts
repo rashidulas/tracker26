@@ -239,48 +239,62 @@ test('transfers show both accounts and are totalled separately', async () => {
 
 // ==================== accounts ====================
 
-test('account balances, card utilisation and totals', async () => {
+test('account balances match the ledger: friend settlements, goal earmarks, utilisation', async () => {
   const r = await accountBalances(ctx);
   const by = Object.fromEntries(r.accounts.map((a) => [a.name, a]));
-  // 1000 + 2000 + 4×1500 − (30.10 + 100 + 20 + 15.35 + 25) − 300
-  assert.equal(by.Checking.balance, 8509.55);
+  // 1000 + 2000 + 4×1500 − (30.10 + 100 + 20 + 15.35 + 25) − 300 + 20 (Alex paid back into Checking)
+  assert.equal(by.Checking.balance, 8529.55);
   // −(50 + 25.50 + 20.20 + 50 + 3×15.49 + 180) + 300
   assert.equal(by.Discover.balance, -72.17);
   assert.deepEqual(
     { owed: by.Discover.owed, available: by.Discover.availableCredit, util: by.Discover.utilizationPct },
     { owed: 72.17, available: 4927.83, util: 1.4 }
   );
-  assert.equal(by['Chase Card'].balance, -291);
+  // The whole 40 of the shared pizza left the card, not just your 15.
+  assert.equal(by['Chase Card'].balance, -331);
+  // 350 of Savings is earmarked for the emergency fund.
+  assert.deepEqual(
+    { balance: by.Savings.balance, earmarked: by.Savings.earmarkedForGoals, available: by.Savings.available },
+    { balance: 500, earmarked: 350, available: 150 }
+  );
+  assert.equal(by.Checking.earmarkedForGoals, undefined);
   assert.equal(by['Car Loan'].owed, 10000);
   assert.deepEqual(r.totals, {
-    assets: 9009.55,
-    creditCardDebt: 363.17,
+    assets: 9029.55,
+    availableAssets: 8679.55,
+    creditCardDebt: 403.17,
     loanDebt: 10000,
-    netBalance: -1353.62,
-    overallCreditUtilizationPct: 5.2,
+    netBalance: -1373.62,
+    overallCreditUtilizationPct: 5.8,
   });
 });
 
 // ==================== budgets ====================
 
-test('budget status for the current month', async () => {
+test('budget status matches the Budgets page: rollover, your share, pacing', async () => {
   const r = await budgetStatus(ctx, {});
   assert.equal(r.month, '2026-11');
   assert.deepEqual(
-    r.budgets.map((b) => [b.category, b.budget, b.spent, b.remaining, b.usedPct, b.status]),
+    r.budgets.map((b) => [b.category, b.budget, b.available, b.spent, b.remaining, b.usedPct, b.status]),
     [
-      ['Dining', 50, 60, -10, 120, 'over'],
-      ['Groceries', 200, 180, 20, 90, 'near-limit'],
+      // 60 steakhouse + 15 (your share of the 40 pizza)
+      ['Dining', 50, 50, 75, -25, 150, 'over'],
+      // 200 + 200 rolled over from an unspent October
+      ['Groceries', 200, 400, 180, 220, 45, 'ok'],
     ]
   );
+  assert.equal(r.budgets[1].rolledOver, 200);
+  assert.equal('rolledOver' in r.budgets[0], false);
   assert.deepEqual(r.unbudgetedSpending, [{ category: 'Household', spent: 25 }]);
   assert.deepEqual(r.totals, {
     budgeted: 250,
-    spentInBudgetedCategories: 240,
-    remaining: 10,
-    totalSpending: 265,
+    available: 450,
+    spentInBudgetedCategories: 255,
+    remaining: 195,
+    totalSpending: 280,
+    categoriesOver: 1,
   });
-  assert.deepEqual([r.daysElapsed, r.daysInMonth, r.monthElapsedPct], [17, 30, 56.7]);
+  assert.deepEqual(r.pacing, { daysInMonth: 30, daysElapsed: 17, monthElapsedPct: 56.7, isCurrentMonth: true });
 
   const empty = await budgetStatus(ctx, { month: '2026-03' });
   assert.equal(empty.budgets.length, 0);
@@ -288,6 +302,24 @@ test('budget status for the current month', async () => {
   assert.equal(empty.totals.totalSpending, 225.8);
 
   await assert.rejects(budgetStatus(ctx, { month: '2026-13' }), ToolInputError);
+});
+
+test('spending counts only your share of an expense split with friends', async () => {
+  const r = await summarizeTransactions(ctx, {
+    kind: 'EXPENSE',
+    start: '2026-11-01',
+    end: '2026-11-30',
+    groupBy: 'category',
+    categoryIds: [ids.dining],
+  });
+  assert.equal(r.total, 75);
+
+  const found = await searchTransactions(ctx, { merchant: 'pizza' });
+  assert.deepEqual(
+    { amount: found.transactions[0].amount, yourShare: found.transactions[0].yourShare, friendsOwe: found.transactions[0].friendsOwe },
+    { amount: 40, yourShare: 15, friendsOwe: 25 }
+  );
+  assert.equal(found.totalsOfAllMatches!.expense, 15);
 });
 
 // ==================== goals ====================
@@ -306,6 +338,9 @@ test('goal progress', async () => {
   // 650 over 181 days (181 / 30.4375 months)
   assert.equal(emergency.neededPerMonth, 109.31);
   assert.equal(emergency.lastContribution, '2026-10-01');
+  // Both contributions were earmarks on Savings, not transfers.
+  assert.deepEqual([emergency.earmarked, emergency.transferred, emergency.account], [350, 0, null]);
+  assert.equal(vacation.account, 'Savings');
   assert.equal(vacation.saved, 0);
   assert.equal(vacation.dueDate, null);
   assert.equal('neededPerMonth' in vacation, false);
@@ -338,23 +373,22 @@ test('friend balances and one friend in detail', async () => {
 
 // ==================== recurring ====================
 
-test('upcoming recurring items are inferred from history', async () => {
+test('upcoming: scheduled recurring entries plus patterns not set up yet', async () => {
   const r = await upcomingRecurring(ctx, {});
   assert.deepEqual(
-    r.items.map((i) => [i.merchant, i.kind, i.cadence, i.expectedDate, i.expectedAmount, i.status]),
-    [
-      ['Acme Corp', 'INCOME', 'every two weeks', '2026-11-20', 1500, 'upcoming'],
-      ['Netflix', 'EXPENSE', 'monthly', '2026-11-20', 15.49, 'upcoming'],
-    ]
+    r.scheduled.map((i) => [i.name, i.kind, i.amount, i.dueDate, i.status, i.account]),
+    [['Netflix', 'EXPENSE', 15.49, '2026-11-20', 'upcoming', 'Discover']]
   );
-  assert.equal(r.items[1].account, 'Discover');
-  assert.deepEqual(r.totals, { expectedExpenses: 15.49, expectedIncome: 1500 });
+  assert.deepEqual(r.totals, { scheduledExpenses: 15.49, scheduledIncome: 0 });
 
-  // The gym stopped in June and Costco is irregular: neither is listed.
-  const merchants = r.items.map((i) => i.merchant);
-  assert.ok(!merchants.includes('Gym'));
-  assert.ok(!merchants.includes('Costco'));
+  // The paycheck repeats every two weeks but is not a recurring entry yet.
+  // Netflix is already set up, the gym stopped in June and Costco is irregular.
+  assert.deepEqual(
+    r.notSetUpYet.map((s) => [s.merchant, s.kind, s.expectedAmount, s.expectedDate]),
+    [['Acme Corp', 'INCOME', 1500, '2026-11-20']]
+  );
 
   const soon = await upcomingRecurring(ctx, { days: 2, kind: 'EXPENSE' });
-  assert.deepEqual(soon.items, []);
+  assert.deepEqual(soon.scheduled, []);
+  assert.deepEqual(soon.notSetUpYet, []);
 });

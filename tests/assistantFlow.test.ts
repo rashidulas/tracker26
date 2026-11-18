@@ -140,7 +140,7 @@ test('"spent 20 at Costco from Discover" then "groceries" saves one expense on D
       date: TODAY,
       categoryId: ids.groceries,
       accountId: ids.discover,
-      merchant: 'Costco',
+      merchant: '  costco ',
     });
   };
   messages = await turn([...messages, user('groceries')]);
@@ -168,7 +168,9 @@ test('"spent 20 at Costco from Discover" then "groceries" saves one expense on D
   assert.equal(created[0].amount, 20);
   assert.equal(created[0].accountId, ids.discover);
   assert.equal(created[0].categoryId, ids.groceries);
+  // Typed as "  costco "; saved under the merchant's stored name and linked to it.
   assert.equal(created[0].merchantOrSource, 'Costco');
+  assert.equal(created[0].merchantId, db.data.merchant.find((m) => m.name === 'Costco')!.id);
   assert.equal(db.data.idempotencyKey.length, 1);
   assert.equal(db.data.idempotencyKey[0].key, 'assistant:call_costco');
 
@@ -323,6 +325,7 @@ test('instructions carry accounts, categories, currency, timezone and today', as
   assert.match(system, /Discover \[CREDIT_CARD\]/);
   assert.match(system, /Groceries \(.+\); subcategories: Produce/);
   assert.match(system, /Currency: USD/);
+  assert.match(system, /# Merchant defaults\n- Costco: expense category Groceries \(/);
   assert.match(system, /Time zone: America\/New_York/);
   assert.match(system, /Today is Tuesday, 2026-11-17\./);
   assert.ok(system.indexOf('# Untrusted content') < system.indexOf('# Accounts'), 'stable text first');

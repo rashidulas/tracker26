@@ -13,6 +13,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { isValidDay } from '@/lib/dates';
+import { cleanMerchantName, normalizeMerchantName } from '@/lib/merchants';
 import { createTransactionOnce, type TransactionDeps } from '@/lib/transactions';
 import { formatCurrency } from '@/lib/utils';
 
@@ -29,13 +30,15 @@ export type Proposal = {
   tags?: string[] | null;
 };
 
-export type ProposalDb = Pick<PrismaClient, 'category' | 'subcategory' | 'account'>;
+export type ProposalDb = Pick<PrismaClient, 'category' | 'subcategory' | 'account' | 'merchant'>;
 
 export type ProposalCheck =
   | {
       ok: true;
       /** One line for the approval card, e.g. "Expense $20.00 at Costco · Groceries · from Discover · 2026-11-17". */
       summary: string;
+      /** The merchant as the user first saved it ("costco " → "Costco"), or the cleaned text if new. */
+      merchant: string | null;
     }
   | { ok: false; problem: string };
 
@@ -94,7 +97,12 @@ export async function checkProposal(
     subName = sub.name;
   }
 
-  const merchant = p.merchant?.trim();
+  // Known merchants keep the spelling the user saved (lib/merchants.ts).
+  const key = normalizeMerchantName(p.merchant);
+  const known = key
+    ? await db.merchant.findUnique({ where: { normalizedName: key }, select: { name: true } })
+    : null;
+  const merchant = known?.name ?? cleanMerchantName(p.merchant);
   const parts = [
     `${kind === 'EXPENSE' ? 'Expense' : 'Income'} ${formatCurrency(p.amount)}${
       merchant ? ` ${kind === 'EXPENSE' ? 'at' : 'from'} ${merchant}` : ''
@@ -103,7 +111,7 @@ export async function checkProposal(
     `${kind === 'EXPENSE' ? 'from' : 'into'} ${account.name}`,
     p.date,
   ];
-  return { ok: true, summary: parts.join(' · ') };
+  return { ok: true, summary: parts.join(' · '), merchant };
 }
 
 export type SaveResult = {
@@ -135,7 +143,7 @@ export async function saveProposal(
       categoryId: p.categoryId,
       subcategoryId: p.subcategoryId ?? null,
       accountId: p.accountId,
-      merchantOrSource: p.merchant ?? null,
+      merchantOrSource: check.merchant,
       notes: p.notes ?? null,
       tags: p.tags ?? [],
     },

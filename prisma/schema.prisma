@@ -39,9 +39,11 @@ model Category {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  subcategories Subcategory[]
-  transactions  Transaction[]
-  budgets       Budget[]
+  subcategories    Subcategory[]
+  transactions     Transaction[]
+  budgets          Budget[]
+  merchantDefaults Merchant[]             @relation("MerchantDefaultCategory")
+  recurring        RecurringTransaction[] @relation("RecurringCategory")
 
   @@unique([name, type])
   @@index([type])
@@ -54,11 +56,13 @@ model Subcategory {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  category     Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  transactions Transaction[]
+  category         Category               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  transactions     Transaction[]
+  merchantDefaults Merchant[]             @relation("MerchantDefaultSubcategory")
+  recurring        RecurringTransaction[] @relation("RecurringSubcategory")
 
-  @@index([categoryId])
   @@unique([categoryId, name])
+  @@index([categoryId])
 }
 
 model Account {
@@ -71,9 +75,14 @@ model Account {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  transactionsFrom Transaction[]            @relation("FromAccount")
-  transactionsTo   Transaction[]            @relation("ToAccount")
+  transactionsFrom  Transaction[]          @relation("FromAccount")
+  transactionsTo    Transaction[]          @relation("ToAccount")
   goalContributions GoalContribution[]
+  merchantDefaults  Merchant[]             @relation("MerchantDefaultAccount")
+  recurringFrom     RecurringTransaction[] @relation("RecurringAccount")
+  recurringTo       RecurringTransaction[] @relation("RecurringToAccount")
+  goals             Goal[]
+  friendEntries     FriendEntry[]
 
   @@index([type])
 }
@@ -90,28 +99,44 @@ type AccountSplitItem {
 }
 
 model Transaction {
-  id               String          @id @default(auto()) @map("_id") @db.ObjectId
+  id               String             @id @default(auto()) @map("_id") @db.ObjectId
   date             DateTime
   amount           Float
   kind             TransactionKind
-  categoryId       String?         @db.ObjectId
-  subcategoryId    String?         @db.ObjectId
-  accountId        String?         @db.ObjectId
-  toAccountId      String?         @db.ObjectId
+  categoryId       String?            @db.ObjectId
+  subcategoryId    String?            @db.ObjectId
+  accountId        String?            @db.ObjectId
+  toAccountId      String?            @db.ObjectId
+  /// Display text. For income and expenses it mirrors merchant.name.
   merchantOrSource String?
+  /// Set for income and expenses with a merchant; transfers keep only the text.
+  merchantId       String?            @db.ObjectId
+  /// Set when this row was posted from (or linked to) a recurring entry.
+  recurringId      String?            @db.ObjectId
   notes            String?
   tags             String[]
   splitItems       SplitItem[]
   accountSplits    AccountSplitItem[]
   splitGroupId     String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  /// Expenses only: the part of `amount` that friends owe you (the sum of the
+  /// linked FriendEntry rows). Your spending is amount - sharedAmount; the
+  /// account balance still moves by the full amount. Kept by lib/transactions.
+  sharedAmount     Float?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
-  category    Category?    @relation(fields: [categoryId], references: [id])
-  subcategory Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
-  account     Account?     @relation("FromAccount", fields: [accountId], references: [id], onDelete: Cascade)
-  toAccount   Account?     @relation("ToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  category    Category?             @relation(fields: [categoryId], references: [id])
+  subcategory Subcategory?          @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  account     Account?              @relation("FromAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount   Account?              @relation("ToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  merchant    Merchant?             @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
 
+  friendEntries     FriendEntry[]
+  goalContributions GoalContribution[]
+
+  @@index([merchantId])
+  @@index([recurringId])
   @@index([date])
   @@index([kind])
   @@index([categoryId])
@@ -122,15 +147,113 @@ model Transaction {
   @@index([date, kind])
 }
 
+// Merchants / income sources. One row per name after normalising case and
+// whitespace (lib/merchants.ts). Defaults are only ever set by the user.
+model Merchant {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  normalizedName       String   @unique
+  defaultCategoryId    String?  @db.ObjectId
+  defaultSubcategoryId String?  @db.ObjectId
+  defaultAccountId     String?  @db.ObjectId
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  defaultCategory    Category?              @relation("MerchantDefaultCategory", fields: [defaultCategoryId], references: [id], onDelete: SetNull)
+  defaultSubcategory Subcategory?           @relation("MerchantDefaultSubcategory", fields: [defaultSubcategoryId], references: [id], onDelete: SetNull)
+  defaultAccount     Account?               @relation("MerchantDefaultAccount", fields: [defaultAccountId], references: [id], onDelete: SetNull)
+  transactions       Transaction[]
+  recurring          RecurringTransaction[]
+}
+
+// Recurring entries (lib/recurring.ts)
+enum RecurringFrequency {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum RecurringPostingStatus {
+  POSTED
+  SKIPPED
+}
+
+/// A template plus a schedule. startDate is the first due date and sets the
+/// schedule's day: its weekday (weekly / every two weeks), its day of the
+/// month (monthly, clamped to short months) or its date (yearly).
+model RecurringTransaction {
+  id               String             @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  kind             TransactionKind
+  amount           Float
+  categoryId       String?            @db.ObjectId
+  subcategoryId    String?            @db.ObjectId
+  accountId        String             @db.ObjectId
+  toAccountId      String?            @db.ObjectId
+  merchantId       String?            @db.ObjectId
+  merchantOrSource String?
+  notes            String?
+  frequency        RecurringFrequency
+  startDate        DateTime
+  nextDueDate      DateTime
+  endDate          DateTime?
+  autoPost         Boolean            @default(false)
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  category     Category?          @relation("RecurringCategory", fields: [categoryId], references: [id])
+  subcategory  Subcategory?       @relation("RecurringSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  account      Account            @relation("RecurringAccount", fields: [accountId], references: [id])
+  toAccount    Account?           @relation("RecurringToAccount", fields: [toAccountId], references: [id])
+  merchant     Merchant?          @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+  postings     RecurringPosting[]
+
+  @@index([active, nextDueDate])
+  @@index([accountId])
+  @@index([toAccountId])
+  @@index([categoryId])
+}
+
+/// One row per occurrence that was posted or skipped. The unique index makes
+/// posting idempotent: the same occurrence can never be handled twice.
+model RecurringPosting {
+  id            String                 @id @default(auto()) @map("_id") @db.ObjectId
+  recurringId   String                 @db.ObjectId
+  dueDate       DateTime
+  status        RecurringPostingStatus
+  transactionId String?                @db.ObjectId
+  createdAt     DateTime               @default(now())
+
+  recurring RecurringTransaction @relation(fields: [recurringId], references: [id], onDelete: Cascade)
+
+  @@unique([recurringId, dueDate])
+}
+
+/// Detection suggestions the user dismissed (key from lib/recurringDetection.ts).
+model DismissedRecurringSuggestion {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  createdAt DateTime @default(now())
+}
+
 model Goal {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
   name         String
   targetAmount Float
   dueDate      DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  /// Optional account that holds this goal's savings. When set, contributions
+  /// are real transfers into it; otherwise they are earmarks on the source.
+  accountId    String?   @db.ObjectId
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  account       Account?           @relation(fields: [accountId], references: [id])
   contributions GoalContribution[]
+
+  @@index([accountId])
 }
 
 model GoalContribution {
@@ -139,24 +262,33 @@ model GoalContribution {
   date          DateTime
   amount        Float
   fromAccountId String   @db.ObjectId
+  /// The TRANSFER that moved this money into the goal's account. Null means
+  /// an earmark: the money stays in fromAccount but is no longer "available".
+  transactionId String?  @db.ObjectId
   notes         String?
   createdAt     DateTime @default(now())
 
-  goal        Goal    @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  fromAccount Account @relation(fields: [fromAccountId], references: [id])
+  goal        Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  fromAccount Account      @relation(fields: [fromAccountId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([goalId])
   @@index([fromAccountId])
+  @@index([transactionId])
 }
 
 model Budget {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  month      DateTime
-  categoryId String   @db.ObjectId
-  amount     Float
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  month           DateTime
+  categoryId      String   @db.ObjectId
+  amount          Float
+  // Unspent amount carries into next month's budget for this category;
+  // overspend reduces it.
+  // Optional so budgets saved before this field existed still load (null = off).
+  rolloverEnabled Boolean? @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
@@ -197,19 +329,29 @@ model Friend {
 }
 
 model FriendEntry {
-  id          String          @id @default(auto()) @map("_id") @db.ObjectId
-  friendId    String          @db.ObjectId
-  date        DateTime
-  amount      Float
-  type        FriendEntryType
-  description String?
-  notes       String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id            String          @id @default(auto()) @map("_id") @db.ObjectId
+  friendId      String          @db.ObjectId
+  date          DateTime
+  amount        Float
+  type          FriendEntryType
+  description   String?
+  notes         String?
+  /// Set when this IOU is a friend's share of one of your expenses. The
+  /// expense moved the money, so an entry with a transaction has no account.
+  transactionId String?         @db.ObjectId
+  /// Account the money went through (lent, borrowed, received or paid back).
+  /// Moves that account's balance. Never set together with transactionId.
+  accountId     String?         @db.ObjectId
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
-  friend Friend @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  friend      Friend       @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     Account?     @relation(fields: [accountId], references: [id])
 
   @@index([friendId])
   @@index([date])
   @@index([friendId, date])
+  @@index([transactionId])
+  @@index([accountId])
 }

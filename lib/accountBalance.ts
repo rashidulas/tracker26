@@ -1,3 +1,5 @@
+import { friendEntryAccountDelta, type FriendEntryMoney } from '@/lib/friends';
+
 export type AccountSplit = { accountId: string; amount: number };
 
 export type FromTransaction = {
@@ -50,12 +52,19 @@ export function collectFromTransactionsForAccount(
  *   - expenses attributed to this account
  *   - transfers out (Pay From / TRANSFER.accountId)
  *   + transfers in (Pay To / TRANSFER.toAccountId)
+ *   + movements: money lent, borrowed or settled with friends through this
+ *     account (signed, see friendAccountMovements)
+ *
+ * A goal contribution with a linked goal account is a TRANSFER, so it is
+ * already in from/to. An earmark does not change the balance; see
+ * availableBalance.
  */
 export function computeAccountBalance(
   startingBalance: number,
   fromTransactions: FromTransaction[],
   toTransactions: ToTransaction[],
-  accountId?: string
+  accountId?: string,
+  movements: { amount: number }[] = []
 ): number {
   const fromDelta = fromTransactions.reduce((sum, transaction) => {
     const amount =
@@ -72,8 +81,46 @@ export function computeAccountBalance(
   }, 0);
 
   const transfersIn = toTransactions.reduce((sum, transfer) => sum + transfer.amount, 0);
+  const moved = movements.reduce((sum, m) => sum + m.amount, 0);
 
-  return startingBalance + fromDelta + transfersIn;
+  return startingBalance + fromDelta + transfersIn + moved;
+}
+
+/** Money that moved through an account outside Transaction rows. Signed. */
+export type AccountMovement = { accountId: string; amount: number; date: Date };
+
+/** Friend entries that moved money through an account, as signed movements. */
+export function friendAccountMovements(
+  entries: (FriendEntryMoney & { date: Date })[]
+): AccountMovement[] {
+  const out: AccountMovement[] = [];
+  for (const entry of entries) {
+    const amount = friendEntryAccountDelta(entry);
+    if (amount !== 0 && entry.accountId) {
+      out.push({ accountId: entry.accountId, amount, date: entry.date });
+    }
+  }
+  return out;
+}
+
+/**
+ * Goal contributions without a transfer are earmarks: the money stays in the
+ * source account but is set aside. Returns the earmarked total per account.
+ */
+export function earmarkedByAccount(
+  contributions: { fromAccountId: string; amount: number; transactionId?: string | null }[]
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const c of contributions) {
+    if (c.transactionId) continue;
+    out.set(c.fromAccountId, (out.get(c.fromAccountId) ?? 0) + c.amount);
+  }
+  return out;
+}
+
+/** Balance minus what is earmarked for goals. */
+export function availableBalance(balance: number, earmarked: number): number {
+  return balance - earmarked;
 }
 
 export type BalanceTransaction = FromTransaction & {
@@ -86,7 +133,8 @@ export type BalanceTransaction = FromTransaction & {
  */
 export function computeBalancesForAccounts(
   accounts: { id: string; startingBalance: number }[],
-  transactions: BalanceTransaction[]
+  transactions: BalanceTransaction[],
+  movements: AccountMovement[] = []
 ): Map<string, { balance: number; transactionCount: number }> {
   const withSplits = transactions.filter(
     (t) => t.kind !== 'TRANSFER' && (t.accountSplits || []).length > 0
@@ -99,9 +147,10 @@ export function computeBalancesForAccounts(
     const to = transactions.filter(
       (t) => t.kind === 'TRANSFER' && t.toAccountId === account.id
     );
+    const moved = movements.filter((m) => m.accountId === account.id);
     result.set(account.id, {
-      balance: computeAccountBalance(account.startingBalance, from, to, account.id),
-      transactionCount: from.length + to.length,
+      balance: computeAccountBalance(account.startingBalance, from, to, account.id, moved),
+      transactionCount: from.length + to.length + moved.length,
     });
   }
 
