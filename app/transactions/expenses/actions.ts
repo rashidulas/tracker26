@@ -6,6 +6,7 @@ import {
   deleteTransaction,
   updateTransaction,
   type ExpenseInput,
+  type FriendSplit,
   type TransferPurpose,
 } from '@/lib/transactions';
 import { dayFilter } from '@/lib/dates';
@@ -21,18 +22,19 @@ export async function getExpenses(filters?: {
   search?: string;
 }) {
   try {
-    const baseWhere: any = {
-      OR: [
-        { kind: 'EXPENSE' },
-        { kind: 'TRANSFER', tags: { has: 'payment' } },
-      ],
-    };
+    // Only real spending. Card payments and debt payments are transfers
+    // (lib/budgets.ts explains why) and are listed under Transfers.
+    const baseWhere: any = { kind: 'EXPENSE' };
 
     const dateRange = dayFilter(filters?.startDate, filters?.endDate);
     if (dateRange) baseWhere.date = dateRange;
 
     if (filters?.categoryId) {
-      baseWhere.categoryId = filters.categoryId;
+      // Split expenses keep their categories in splitItems.
+      baseWhere.OR = [
+        { categoryId: filters.categoryId },
+        { splitItems: { some: { categoryId: filters.categoryId } } },
+      ];
     }
 
     if (filters?.subcategoryId) {
@@ -58,12 +60,7 @@ export async function getExpenses(filters?: {
 
     const expenses = await prisma.transaction.findMany({
       where: baseWhere,
-      include: {
-        category: true,
-        subcategory: true,
-        account: true,
-        toAccount: true,
-      },
+      include: rowInclude,
       orderBy: { date: 'desc' },
     });
 
@@ -75,9 +72,26 @@ export async function getExpenses(filters?: {
   }
 }
 
+/**
+ * "friendSplits" is JSON: [{ friendId, amount }]. Absent = leave the current
+ * split alone (forms that don't show it); "[]" = not split.
+ */
+function friendSplitsFromForm(formData: FormData): FriendSplit[] | undefined {
+  const raw = formData.get('friendSplits');
+  if (typeof raw !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((s) => ({ friendId: String(s?.friendId ?? ''), amount: Number(s?.amount) }));
+  } catch {
+    return [];
+  }
+}
+
 function expenseFromForm(formData: FormData): ExpenseInput {
   const tags = (formData.get('tags') as string) || '';
   return {
+    friendSplits: friendSplitsFromForm(formData),
     kind: 'EXPENSE',
     date: (formData.get('date') as string) || '',
     amount: parseFloat(formData.get('amount') as string),
@@ -95,6 +109,14 @@ const rowInclude = {
   subcategory: true,
   account: true,
   toAccount: true,
+  // A split expense's IOUs: who owes you what for it.
+  friendEntries: {
+    select: {
+      id: true,
+      amount: true,
+      friend: { select: { id: true, name: true, color: true } },
+    },
+  },
 } as const;
 
 /** Return the saved row with relations so the UI can update without a reload. */
@@ -167,7 +189,7 @@ export async function createDebtPaymentTransfer(formData: FormData) {
  */
 export async function getQuickAddData() {
   try {
-    const [categories, accounts, recent, merchants] = await Promise.all([
+    const [categories, accounts, recent, friends, merchants] = await Promise.all([
       prisma.category.findMany({
         where: { type: 'EXPENSE' },
         select: {
@@ -192,6 +214,10 @@ export async function getQuickAddData() {
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         take: 500,
       }),
+      prisma.friend.findMany({
+        select: { id: true, name: true, color: true },
+        orderBy: { name: 'asc' },
+      }),
       // Defaults the user set, else what was used last time (lib/merchants.ts).
       getMerchantMemory('EXPENSE'),
     ]);
@@ -208,6 +234,7 @@ export async function getQuickAddData() {
       data: {
         categories,
         accounts,
+        friends,
         merchants,
         accountByCategory,
         lastAccountId: recent.find((t) => t.accountId)?.accountId ?? null,

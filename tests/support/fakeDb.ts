@@ -16,6 +16,9 @@ const MODELS = [
   'transaction',
   'goalContribution',
   'budget',
+  'goal',
+  'friend',
+  'friendEntry',
   'merchant',
   'recurringTransaction',
   'recurringPosting',
@@ -40,9 +43,13 @@ const DEFAULTS: Record<ModelName, Doc> = {
     splitItems: [],
     accountSplits: [],
     splitGroupId: null,
+    sharedAmount: null,
   },
-  goalContribution: { notes: null },
+  goalContribution: { notes: null, transactionId: null },
   budget: {},
+  goal: { dueDate: null, accountId: null },
+  friend: { notes: null, color: '#7aa2f7' },
+  friendEntry: { description: null, notes: null, transactionId: null, accountId: null },
   merchant: { defaultCategoryId: null, defaultSubcategoryId: null, defaultAccountId: null },
   recurringTransaction: {
     categoryId: null,
@@ -150,6 +157,9 @@ export class FakeDb {
     transaction: [],
     goalContribution: [],
     budget: [],
+    goal: [],
+    friend: [],
+    friendEntry: [],
     merchant: [],
     recurringTransaction: [],
     recurringPosting: [],
@@ -273,6 +283,9 @@ export class FakeDb {
   transaction = this.model('transaction');
   goalContribution = this.model('goalContribution');
   budget = this.model('budget');
+  goal = this.model('goal');
+  friend = this.model('friend');
+  friendEntry = this.model('friendEntry');
   merchant = this.model('merchant');
   recurringTransaction = this.model('recurringTransaction');
   recurringPosting = this.model('recurringPosting');

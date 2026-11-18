@@ -14,6 +14,9 @@ import {
   createPaymentTransfer,
 } from './actions';
 import { createCategory } from '@/app/settings/categories/actions';
+import { getBudgetHint } from '@/app/plan/budgets/actions';
+import type { BudgetHint } from '@/lib/budgetData';
+import { formatCurrency } from '@/lib/utils';
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { addDays, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
@@ -29,7 +32,28 @@ import {
   ChevronUp,
   Plus,
   Store,
+  Users,
 } from 'lucide-react';
+
+export interface FriendOption {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
+type SplitRow = { friendId: string; amount: string };
+
+const toCents = (raw: string | number) => Math.round(Number(raw) * 100);
+
+/**
+ * Equal split of `total` between you and each friend. Friends get the same
+ * whole-cent share; you absorb the leftover cent(s).
+ */
+function equalFriendShares(total: number, friendCount: number): string[] {
+  if (!(total > 0) || friendCount === 0) return Array(friendCount).fill('');
+  const each = Math.floor(toCents(total) / (friendCount + 1));
+  return Array(friendCount).fill((each / 100).toFixed(2));
+}
 
 const DEBT_PAYMENT_SENTINEL = '__DEBT_PAYMENT__';
 const PAYMENT_SENTINEL = '__PAYMENT__';
@@ -115,7 +139,10 @@ interface ExpenseFormProps {
     merchantOrSource?: string | null;
     notes?: string | null;
     tags: string[];
+    friendEntries?: Array<{ amount: number; friend: { id: string } }>;
   };
+  /** Friends you can split this expense with. */
+  friends?: FriendOption[];
   categories: Array<{
     id: string;
     name: string;
@@ -153,6 +180,70 @@ const QUICK_ICONS = ['📁', '🚗', '🛒', '🍽️', '🏠', '💡', '✈️'
 
 type CategoryOption = ExpenseFormProps['categories'][number];
 
+/**
+ * "$120 left in Groceries this month" under the category picker. Figures come
+ * from the server (lib/budgetData.ts), the same numbers as the Budgets page.
+ */
+function BudgetHintLine({
+  categoryId,
+  categoryName,
+  date,
+  amount,
+  editingAmount,
+}: {
+  categoryId: string;
+  categoryName: string;
+  date: string;
+  amount: string | undefined;
+  /** When editing, the saved amount is already counted in "spent". */
+  editingAmount: number | null;
+}) {
+  const [hint, setHint] = useState<{ key: string; value: BudgetHint | null } | null>(null);
+  const key = `${categoryId}|${date}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    getBudgetHint(categoryId, date)
+      .then((value) => !cancelled && setHint({ key, value }))
+      .catch(() => !cancelled && setHint({ key, value: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId, date, key]);
+
+  if (!hint || hint.key !== key || !hint.value) return null;
+  const { remaining, month } = hint.value;
+  const typed = Number(amount);
+  const delta = Number.isFinite(typed) && typed > 0 ? typed - (editingAmount ?? 0) : 0;
+  const after = remaining - delta;
+  const thisMonth = month === todayInAppTimeZone().slice(0, 7);
+  const when = thisMonth
+    ? 'this month'
+    : `in ${new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long' })}`;
+
+  return (
+    <p className="mt-2 text-xs text-ink-muted" aria-live="polite">
+      {remaining >= 0 ? (
+        <>
+          <span className="text-ink-secondary money">{formatCurrency(remaining)}</span> left in {categoryName}{' '}
+          {when}
+        </>
+      ) : (
+        <>
+          {categoryName} is <span className="text-danger money">{formatCurrency(-remaining)}</span> over budget{' '}
+          {when}
+        </>
+      )}
+      {delta !== 0 && (
+        <span className={after < 0 ? 'text-danger' : ''}>
+          {' · '}
+          {after >= 0 ? `${formatCurrency(after)} after this` : `${formatCurrency(-after)} over after this`}
+        </span>
+      )}
+    </p>
+  );
+}
+
 function localYesterdayForInput() {
   return addDays(todayInAppTimeZone(), -1);
 }
@@ -162,6 +253,7 @@ export default function ExpenseForm({
   categories,
   accounts,
   merchants = [],
+  friends = [],
   serverAccountByCategory = {},
   serverLastAccountId = null,
   onSuccess,
@@ -192,6 +284,17 @@ export default function ExpenseForm({
   // The merchant's account beats "the account last used with this category".
   const accountFromMerchant = useRef(false);
   const amountRef = useRef<HTMLInputElement | null>(null);
+
+  // ---- Split with friends ----------------------------------------------------
+  const initialSplit: SplitRow[] = (expense?.friendEntries ?? []).map((e) => ({
+    friendId: e.friend.id,
+    amount: e.amount.toFixed(2),
+  }));
+  const [splitOpen, setSplitOpen] = useState(initialSplit.length > 0);
+  const [splitRows, setSplitRows] = useState<SplitRow[]>(initialSplit);
+  // Equal shares follow the amount until a share is typed by hand. An existing
+  // split keeps its saved amounts.
+  const [splitCustom, setSplitCustom] = useState(initialSplit.length > 0);
 
   const accountExists = (id: string | null | undefined): id is string =>
     Boolean(id && accounts.some((a) => a.id === id));
@@ -233,6 +336,7 @@ export default function ExpenseForm({
   const payAmountVal = useWatch({ control, name: 'payAmount' });
   const selectedSubcategoryId = useWatch({ control, name: 'subcategoryId' });
   const selectedDate = useWatch({ control, name: 'date' });
+  const amountVal = useWatch({ control, name: 'amount' });
   const merchantVal = useWatch({ control, name: 'merchantOrSource' }) || '';
 
   const isDebtPayment = selectedCategoryId === DEBT_PAYMENT_SENTINEL;
@@ -406,6 +510,41 @@ export default function ExpenseForm({
     resetNewCategory();
   };
 
+  const totalAmount = Number(amountVal) > 0 ? Number(amountVal) : 0;
+  const splitShares: SplitRow[] = splitCustom
+    ? splitRows
+    : (() => {
+        const equal = equalFriendShares(totalAmount, splitRows.length);
+        return splitRows.map((r, i) => ({ ...r, amount: equal[i] }));
+      })();
+  const friendsTotalCents = splitShares.reduce((sum, r) => sum + (toCents(r.amount) || 0), 0);
+  const myShareCents = toCents(totalAmount) - friendsTotalCents;
+  const splitActive = splitOpen && splitShares.length > 0;
+  const splitError = !splitActive
+    ? ''
+    : splitShares.some((r) => !(Number(r.amount) > 0))
+    ? "Enter each friend's share"
+    : myShareCents < 0
+    ? "Friends' shares are more than the amount"
+    : '';
+
+  const toggleSplitFriend = (friendId: string) => {
+    // Changing who is in the split goes back to equal shares.
+    setSplitCustom(false);
+    setSplitRows((rows) =>
+      rows.some((r) => r.friendId === friendId)
+        ? rows.filter((r) => r.friendId !== friendId)
+        : [...rows, { friendId, amount: '' }]
+    );
+  };
+
+  const setSplitAmount = (friendId: string, value: string) => {
+    setSplitCustom(true);
+    setSplitRows(
+      splitShares.map((r) => (r.friendId === friendId ? { ...r, amount: value } : r))
+    );
+  };
+
   // ---- Submit ----------------------------------------------------------------
 
   const fromAccount = accounts.find((a) => a.id === selectedFromAccountId);
@@ -455,6 +594,10 @@ export default function ExpenseForm({
   };
 
   const onSubmit = async (data: ExpenseFormData) => {
+    if (!isTransfer && splitError) {
+      toast.error(splitError);
+      return;
+    }
     const intent: SubmitIntent = submitIntentRef?.current ?? 'save';
     if (submitIntentRef) submitIntentRef.current = 'save';
     setIsSubmitting(true);
@@ -484,6 +627,14 @@ export default function ExpenseForm({
         formData.append('merchantOrSource', data.merchantOrSource || '');
         formData.append('notes', data.notes || '');
         formData.append('tags', data.tags || '');
+        formData.append(
+          'friendSplits',
+          JSON.stringify(
+            splitActive
+              ? splitShares.map((r) => ({ friendId: r.friendId, amount: Number(r.amount) }))
+              : []
+          )
+        );
         result = expense
           ? await updateExpense(expense.id, formData)
           : await createExpense(formData);
@@ -521,6 +672,9 @@ export default function ExpenseForm({
           payAmount: '',
         });
         accountTouched.current = true;
+        setSplitOpen(false);
+        setSplitRows([]);
+        setSplitCustom(false);
         requestAnimationFrame(() => amountRef.current?.focus());
       }
 
@@ -893,6 +1047,23 @@ export default function ExpenseForm({
           </p>
         )}
         <input type="hidden" {...register('categoryId')} />
+        {!isTransfer && selectedCategory && selectedDate && (
+          <BudgetHintLine
+            categoryId={selectedCategory.id}
+            categoryName={selectedCategory.name}
+            date={selectedDate}
+            // Budgets count only your share of an expense split with friends.
+            amount={splitActive ? (Math.max(0, myShareCents) / 100).toFixed(2) : amountVal}
+            editingAmount={
+              expense &&
+              expense.categoryId === selectedCategory.id &&
+              toDayString(expense.date).slice(0, 7) === selectedDate.slice(0, 7)
+                ? expense.amount -
+                  (expense.friendEntries ?? []).reduce((sum, e) => sum + e.amount, 0)
+                : null
+            }
+          />
+        )}
       </div>
 
       {!isTransfer && availableSubcategories.length > 0 && (
@@ -1042,6 +1213,119 @@ export default function ExpenseForm({
               ...accounts.map((a) => ({ value: a.id, label: a.name })),
             ]}
           />
+
+          {friends.length > 0 && (
+            <div className="rounded-2xl border border-graphite-border-subtle bg-graphite-surface-2/40 p-3.5">
+              <button
+                type="button"
+                onClick={() => setSplitOpen((v) => !v)}
+                aria-expanded={splitOpen}
+                aria-controls={`${formId}-split`}
+                className="w-full flex items-center justify-between gap-2 text-sm font-medium text-ink-secondary hover:text-ink"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Users size={16} aria-hidden="true" />
+                  Split with friends
+                  {splitActive && (
+                    <span className="text-xs font-normal text-ink-muted">
+                      · {splitShares.length} friend{splitShares.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </span>
+                {splitOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {splitOpen && (
+                <div id={`${formId}-split`} className="mt-3 space-y-3">
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Friends in this split"
+                  >
+                    {friends.map((f) => {
+                      const on = splitRows.some((r) => r.friendId === f.id);
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => toggleSplitFriend(f.id)}
+                          aria-pressed={on}
+                          className={chipClass(on)}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+                            style={{ backgroundColor: f.color || '#7aa2f7' }}
+                          />
+                          {f.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {splitShares.length > 0 && (
+                    <div className="space-y-2">
+                      {splitShares.map((row) => {
+                        const friend = friends.find((f) => f.id === row.friendId);
+                        return (
+                          <div key={row.friendId} className="flex items-center gap-3">
+                            <label
+                              htmlFor={`${formId}-split-${row.friendId}`}
+                              className="flex-1 min-w-0 truncate text-sm text-ink-secondary"
+                            >
+                              {friend?.name ?? 'Friend'} owes you
+                            </label>
+                            <div className="relative w-32">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">
+                                $
+                              </span>
+                              <input
+                                id={`${formId}-split-${row.friendId}`}
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                inputMode="decimal"
+                                value={row.amount}
+                                onChange={(e) => setSplitAmount(row.friendId, e.target.value)}
+                                placeholder="0.00"
+                                className="w-full rounded-xl border border-graphite-border-subtle bg-graphite-surface px-3 py-2 pl-6 text-right text-sm text-ink money outline-none focus:border-mint/50"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center justify-between gap-3 border-t border-graphite-border-subtle pt-2 text-sm">
+                        <span className="text-ink-muted">
+                          Your share{' '}
+                          <span className={myShareCents < 0 ? 'text-danger' : 'text-ink money'}>
+                            ${(myShareCents / 100).toFixed(2)}
+                          </span>
+                        </span>
+                        {splitCustom && (
+                          <button
+                            type="button"
+                            onClick={() => setSplitCustom(false)}
+                            className="text-xs text-mint hover:underline"
+                          >
+                            Split equally
+                          </button>
+                        )}
+                      </div>
+                      {splitError && (
+                        <p className="text-sm text-danger" role="alert">
+                          {splitError}
+                        </p>
+                      )}
+                      <p className="text-xs text-ink-muted">
+                        The account pays the full amount. Budgets and spending count only your
+                        share; each friend gets a &ldquo;they owe me&rdquo; entry.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"

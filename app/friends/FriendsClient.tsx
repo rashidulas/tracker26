@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
+import Select from '@/components/Select';
 import PageHeader from '@/components/PageHeader';
 import {
   createFriend,
@@ -14,6 +15,7 @@ import {
   deleteFriend,
   deleteFriendEntry,
   updateFriend,
+  updateFriendEntry,
 } from './actions';
 import {
   Plus,
@@ -24,9 +26,12 @@ import {
   Pencil,
   Trash2,
   ChevronRight,
+  Receipt,
+  Wallet,
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { todayInAppTimeZone } from '@/lib/dates';
+import { toDayString, todayInAppTimeZone } from '@/lib/dates';
+import { FRIEND_ACCOUNT_LABELS } from '@/lib/friends';
 
 type EntryType = 'THEY_OWE_ME' | 'I_OWE_THEM' | 'THEY_PAID_ME' | 'I_PAID_THEM';
 
@@ -37,6 +42,20 @@ interface FriendEntry {
   type: EntryType;
   description: string | null;
   notes: string | null;
+  accountId?: string | null;
+  transactionId?: string | null;
+  /** Account the money went through (settlements, loans). */
+  account?: { id: string; name: string } | null;
+  /** The expense this entry is a share of. */
+  transaction?: {
+    id: string;
+    date: Date;
+    amount: number;
+    sharedAmount: number | null;
+    merchantOrSource: string | null;
+    category: { name: string; icon: string | null } | null;
+    account: { name: string } | null;
+  } | null;
 }
 
 interface Friend {
@@ -50,6 +69,7 @@ interface Friend {
 
 interface FriendsClientProps {
   initialFriends: Friend[];
+  accounts?: Array<{ id: string; name: string }>;
 }
 
 const ENTRY_OPTIONS: {
@@ -61,25 +81,25 @@ const ENTRY_OPTIONS: {
   {
     value: 'THEY_OWE_ME',
     label: 'They owe me',
-    hint: 'You covered a shared expense',
+    hint: 'You covered them or lent them money',
     tone: 'mint',
   },
   {
     value: 'I_OWE_THEM',
     label: 'I owe them',
-    hint: 'They covered a shared expense',
+    hint: 'They covered you or lent you money',
     tone: 'danger',
   },
   {
     value: 'THEY_PAID_ME',
     label: 'They paid me',
-    hint: 'Settlement received',
+    hint: 'They paid you back',
     tone: 'info',
   },
   {
     value: 'I_PAID_THEM',
     label: 'I paid them',
-    hint: 'Settlement sent',
+    hint: 'You paid them back',
     tone: 'info',
   },
 ];
@@ -103,7 +123,11 @@ function entryLabel(type: EntryType) {
   return ENTRY_OPTIONS.find((o) => o.value === type)?.label || type;
 }
 
-export default function FriendsClient({ initialFriends }: FriendsClientProps) {
+function expenseLabel(t: NonNullable<FriendEntry['transaction']>) {
+  return t.merchantOrSource || t.category?.name || 'Expense';
+}
+
+export default function FriendsClient({ initialFriends, accounts = [] }: FriendsClientProps) {
   const router = useRouter();
   const toast = useToast();
   const [allFriends, setFriends] = useState(initialFriends);
@@ -159,6 +183,9 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
   const [entryType, setEntryType] = useState<EntryType>('THEY_OWE_ME');
   const [entryDate, setEntryDate] = useState(todayInAppTimeZone());
   const [entryDescription, setEntryDescription] = useState('');
+  const [entryAccountId, setEntryAccountId] = useState('');
+  const [editingEntry, setEditingEntry] = useState<FriendEntry | null>(null);
+  const linkedExpense = editingEntry?.transaction ?? null;
 
   const totals = useMemo(() => {
     const owedToYou = friends.reduce((s, f) => s + Math.max(0, f.balance), 0);
@@ -189,10 +216,24 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
 
   const openAddEntry = (friend: Friend) => {
     setDetailFriend(friend);
+    setEditingEntry(null);
     setEntryAmount('');
     setEntryType('THEY_OWE_ME');
     setEntryDate(todayInAppTimeZone());
     setEntryDescription('');
+    setEntryAccountId('');
+    setError('');
+    setEntryModalOpen(true);
+  };
+
+  const openEditEntry = (friend: Friend, entry: FriendEntry) => {
+    setDetailFriend(friend);
+    setEditingEntry(entry);
+    setEntryAmount(entry.amount.toFixed(2));
+    setEntryType(entry.type);
+    setEntryDate(toDayString(entry.date));
+    setEntryDescription(entry.description || '');
+    setEntryAccountId(entry.accountId || '');
     setError('');
     setEntryModalOpen(true);
   };
@@ -226,7 +267,9 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
     toggle(setPendingFriends, friend.id, true);
     if (detailFriendId === friend.id) setDetailFriendId(null);
     toast.deferred({
-      message: `Removed ${friend.name} and their entries`,
+      message: friend.entries.some((e) => e.accountId)
+        ? `Removed ${friend.name}; account balances no longer include their settlements`
+        : `Removed ${friend.name} and their entries`,
       commit: () => deleteFriend(friend.id),
       errorMessage: `Failed to remove ${friend.name}`,
       onUndo: () => toggle(setPendingFriends, friend.id, false),
@@ -249,11 +292,15 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
     formData.append('amount', entryAmount);
     formData.append('type', entryType);
     formData.append('description', entryDescription);
+    if (editingEntry?.notes) formData.append('notes', editingEntry.notes);
+    if (!linkedExpense) formData.append('accountId', entryAccountId);
 
-    const result = await createFriendEntry(formData);
+    const result = editingEntry
+      ? await updateFriendEntry(editingEntry.id, formData)
+      : await createFriendEntry(formData);
     setIsSubmitting(false);
     if (result.success) {
-      toast.success('Entry added');
+      toast.success(editingEntry ? 'Entry updated' : 'Entry added');
       setEntryModalOpen(false);
       router.refresh();
     } else {
@@ -533,6 +580,28 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
                             <p className="text-xs text-ink-muted mt-0.5">
                               {formatDate(entry.date)} · {entryLabel(entry.type)}
                             </p>
+                            {entry.transaction && (
+                              <p className="mt-1 inline-flex items-center gap-1 text-xs text-info">
+                                <Receipt size={11} aria-hidden="true" className="shrink-0" />
+                                <span className="truncate">
+                                  Share of {expenseLabel(entry.transaction)} ·{' '}
+                                  {formatCurrency(entry.transaction.amount)}
+                                  {entry.transaction.account &&
+                                    ` paid from ${entry.transaction.account.name}`}
+                                </span>
+                              </p>
+                            )}
+                            {entry.account && !entry.transaction && (
+                              <p className="mt-1 inline-flex items-center gap-1 text-xs text-ink-secondary">
+                                <Wallet size={11} aria-hidden="true" className="shrink-0" />
+                                <span className="truncate">
+                                  {entry.type === 'THEY_PAID_ME' || entry.type === 'I_OWE_THEM'
+                                    ? 'Into'
+                                    : 'From'}{' '}
+                                  {entry.account.name}
+                                </span>
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <p
@@ -543,6 +612,14 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
                               {positive ? '+' : '−'}
                               {formatCurrency(entry.amount)}
                             </p>
+                            <button
+                              type="button"
+                              onClick={() => openEditEntry(detailFriend, entry)}
+                              className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                              aria-label="Edit entry"
+                            >
+                              <Pencil size={14} aria-hidden="true" />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteEntry(entry.id)}
@@ -668,8 +745,16 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
           setEntryModalOpen(false);
           setError('');
         }}
-        title={detailFriend ? `Entry · ${detailFriend.name}` : 'Add entry'}
-        description="Log a shared expense or a settlement."
+        title={
+          detailFriend
+            ? `${editingEntry ? 'Edit entry' : 'Entry'} · ${detailFriend.name}`
+            : 'Add entry'
+        }
+        description={
+          linkedExpense
+            ? 'This is their share of an expense you paid.'
+            : 'Log a shared expense, a loan or a settlement.'
+        }
         footer={
           <div className="flex gap-3">
             <Button
@@ -684,7 +769,7 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
               disabled={isSubmitting || !entryAmount || parseFloat(entryAmount) <= 0}
               className="flex-1"
             >
-              {isSubmitting ? 'Saving...' : 'Save entry'}
+              {isSubmitting ? 'Saving...' : editingEntry ? 'Save changes' : 'Save entry'}
             </Button>
           </div>
         }
@@ -715,7 +800,24 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
             </div>
           </div>
 
-          <div>
+          {linkedExpense && (
+            <div className="flex items-start gap-3 rounded-2xl border border-info/25 bg-info-dim/30 p-3.5 text-sm">
+              <Receipt size={16} className="text-info mt-0.5 shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-ink font-medium truncate">
+                  {expenseLabel(linkedExpense)} · {formatCurrency(linkedExpense.amount)}
+                </p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  {formatDate(linkedExpense.date)}
+                  {linkedExpense.account && ` · paid from ${linkedExpense.account.name}`}
+                  {' · '}date and type follow the expense. Changing the amount changes your
+                  share of it.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div hidden={Boolean(linkedExpense)}>
             <label className="block text-sm font-medium text-ink-secondary mb-2">
               What happened?
             </label>
@@ -753,12 +855,38 @@ export default function FriendsClient({ initialFriends }: FriendsClientProps) {
             </div>
           </div>
 
-          <Input
-            label="Date"
-            type="date"
-            value={entryDate}
-            onChange={(e) => setEntryDate(e.target.value)}
-          />
+          {!linkedExpense && (
+            <>
+              <Input
+                label="Date"
+                type="date"
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+              />
+              {accounts.length > 0 && (
+                <div>
+                  <Select
+                    label={`${FRIEND_ACCOUNT_LABELS[entryType]} (optional)`}
+                    value={entryAccountId}
+                    onChange={(e) => setEntryAccountId(e.target.value)}
+                    options={[
+                      { value: '', label: 'Not through an account' },
+                      ...accounts.map((a) => ({ value: a.id, label: a.name })),
+                    ]}
+                  />
+                  <p className="text-xs text-ink-muted mt-1.5">
+                    {entryAccountId
+                      ? `${accounts.find((a) => a.id === entryAccountId)?.name ?? 'The account'}'s balance ${
+                          entryType === 'THEY_PAID_ME' || entryType === 'I_OWE_THEM'
+                            ? 'goes up'
+                            : 'goes down'
+                        } by this amount.`
+                      : 'Pick the account the money went through so its balance stays right.'}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
           <Input
             label="Description (optional)"
             value={entryDescription}

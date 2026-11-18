@@ -1,8 +1,6 @@
 import { prisma } from '@/lib/prisma';
-import {
-  collectFromTransactionsForAccount,
-  computeAccountBalance,
-} from '@/lib/accountBalance';
+import { loadAccountBalances } from '@/lib/ledgerBalances';
+import { goalProgress } from '@/lib/goals';
 import { signedFriendAmount } from '@/lib/friends';
 import { expenseCategoryAllocations } from '@/lib/transactions';
 import {
@@ -20,6 +18,8 @@ export type FinanceContext = {
     name: string;
     type: string;
     balance: number;
+    /** Balance minus money earmarked for goals. */
+    available: number;
     creditLimit: number | null;
   }[];
   expenseCategories: { id: string; name: string }[];
@@ -65,7 +65,18 @@ export type FinanceContext = {
     name: string;
     balance: number;
   }[];
+  goals: {
+    name: string;
+    target: number;
+    saved: number;
+    progress: number;
+    account: string | null;
+  }[];
 };
+
+type SpendAgg = { _sum: { amount: number | null; sharedAmount?: number | null } };
+/** Spending is your share: friends' shares of split expenses are left out. */
+const spent = (agg: SpendAgg) => (agg._sum.amount || 0) - (agg._sum.sharedAmount || 0);
 
 export async function getFinanceContext(): Promise<FinanceContext> {
   const today = todayInAppTimeZone();
@@ -88,21 +99,9 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     recent,
     recentIncome,
     friendsRaw,
+    goalsRaw,
   ] = await Promise.all([
-    prisma.account.findMany({
-      include: {
-        transactionsFrom: {
-          select: {
-            amount: true,
-            kind: true,
-            accountId: true,
-            accountSplits: true,
-          },
-        },
-        transactionsTo: { where: { kind: 'TRANSFER' }, select: { amount: true } },
-      },
-      orderBy: { name: 'asc' },
-    }),
+    loadAccountBalances(prisma),
     prisma.category.findMany({
       select: { id: true, name: true, type: true },
       orderBy: { name: 'asc' },
@@ -113,11 +112,11 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     }),
     prisma.transaction.aggregate({
       where: { kind: 'EXPENSE', date: todayRange },
-      _sum: { amount: true },
+      _sum: { amount: true, sharedAmount: true },
     }),
     prisma.transaction.aggregate({
       where: { kind: 'EXPENSE', date: last7Days },
-      _sum: { amount: true },
+      _sum: { amount: true, sharedAmount: true },
     }),
     prisma.transaction.aggregate({
       where: { kind: 'INCOME', date: last30Days },
@@ -125,7 +124,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     }),
     prisma.transaction.aggregate({
       where: { kind: 'EXPENSE', date: last30Days },
-      _sum: { amount: true },
+      _sum: { amount: true, sharedAmount: true },
     }),
     prisma.transaction.aggregate({
       where: { kind: 'INCOME', date: thisMonth },
@@ -133,7 +132,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     }),
     prisma.transaction.aggregate({
       where: { kind: 'EXPENSE', date: thisMonth },
-      _sum: { amount: true },
+      _sum: { amount: true, sharedAmount: true },
     }),
     // Split expenses keep their categories in splitItems, so total in code.
     prisma.transaction.findMany({
@@ -141,7 +140,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
         kind: 'EXPENSE',
         date: thisMonth,
       },
-      select: { amount: true, categoryId: true, splitItems: true },
+      select: { amount: true, categoryId: true, splitItems: true, sharedAmount: true },
     }),
     prisma.transaction.findMany({
       take: 20,
@@ -158,38 +157,23 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       include: { entries: true },
       orderBy: { name: 'asc' },
     }),
+    prisma.goal.findMany({
+      include: {
+        account: { select: { name: true } },
+        contributions: { select: { amount: true, transactionId: true } },
+      },
+      orderBy: { name: 'asc' },
+    }),
   ]);
 
-  const splitTxs = await prisma.transaction.findMany({
-    where: { kind: { in: ['INCOME', 'EXPENSE'] } },
-    select: {
-      amount: true,
-      kind: true,
-      accountId: true,
-      accountSplits: true,
-    },
-  });
-  const withSplits = splitTxs.filter((t) => (t.accountSplits || []).length > 0);
-
-  const accounts = accountsRaw.map((a) => {
-    const from = collectFromTransactionsForAccount(
-      a.id,
-      a.transactionsFrom,
-      withSplits
-    );
-    return {
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      balance: computeAccountBalance(
-        a.startingBalance,
-        from,
-        a.transactionsTo,
-        a.id
-      ),
-      creditLimit: a.creditLimit ?? null,
-    };
-  });
+  const accounts = accountsRaw.map((a) => ({
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    balance: a.currentBalance,
+    available: a.available,
+    creditLimit: a.creditLimit ?? null,
+  }));
 
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
   const cashBalance = accounts
@@ -219,7 +203,7 @@ export async function getFinanceContext(): Promise<FinanceContext> {
   const friendsNet = friendsOwedToYou - friendsYouOwe;
 
   const monthIncome = monthIncomeAgg._sum.amount || 0;
-  const monthExpenses = monthExpenseAgg._sum.amount || 0;
+  const monthExpenses = spent(monthExpenseAgg);
 
   const catMap = new Map(categories.map((c) => [c.id, c.name]));
   const categoryTotals = new Map<string, number>();
@@ -250,10 +234,10 @@ export async function getFinanceContext(): Promise<FinanceContext> {
       friendsYouOwe,
       friendsNet,
       todayIncome: todayIncomeAgg._sum.amount || 0,
-      todayExpenses: todayExpenseAgg._sum.amount || 0,
-      weekExpenses: weekExpenseAgg._sum.amount || 0,
+      todayExpenses: spent(todayExpenseAgg),
+      weekExpenses: spent(weekExpenseAgg),
       last30DaysIncome: last30IncomeAgg._sum.amount || 0,
-      last30DaysExpenses: last30ExpenseAgg._sum.amount || 0,
+      last30DaysExpenses: spent(last30ExpenseAgg),
       monthIncome,
       monthExpenses,
       monthNet: monthIncome - monthExpenses,
@@ -279,6 +263,13 @@ export async function getFinanceContext(): Promise<FinanceContext> {
     })),
     friends,
     loans,
+    goals: goalsRaw.map(goalProgress).map((g) => ({
+      name: g.name,
+      target: g.targetAmount,
+      saved: g.totalContributions,
+      progress: Math.round(g.progress),
+      account: g.account?.name ?? null,
+    })),
   };
 }
 

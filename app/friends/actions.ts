@@ -2,9 +2,16 @@
 
 import { prisma } from '@/lib/prisma';
 import { signedFriendAmount } from '@/lib/friends';
+import {
+  createFriendEntry as createEntry,
+  deleteFriend as removeFriend,
+  deleteFriendEntry as removeEntry,
+  updateFriendEntry as updateEntry,
+  type FriendEntryInput,
+} from '@/lib/friendLedger';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { isValidDay, parseDay, todayAsStoredDate } from '@/lib/dates';
+import { todayAsStoredDate } from '@/lib/dates';
 import type { FriendEntryType } from '@prisma/client';
 
 const FRIEND_COLORS = [
@@ -24,21 +31,27 @@ const friendSchema = z.object({
   color: z.string().optional(),
 });
 
-const entrySchema = z.object({
-  friendId: z.string().min(1),
-  date: z.string().refine(isValidDay, 'Please enter a valid date'),
-  amount: z.number().positive('Amount must be positive'),
-  type: z.enum(['THEY_OWE_ME', 'I_OWE_THEM', 'THEY_PAID_ME', 'I_PAID_THEM']),
-  description: z.string().max(120).optional(),
-  notes: z.string().max(300).optional(),
-});
-
 export async function getFriends() {
   try {
     const friends = await prisma.friend.findMany({
       include: {
         entries: {
-          orderBy: { date: 'desc' },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+          include: {
+            account: { select: { id: true, name: true } },
+            // The expense this IOU is a share of.
+            transaction: {
+              select: {
+                id: true,
+                date: true,
+                amount: true,
+                sharedAmount: true,
+                merchantOrSource: true,
+                category: { select: { name: true, icon: true } },
+                account: { select: { name: true } },
+              },
+            },
+          },
         },
       },
       orderBy: { name: 'asc' },
@@ -148,56 +161,47 @@ export async function updateFriend(id: string, formData: FormData) {
 }
 
 export async function deleteFriend(id: string) {
-  try {
-    await prisma.friend.delete({ where: { id } });
-    revalidatePath('/friends');
-    return { success: true };
-  } catch (error) {
-    console.error('Error deleting friend:', error);
-    return { success: false, error: 'Failed to delete friend' };
-  }
+  const result = await removeFriend(id);
+  return result.success ? { success: true as const } : result;
+}
+
+function entryFromForm(formData: FormData): FriendEntryInput {
+  return {
+    friendId: (formData.get('friendId') as string) || '',
+    date: (formData.get('date') as string) || '',
+    amount: parseFloat(formData.get('amount') as string),
+    type: formData.get('type') as FriendEntryType,
+    description: (formData.get('description') as string) || null,
+    notes: (formData.get('notes') as string) || null,
+    accountId: (formData.get('accountId') as string) || null,
+  };
 }
 
 export async function createFriendEntry(formData: FormData) {
-  try {
-    const validated = entrySchema.parse({
-      friendId: formData.get('friendId') as string,
-      date: formData.get('date') as string,
-      amount: parseFloat(formData.get('amount') as string),
-      type: formData.get('type') as FriendEntryType,
-      description: (formData.get('description') as string) || undefined,
-      notes: (formData.get('notes') as string) || undefined,
-    });
+  const result = await createEntry(entryFromForm(formData));
+  return result.success ? { success: true as const } : result;
+}
 
-    await prisma.friendEntry.create({
-      data: {
-        friendId: validated.friendId,
-        date: parseDay(validated.date),
-        amount: validated.amount,
-        type: validated.type,
-        description: validated.description?.trim() || null,
-        notes: validated.notes?.trim() || null,
-      },
-    });
-
-    revalidatePath('/friends');
-    return { success: true };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return { success: false, error: error.errors[0].message };
-    }
-    console.error('Error creating friend entry:', error);
-    return { success: false, error: 'Failed to add entry' };
-  }
+export async function updateFriendEntry(id: string, formData: FormData) {
+  const result = await updateEntry(id, entryFromForm(formData));
+  return result.success ? { success: true as const } : result;
 }
 
 export async function deleteFriendEntry(id: string) {
+  const result = await removeEntry(id);
+  return result.success ? { success: true as const } : result;
+}
+
+/** Friends for the expense form's "Split with friends" picker. */
+export async function getFriendsForSelect() {
   try {
-    await prisma.friendEntry.delete({ where: { id } });
-    revalidatePath('/friends');
-    return { success: true };
+    const friends = await prisma.friend.findMany({
+      select: { id: true, name: true, color: true },
+      orderBy: { name: 'asc' },
+    });
+    return { success: true as const, data: friends };
   } catch (error) {
-    console.error('Error deleting friend entry:', error);
-    return { success: false, error: 'Failed to delete entry' };
+    console.error('Error fetching friends:', error);
+    return { success: false as const, error: 'Failed to fetch friends' };
   }
 }

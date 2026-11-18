@@ -32,6 +32,9 @@ interface Account {
   startingBalance: number;
   creditLimit?: number | null;
   currentBalance: number;
+  /** Goal contributions set aside in this account without a transfer. */
+  earmarked?: number;
+  available?: number;
   transactionCount: number;
 }
 
@@ -182,6 +185,22 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
               {formatCurrency(account.currentBalance)}
             </span>
           </div>
+          {(account.earmarked ?? 0) > 0 && (
+            <>
+              <div className="flex justify-between items-center text-sm mb-1">
+                <span className="text-ink-secondary">Earmarked for goals</span>
+                <span className="text-ink-secondary money">
+                  −{formatCurrency(account.earmarked ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-sm mb-1">
+                <span className="text-ink-secondary">Available</span>
+                <span className="text-mint money font-medium">
+                  {formatCurrency(account.available ?? account.currentBalance)}
+                </span>
+              </div>
+            </>
+          )}
           {account.type === 'CREDIT_CARD' && (
             <div className="flex justify-between items-center text-sm mb-1">
               <span className="text-ink-secondary">Limit</span>

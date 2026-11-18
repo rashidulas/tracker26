@@ -184,6 +184,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
             key={formKey}
             categories={data.categories}
             accounts={data.accounts}
+            friends={data.friends}
             merchants={data.merchants}
             serverAccountByCategory={data.accountByCategory}
             serverLastAccountId={data.lastAccountId}

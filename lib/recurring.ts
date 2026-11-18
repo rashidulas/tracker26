@@ -21,8 +21,8 @@ import type { Prisma, RecurringTransaction } from '@prisma/client';
 import { z } from 'zod';
 import { isValidDay, parseDay, toDayString, todayInAppTimeZone, type DayString } from '@/lib/dates';
 import {
-  createTransactionInTx,
-  runTransactionWrite,
+  createTransactionIn,
+  runLedgerWrite,
   TransactionError,
   type TransactionDeps,
   type TransactionInput,
@@ -214,7 +214,7 @@ export async function createRecurring(
   input: RecurringInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<RecurringTransaction & { linked: number }>> {
-  return runTransactionWrite(deps, 'save recurring entry', async (tx) => {
+  return runLedgerWrite(deps, 'save recurring entry', async (tx) => {
     const p = parse(input);
     const data = await templateData(tx, p);
     const start = parseDay(p.startDate);
@@ -235,7 +235,7 @@ export async function updateRecurring(
   input: RecurringInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<RecurringTransaction>> {
-  return runTransactionWrite(deps, 'update recurring entry', async (tx) => {
+  return runLedgerWrite(deps, 'update recurring entry', async (tx) => {
     const existing = await tx.recurringTransaction.findUnique({ where: { id } });
     if (!existing) fail('Recurring entry not found');
     const p = parse(input);
@@ -260,7 +260,7 @@ export async function setRecurringActive(
   active: boolean,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<RecurringTransaction>> {
-  return runTransactionWrite(deps, active ? 'resume recurring entry' : 'pause recurring entry', async (tx) => {
+  return runLedgerWrite(deps, active ? 'resume recurring entry' : 'pause recurring entry', async (tx) => {
     const existing = await tx.recurringTransaction.findUnique({ where: { id } });
     if (!existing) fail('Recurring entry not found');
     if (active && existing.endDate && existing.nextDueDate > existing.endDate) {
@@ -278,7 +278,7 @@ export async function deleteRecurring(
   id: string,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<{ deleted: true }>> {
-  return runTransactionWrite(deps, 'delete recurring entry', async (tx) => {
+  return runLedgerWrite(deps, 'delete recurring entry', async (tx) => {
     const existing = await tx.recurringTransaction.findUnique({ where: { id }, select: { id: true } });
     if (!existing) fail('Recurring entry not found');
     await tx.transaction.updateMany({ where: { recurringId: id }, data: { recurringId: null } });
@@ -321,7 +321,7 @@ async function handleOccurrence(
       data: { recurringId: id, dueDate: due, status: action === 'POST' ? 'POSTED' : 'SKIPPED' },
     });
     if (action === 'POST') {
-      const created = await createTransactionInTx(tx, templateToInput(rec, postDate), {
+      const created = await createTransactionIn(tx, templateToInput(rec, postDate), {
         recurringId: id,
       });
       transactionId = created.id;
@@ -353,14 +353,14 @@ export async function postRecurringNow(
   deps?: Partial<TransactionDeps>
 ) {
   const today = options.today ?? todayInAppTimeZone();
-  return runTransactionWrite(deps, 'post recurring entry', async (tx) => {
+  return runLedgerWrite(deps, 'post recurring entry', async (tx) => {
     if (!isValidDay(dueDay)) fail('Invalid due date');
     return handleOccurrence(tx, id, dueDay, 'POST', dueDay <= today ? dueDay : today);
   });
 }
 
 export async function skipRecurring(id: string, dueDay: DayString, deps?: Partial<TransactionDeps>) {
-  return runTransactionWrite(deps, 'skip recurring entry', async (tx) => {
+  return runLedgerWrite(deps, 'skip recurring entry', async (tx) => {
     if (!isValidDay(dueDay)) fail('Invalid due date');
     return handleOccurrence(tx, id, dueDay, 'SKIP', dueDay);
   });
@@ -390,7 +390,7 @@ export async function runDueRecurring(
   const result: DueRunResult = { posted: 0, errors: [] };
   for (const entry of due) {
     for (let i = 0; i < MAX_CATCH_UP; i += 1) {
-      const outcome = await runTransactionWrite(deps, 'post recurring entry', async (tx) => {
+      const outcome = await runLedgerWrite(deps, 'post recurring entry', async (tx) => {
         const rec = await tx.recurringTransaction.findUnique({
           where: { id: entry.id },
           select: { active: true, autoPost: true, nextDueDate: true },
