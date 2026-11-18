@@ -2,6 +2,7 @@
 // Dates follow lib/dates.ts: calendar days stored as UTC midnight, "today" in APP_TIMEZONE.
 
 import { prisma } from '@/lib/prisma';
+import { myShareOfExpense } from '@/lib/transactions';
 import {
   addDays,
   eachDay,
@@ -91,10 +92,16 @@ export async function getInsights(
       category: { select: { id: true, name: true, icon: true } },
     } as const;
 
-    const [expenses, income] = await Promise.all([
-      prisma.transaction.findMany({ where: { kind: 'EXPENSE', date }, select, orderBy: { date: 'asc' } }),
+    const [expenseRows, income] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { kind: 'EXPENSE', date },
+        select: { ...select, sharedAmount: true },
+        orderBy: { date: 'asc' },
+      }),
       prisma.transaction.findMany({ where: { kind: 'INCOME', date }, select, orderBy: { date: 'asc' } }),
     ]);
+    // Your share: what friends owe you back for a split expense isn't your spending.
+    const expenses = expenseRows.map((e) => ({ ...e, amount: myShareOfExpense(e) }));
 
     const first =
       start ??

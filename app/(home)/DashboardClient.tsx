@@ -20,6 +20,7 @@ import {
   HandCoins,
   ChevronRight,
   ArrowLeftRight,
+  Target,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -52,12 +53,27 @@ interface FriendSummary {
   entryCount: number;
 }
 
+interface GoalSummary {
+  id: string;
+  name: string;
+  targetAmount: number;
+  saved: number;
+  transferred: number;
+  earmarked: number;
+  progress: number;
+  dueDate: Date | null;
+  accountName: string | null;
+}
+
 interface DashboardClientProps {
   data: {
     monthIncome: number;
     monthExpenses: number;
     totalBalance: number;
     cashBalance: number;
+    /** Goal contributions set aside inside accounts (not transferred). */
+    earmarkedForGoals: number;
+    goals: GoalSummary[];
     creditCards: LiabilityItem[];
     loans: LiabilityItem[];
     friends: FriendSummary[];
@@ -265,13 +281,21 @@ export default function DashboardClient({ data }: DashboardClientProps) {
             <p className="text-[10px] text-ink-muted/80">Checking, savings &amp; other</p>
           </div>
         </div>
-        <p
-          className={`text-xl font-semibold money ${
-            data.cashBalance >= 0 ? 'text-mint' : 'text-danger'
-          }`}
-        >
-          {formatCurrency(data.cashBalance, { decimals: 0 })}
-        </p>
+        <div className="text-right">
+          <p
+            className={`text-xl font-semibold money ${
+              data.cashBalance >= 0 ? 'text-mint' : 'text-danger'
+            }`}
+          >
+            {formatCurrency(data.cashBalance, { decimals: 0 })}
+          </p>
+          {data.earmarkedForGoals > 0 && (
+            <p className="text-[11px] text-ink-muted money">
+              {formatCurrency(data.cashBalance - data.earmarkedForGoals, { decimals: 0 })} available
+              · {formatCurrency(data.earmarkedForGoals, { decimals: 0 })} for goals
+            </p>
+          )}
+        </div>
       </motion.div>
 
       {data.creditCards.length > 0 && (
@@ -754,6 +778,86 @@ export default function DashboardClient({ data }: DashboardClientProps) {
 
       <motion.div
         custom={6}
+        initial="hidden"
+        animate="visible"
+        variants={fadeUp}
+        className="panel shadow-panel p-5 sm:p-6"
+        aria-labelledby="dashboard-goals-heading"
+      >
+        <div className="flex items-start justify-between mb-5 gap-2">
+          <div>
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-mint-dim border border-mint/15 flex items-center justify-center">
+                <Target size={15} className="text-mint" aria-hidden="true" />
+              </div>
+              <h2 id="dashboard-goals-heading" className="text-lg font-semibold text-ink font-display">
+                Goals
+              </h2>
+            </div>
+            <p className="text-xs text-ink-muted pl-[42px]">Savings progress</p>
+          </div>
+          <Link
+            href="/plan/goals"
+            className="inline-flex items-center gap-1 text-xs text-mint hover:text-mint-bright transition-colors shrink-0 pt-1"
+          >
+            Open
+            <ChevronRight size={14} aria-hidden="true" />
+          </Link>
+        </div>
+
+        {data.goals.length > 0 ? (
+          <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {data.goals.slice(0, 6).map((goal) => (
+              <li key={goal.id} className="min-w-0">
+                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                  <p className="text-sm font-medium text-ink truncate">{goal.name}</p>
+                  <p className="text-xs text-ink-muted money shrink-0">
+                    <span className="text-ink">{formatCurrency(goal.saved, { decimals: 0 })}</span>
+                    {' / '}
+                    {formatCurrency(goal.targetAmount, { decimals: 0 })}
+                  </p>
+                </div>
+                <div
+                  className="h-2 w-full rounded-full bg-graphite-surface-2 border border-graphite-border-subtle overflow-hidden"
+                  role="progressbar"
+                  aria-label={`${goal.name} progress`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(goal.progress)}
+                >
+                  <div
+                    className="h-full rounded-full bg-mint"
+                    style={{ width: `${goal.progress}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-ink-muted mt-1 truncate">
+                  {Math.round(goal.progress)}%
+                  {goal.accountName
+                    ? ` · in ${goal.accountName}`
+                    : goal.earmarked > 0
+                    ? ' · earmarked'
+                    : ''}
+                  {goal.dueDate && ` · due ${formatDate(goal.dueDate)}`}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 text-ink-muted">
+            <Target size={26} className="mb-2 opacity-40" aria-hidden="true" />
+            <p className="text-sm mb-1">No goals yet</p>
+            <Link
+              href="/plan/goals"
+              className="mt-3 text-sm text-mint hover:text-mint-bright transition-colors"
+            >
+              Add a goal
+            </Link>
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div
+        custom={7}
         initial="hidden"
         animate="visible"
         variants={fadeUp}

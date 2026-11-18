@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Filter, X, Camera, Receipt, ArrowRight } from 'lucide-react';
+import { Plus, Filter, X, Camera, Receipt, ArrowRight, Users } from 'lucide-react';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Select from '@/components/Select';
 import { useToast } from '@/components/ToastProvider';
-import ExpenseForm from './ExpenseForm';
+import ExpenseForm, { type FriendOption } from './ExpenseForm';
 import ReceiptScanner from './ReceiptScanner';
 import {
   deleteTransactions,
@@ -39,7 +39,11 @@ import {
 } from '@/components/transactions/TransactionList';
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 import { useExpenseSaved } from '@/components/quickadd/useExpenseSaved';
-import { onExpenseEvent, type ExpenseRow } from '@/lib/expenseEvents';
+import {
+  onExpenseEvent,
+  type ExpenseFriendShare,
+  type ExpenseRow,
+} from '@/lib/expenseEvents';
 import type { ExpenseSaveResult } from './ExpenseForm';
 
 interface Expense {
@@ -57,10 +61,18 @@ interface Expense {
   subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
   toAccount: { id: string; name: string } | null;
+  sharedAmount?: number | null;
+  friendEntries?: ExpenseFriendShare[];
+}
+
+/** Your spending on a row: a split expense counts only your share. */
+function myShare(e: Pick<Expense, 'kind' | 'amount' | 'sharedAmount'>) {
+  return e.kind === 'EXPENSE' && e.sharedAmount ? Math.max(0, e.amount - e.sharedAmount) : e.amount;
 }
 
 interface ExpensesClientProps {
   initialExpenses: Expense[];
+  friends?: FriendOption[];
   categories: Array<{
     id: string;
     name: string;
@@ -75,6 +87,7 @@ const EMPTY_FILTERS = { startDate: '', endDate: '', categoryId: '', subcategoryI
 
 export default function ExpensesClient({
   initialExpenses,
+  friends = [],
   categories,
   accounts,
 }: ExpensesClientProps) {
@@ -154,6 +167,7 @@ export default function ExpensesClient({
             expense.subcategory?.name,
             expense.account?.name,
             expense.toAccount?.name,
+            ...(expense.friendEntries ?? []).map((f) => f.friend.name),
             ...expense.tags,
           ],
           expense.amount
@@ -163,7 +177,7 @@ export default function ExpensesClient({
   );
 
   const groups = useMemo(
-    () => groupByDay(filteredExpenses, (e) => e.date, (e) => e.amount),
+    () => groupByDay(filteredExpenses, (e) => e.date, myShare),
     [filteredExpenses]
   );
 
@@ -172,7 +186,8 @@ export default function ExpensesClient({
     .filter((e) => selection.selected.has(e.id))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + myShare(e), 0);
+  const hasSplits = filteredExpenses.some((e) => (e.sharedAmount ?? 0) > 0);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}`;
 
@@ -395,7 +410,7 @@ export default function ExpensesClient({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-ink-muted mb-1">
-              Total this view
+              {hasSplits ? 'Your share this view' : 'Total this view'}
             </p>
             <p className="text-3xl font-semibold text-danger money tracking-tight">
               {formatCurrency(totalExpenses)}
@@ -470,6 +485,21 @@ export default function ExpensesClient({
                       )}
                     </>
                   )}
+                  {(expense.friendEntries?.length ?? 0) > 0 && (
+                    <>
+                      <span className="text-graphite-border">·</span>
+                      <span
+                        className="inline-flex items-center gap-1 truncate text-info"
+                        title={`Your share ${formatCurrency(myShare(expense))}`}
+                      >
+                        <Users size={11} className="shrink-0" aria-hidden="true" />
+                        Split with {expense.friendEntries!.map((f) => f.friend.name).join(', ')}
+                        <span className="hidden sm:inline text-ink-muted">
+                          · you {formatCurrency(myShare(expense))}
+                        </span>
+                      </span>
+                    </>
+                  )}
                   {expense.tags.length > 0 && (
                     <span className="hidden md:inline truncate text-ink-muted/80">
                       · {expense.tags.map((t) => `#${t}`).join(' ')}
@@ -521,6 +551,7 @@ export default function ExpensesClient({
           expense={editingExpense || undefined}
           categories={categories}
           accounts={accounts}
+          friends={friends}
           onSuccess={handleSuccess}
           onCancel={closeModal}
           hideActions

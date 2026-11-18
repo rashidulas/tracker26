@@ -6,6 +6,7 @@ import {
   deleteTransaction,
   updateTransaction,
   type ExpenseInput,
+  type FriendSplit,
   type TransferPurpose,
 } from '@/lib/transactions';
 import { dayFilter } from '@/lib/dates';
@@ -57,12 +58,7 @@ export async function getExpenses(filters?: {
 
     const expenses = await prisma.transaction.findMany({
       where: baseWhere,
-      include: {
-        category: true,
-        subcategory: true,
-        account: true,
-        toAccount: true,
-      },
+      include: rowInclude,
       orderBy: { date: 'desc' },
     });
 
@@ -74,9 +70,26 @@ export async function getExpenses(filters?: {
   }
 }
 
+/**
+ * "friendSplits" is JSON: [{ friendId, amount }]. Absent = leave the current
+ * split alone (forms that don't show it); "[]" = not split.
+ */
+function friendSplitsFromForm(formData: FormData): FriendSplit[] | undefined {
+  const raw = formData.get('friendSplits');
+  if (typeof raw !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((s) => ({ friendId: String(s?.friendId ?? ''), amount: Number(s?.amount) }));
+  } catch {
+    return [];
+  }
+}
+
 function expenseFromForm(formData: FormData): ExpenseInput {
   const tags = (formData.get('tags') as string) || '';
   return {
+    friendSplits: friendSplitsFromForm(formData),
     kind: 'EXPENSE',
     date: (formData.get('date') as string) || '',
     amount: parseFloat(formData.get('amount') as string),
@@ -94,6 +107,14 @@ const rowInclude = {
   subcategory: true,
   account: true,
   toAccount: true,
+  // A split expense's IOUs: who owes you what for it.
+  friendEntries: {
+    select: {
+      id: true,
+      amount: true,
+      friend: { select: { id: true, name: true, color: true } },
+    },
+  },
 } as const;
 
 /** Return the saved row with relations so the UI can update without a reload. */
@@ -166,7 +187,7 @@ export async function createDebtPaymentTransfer(formData: FormData) {
  */
 export async function getQuickAddData() {
   try {
-    const [categories, accounts, recent] = await Promise.all([
+    const [categories, accounts, recent, friends] = await Promise.all([
       prisma.category.findMany({
         where: { type: 'EXPENSE' },
         select: {
@@ -192,6 +213,10 @@ export async function getQuickAddData() {
         },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         take: 500,
+      }),
+      prisma.friend.findMany({
+        select: { id: true, name: true, color: true },
+        orderBy: { name: 'asc' },
       }),
     ]);
 
@@ -226,6 +251,7 @@ export async function getQuickAddData() {
       data: {
         categories,
         accounts,
+        friends,
         merchants: merchants.slice(0, 200),
         accountByCategory,
         lastAccountId: recent.find((t) => t.accountId)?.accountId ?? null,

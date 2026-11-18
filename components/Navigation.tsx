@@ -7,6 +7,7 @@ import {
   Home,
   ListOrdered,
   Target,
+  PiggyBank,
   Wallet,
   Grid2x2,
   Settings,
@@ -25,6 +26,8 @@ type NavItem = {
   hint: string;
   /** Extra path prefixes that belong to this section. */
   also?: string[];
+  /** Path prefixes under href that another item owns. */
+  except?: string[];
 };
 
 const HOME: NavItem = {
@@ -40,7 +43,19 @@ const TRANSACTIONS: NavItem = {
   icon: ListOrdered,
   hint: 'Expenses, income, transfers',
 };
-const PLAN: NavItem = { href: '/plan', label: 'Plan', icon: Target, hint: 'Budgets and goals' };
+const PLAN: NavItem = {
+  href: '/plan',
+  label: 'Plan',
+  icon: Target,
+  hint: 'Budgets',
+  except: ['/plan/goals'],
+};
+const GOALS: NavItem = {
+  href: '/plan/goals',
+  label: 'Goals',
+  icon: PiggyBank,
+  hint: 'Savings goals',
+};
 const ACCOUNTS: NavItem = {
   href: '/accounts',
   label: 'Accounts',
@@ -66,15 +81,18 @@ const SETTINGS: NavItem = {
   hint: 'Categories',
 };
 
-const desktopNavItems = [HOME, TRANSACTIONS, PLAN, ACCOUNTS, FRIENDS, CHAT];
+const desktopNavItems = [HOME, TRANSACTIONS, PLAN, GOALS, ACCOUNTS, FRIENDS, CHAT];
 const mobileTabsLeft = [HOME, TRANSACTIONS];
 const mobileTabsRight = [CHAT];
-const moreItems = [PLAN, ACCOUNTS, FRIENDS, SETTINGS];
+const moreItems = [PLAN, GOALS, ACCOUNTS, FRIENDS, SETTINGS];
+
+function matchesPrefix(pathname: string, href: string) {
+  return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
+}
 
 function isActivePath(pathname: string, item: NavItem) {
-  return [item.href, ...(item.also ?? [])].some((href) =>
-    href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`)
-  );
+  if (item.except?.some((href) => matchesPrefix(pathname, href))) return false;
+  return [item.href, ...(item.also ?? [])].some((href) => matchesPrefix(pathname, href));
 }
 
 function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {

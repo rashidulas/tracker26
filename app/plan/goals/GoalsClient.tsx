@@ -8,9 +8,26 @@ import Button from '@/components/Button';
 import Input from '@/components/Input';
 import Textarea from '@/components/Textarea';
 import Select from '@/components/Select';
-import { createGoal, updateGoal, deleteGoal, createContribution } from './actions';
-import { Plus, Edit2, Trash2, DollarSign, Target as TargetIcon } from 'lucide-react';
-import { useForm } from 'react-hook-form';
+import {
+  createGoal,
+  updateGoal,
+  deleteGoal,
+  createContribution,
+  updateContribution,
+  deleteContribution,
+} from './actions';
+import {
+  Plus,
+  Edit2,
+  Trash2,
+  DollarSign,
+  Target as TargetIcon,
+  ArrowRight,
+  Bookmark,
+  Pencil,
+  Wallet,
+} from 'lucide-react';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { formatDate, formatCurrency } from '@/lib/utils';
@@ -20,6 +37,7 @@ const goalSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   targetAmount: z.string().min(1, 'Target amount is required'),
   dueDate: z.string().optional(),
+  accountId: z.string().optional(),
 });
 
 const contributionSchema = z.object({
@@ -29,58 +47,89 @@ const contributionSchema = z.object({
   notes: z.string().optional(),
 });
 
+type GoalFormData = z.infer<typeof goalSchema>;
+type ContributionFormData = z.infer<typeof contributionSchema>;
+
+interface Contribution {
+  id: string;
+  date: Date;
+  amount: number;
+  notes: string | null;
+  fromAccountId: string;
+  transactionId: string | null;
+  fromAccount: { id: string; name: string } | null;
+}
+
 interface Goal {
   id: string;
   name: string;
   targetAmount: number;
   dueDate: Date | null;
+  accountId: string | null;
+  account: { id: string; name: string } | null;
   totalContributions: number;
+  transferred: number;
+  earmarked: number;
+  remaining: number;
   progress: number;
-  contributions: Array<{
-    id: string;
-    date: Date;
-    amount: number;
-  }>;
+  contributions: Contribution[];
 }
+
+type Account = { id: string; name: string };
 
 interface GoalsClientProps {
   initialGoals: Goal[];
-  accounts: Array<{ id: string; name: string }>;
+  accounts: Account[];
 }
 
-function GoalForm({ goal, onSuccess, onCancel }: any) {
+const accountName = (accounts: Account[], id: string | null | undefined) =>
+  accounts.find((a) => a.id === id)?.name ?? 'account';
+
+function GoalForm({
+  goal,
+  accounts,
+  onSuccess,
+  onCancel,
+}: {
+  goal: Goal | null;
+  accounts: Account[];
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors },
+  } = useForm<GoalFormData>({
     resolver: zodResolver(goalSchema),
     defaultValues: {
       name: goal?.name || '',
       targetAmount: goal?.targetAmount.toString() || '',
       dueDate: goal?.dueDate ? toDayString(goal.dueDate) : '',
+      accountId: goal?.accountId || '',
     },
   });
+  const accountId = useWatch({ control, name: 'accountId' });
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: GoalFormData) => {
     setIsSubmitting(true);
     setError('');
 
     const formData = new FormData();
-    Object.entries(data).forEach(([key, value]) => {
-      if (value) formData.append(key, value as string);
-    });
+    formData.append('name', data.name);
+    formData.append('targetAmount', data.targetAmount);
+    formData.append('dueDate', data.dueDate || '');
+    formData.append('accountId', data.accountId || '');
 
-    const result = goal
-      ? await updateGoal(goal.id, formData)
-      : await createGoal(formData);
+    const result = goal ? await updateGoal(goal.id, formData) : await createGoal(formData);
 
     setIsSubmitting(false);
-
-    if (result.success) {
-      onSuccess();
-    } else {
-      setError(result.error || 'Something went wrong');
-    }
+    if (result.success) onSuccess();
+    else setError(result.error || 'Something went wrong');
   };
 
   return (
@@ -91,16 +140,36 @@ function GoalForm({ goal, onSuccess, onCancel }: any) {
         </div>
       )}
 
-      <Input label="Goal Name" {...register('name')} error={errors.name?.message as string} placeholder="e.g., Emergency Fund" />
+      <Input
+        label="Goal Name"
+        {...register('name')}
+        error={errors.name?.message}
+        placeholder="e.g., Emergency Fund"
+      />
       <Input
         label="Target Amount"
         type="number"
         step="0.01"
         {...register('targetAmount')}
-        error={errors.targetAmount?.message as string}
+        error={errors.targetAmount?.message}
         placeholder="10000.00"
       />
       <Input label="Due Date (Optional)" type="date" {...register('dueDate')} />
+      <div>
+        <Select
+          label="Savings account (optional)"
+          {...register('accountId')}
+          options={[
+            { value: '', label: 'None, earmark money where it is' },
+            ...accounts.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+        />
+        <p className="text-xs text-ink-muted mt-1.5">
+          {accountId
+            ? `Contributions from other accounts become transfers into ${accountName(accounts, accountId)}.`
+            : 'Contributions stay in their account and are set aside: the balance is unchanged, the available amount goes down.'}
+        </p>
+      </div>
 
       <div className="flex gap-3 pt-4">
         <Button type="submit" disabled={isSubmitting} className="flex-1">
@@ -114,38 +183,58 @@ function GoalForm({ goal, onSuccess, onCancel }: any) {
   );
 }
 
-function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
+function ContributionForm({
+  goal,
+  contribution,
+  accounts,
+  onSuccess,
+  onCancel,
+}: {
+  goal: Goal;
+  contribution: Contribution | null;
+  accounts: Account[];
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors },
+  } = useForm<ContributionFormData>({
     resolver: zodResolver(contributionSchema),
     defaultValues: {
-      date: todayInAppTimeZone(),
-      amount: '',
-      fromAccountId: '',
-      notes: '',
+      date: contribution ? toDayString(contribution.date) : todayInAppTimeZone(),
+      amount: contribution ? contribution.amount.toFixed(2) : '',
+      fromAccountId: contribution?.fromAccountId ?? '',
+      notes: contribution?.notes ?? '',
     },
   });
+  const fromAccountId = useWatch({ control, name: 'fromAccountId' });
+  const amount = Number(useWatch({ control, name: 'amount' })) || 0;
+  const transfers = Boolean(goal.accountId && fromAccountId && fromAccountId !== goal.accountId);
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: ContributionFormData) => {
     setIsSubmitting(true);
     setError('');
 
     const formData = new FormData();
-    formData.append('goalId', goalId);
-    Object.entries(data).forEach(([key, value]) => {
-      if (value) formData.append(key, value as string);
-    });
+    formData.append('goalId', goal.id);
+    formData.append('date', data.date);
+    formData.append('amount', data.amount);
+    formData.append('fromAccountId', data.fromAccountId);
+    formData.append('notes', data.notes || '');
 
-    const result = await createContribution(formData);
+    const result = contribution
+      ? await updateContribution(contribution.id, formData)
+      : await createContribution(formData);
     setIsSubmitting(false);
 
-    if (result.success) {
-      onSuccess();
-    } else {
-      setError(result.error || 'Something went wrong');
-    }
+    if (result.success) onSuccess();
+    else setError(result.error || 'Something went wrong');
   };
 
   return (
@@ -174,19 +263,34 @@ function ContributionForm({ goalId, accounts, onSuccess, onCancel }: any) {
         error={errors.fromAccountId?.message}
         options={[
           { value: '', label: 'Select account...' },
-          ...accounts.map((a: any) => ({ value: a.id, label: a.name })),
+          ...accounts.map((a) => ({ value: a.id, label: a.name })),
         ]}
       />
 
-      <Textarea
-        label="Notes (Optional)"
-        {...register('notes')}
-        rows={3}
-      />
+      {fromAccountId && (
+        <div
+          className={`flex items-start gap-2.5 rounded-xl border p-3 text-sm ${
+            transfers ? 'border-info/25 bg-info-dim/30 text-info' : 'border-mint/20 bg-mint-dim/30 text-mint'
+          }`}
+        >
+          {transfers ? (
+            <ArrowRight size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <Bookmark size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          )}
+          <p>
+            {transfers
+              ? `Transfers ${amount > 0 ? formatCurrency(amount) : 'the money'} from ${accountName(accounts, fromAccountId)} to ${goal.account?.name ?? 'the goal account'}. Both balances change.`
+              : `Earmarks ${amount > 0 ? formatCurrency(amount) : 'the money'} in ${accountName(accounts, fromAccountId)}. Its balance stays the same; its available amount goes down.`}
+          </p>
+        </div>
+      )}
+
+      <Textarea label="Notes (Optional)" {...register('notes')} rows={3} />
 
       <div className="flex gap-3 pt-4">
         <Button type="submit" disabled={isSubmitting} className="flex-1">
-          {isSubmitting ? 'Processing...' : 'Add Contribution'}
+          {isSubmitting ? 'Saving...' : contribution ? 'Save changes' : 'Add Contribution'}
         </Button>
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
@@ -215,27 +319,47 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
       return next;
     });
 
-  const visibleGoals = goals.filter((g) => !pendingDelete.has(g.id));
-  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
-  const [isContributionModalOpen, setIsContributionModalOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [selectedGoalForContribution, setSelectedGoalForContribution] = useState<string | null>(null);
-
-  const handleSuccess = () => {
-    toast.success(
-      isContributionModalOpen ? 'Contribution added' : editingGoal ? 'Goal updated' : 'Goal added'
+  const visibleGoals = goals
+    .filter((g) => !pendingDelete.has(g.id))
+    .map((g) =>
+      g.contributions.some((c) => pendingDelete.has(c.id))
+        ? { ...g, contributions: g.contributions.filter((c) => !pendingDelete.has(c.id)) }
+        : g
     );
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [contributionGoalId, setContributionGoalId] = useState<string | null>(null);
+  const [editingContribution, setEditingContribution] = useState<Contribution | null>(null);
+  const contributionGoal = goals.find((g) => g.id === contributionGoalId) ?? null;
+
+  const closeGoalModal = () => {
     setIsGoalModalOpen(false);
-    setIsContributionModalOpen(false);
     setEditingGoal(null);
-    setSelectedGoalForContribution(null);
+  };
+  const closeContributionModal = () => {
+    setContributionGoalId(null);
+    setEditingContribution(null);
+  };
+
+  const handleGoalSaved = () => {
+    toast.success(editingGoal ? 'Goal updated' : 'Goal added');
+    closeGoalModal();
+    router.refresh();
+  };
+
+  const handleContributionSaved = () => {
+    toast.success(editingContribution ? 'Contribution updated' : 'Contribution added');
+    closeContributionModal();
     router.refresh();
   };
 
   const handleDelete = (goal: Goal) => {
     setPending(goal.id, true);
     toast.deferred({
-      message: `Deleted ${goal.name}`,
+      message:
+        goal.transferred > 0
+          ? `Deleted ${goal.name}. Transfers already made stay in your accounts.`
+          : `Deleted ${goal.name}`,
       commit: () => deleteGoal(goal.id),
       errorMessage: 'Failed to delete goal',
       onUndo: () => setPending(goal.id, false),
@@ -245,6 +369,20 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
         setPending(goal.id, false);
         router.refresh();
       },
+    });
+  };
+
+  const handleDeleteContribution = (contribution: Contribution) => {
+    setPending(contribution.id, true);
+    toast.deferred({
+      message: contribution.transactionId
+        ? `Deleted contribution and its ${formatCurrency(contribution.amount)} transfer`
+        : `Deleted ${formatCurrency(contribution.amount)} earmark`,
+      commit: () => deleteContribution(contribution.id),
+      errorMessage: 'Failed to delete contribution',
+      onUndo: () => setPending(contribution.id, false),
+      onFailed: () => setPending(contribution.id, false),
+      onCommitted: () => router.refresh(),
     });
   };
 
@@ -265,10 +403,14 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
               <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                 <TargetIcon size={20} className="sm:w-6 sm:h-6 text-mint flex-shrink-0" />
                 <div className="min-w-0">
-                  <h3 className="text-base sm:text-lg font-semibold text-ink font-display truncate">{goal.name}</h3>
-                  {goal.dueDate && (
-                    <p className="text-xs sm:text-sm text-ink-muted">Due: {formatDate(goal.dueDate)}</p>
-                  )}
+                  <h3 className="text-base sm:text-lg font-semibold text-ink font-display truncate">
+                    {goal.name}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-ink-muted inline-flex items-center gap-1">
+                    <Wallet size={12} aria-hidden="true" />
+                    {goal.account ? `Saved in ${goal.account.name}` : 'Earmarked in your accounts'}
+                    {goal.dueDate && ` · Due ${formatDate(goal.dueDate)}`}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -298,7 +440,14 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                 <span className="font-medium text-ink">{goal.progress.toFixed(1)}%</span>
               </div>
 
-              <div className="w-full bg-graphite-surface-2 border border-graphite-border-subtle rounded-full h-3">
+              <div
+                className="w-full bg-graphite-surface-2 border border-graphite-border-subtle rounded-full h-3"
+                role="progressbar"
+                aria-label={`${goal.name} progress`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(goal.progress)}
+              >
                 <div
                   className="bg-mint h-3 rounded-full transition-all"
                   style={{ width: `${goal.progress}%` }}
@@ -308,7 +457,9 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
               <div className="flex justify-between">
                 <div>
                   <p className="text-xs text-ink-muted">Saved</p>
-                  <p className="font-semibold text-mint money">{formatCurrency(goal.totalContributions)}</p>
+                  <p className="font-semibold text-mint money">
+                    {formatCurrency(goal.totalContributions)}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-ink-muted">Target</p>
@@ -316,20 +467,64 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                 </div>
               </div>
 
-              <div className="text-center pt-2">
-                <p className="text-sm text-ink-secondary">
-                  {formatCurrency(goal.targetAmount - goal.totalContributions)} remaining
-                </p>
-              </div>
+              <p className="text-center pt-1 text-sm text-ink-secondary">
+                {formatCurrency(goal.remaining)} remaining
+                {goal.transferred > 0 && goal.earmarked > 0 && (
+                  <span className="block text-xs text-ink-muted mt-0.5">
+                    {formatCurrency(goal.transferred)} transferred ·{' '}
+                    {formatCurrency(goal.earmarked)} earmarked
+                  </span>
+                )}
+              </p>
             </div>
+
+            {goal.contributions.length > 0 && (
+              <ul className="mb-4 space-y-1.5" aria-label={`${goal.name} contributions`}>
+                {goal.contributions.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center gap-2 rounded-xl border border-graphite-border-subtle bg-graphite-surface-2/40 pl-3 pr-1 py-1"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-ink money">{formatCurrency(c.amount)}</p>
+                      <p className="text-xs text-ink-muted truncate">
+                        {formatDate(c.date)} ·{' '}
+                        {c.transactionId
+                          ? `Transfer ${c.fromAccount?.name ?? ''} → ${goal.account?.name ?? 'goal account'}`
+                          : `Earmarked in ${c.fromAccount?.name ?? 'account'}`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingContribution(c);
+                        setContributionGoalId(goal.id);
+                      }}
+                      className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"
+                      aria-label={`Edit ${formatCurrency(c.amount)} contribution from ${formatDate(c.date)}`}
+                    >
+                      <Pencil size={14} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteContribution(c)}
+                      className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-danger hover:bg-danger-dim transition-colors"
+                      aria-label={`Delete ${formatCurrency(c.amount)} contribution from ${formatDate(c.date)}`}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             <Button
               variant="primary"
               size="sm"
               className="w-full"
               onClick={() => {
-                setSelectedGoalForContribution(goal.id);
-                setIsContributionModalOpen(true);
+                setEditingContribution(null);
+                setContributionGoalId(goal.id);
               }}
             >
               <DollarSign size={16} />
@@ -348,39 +543,36 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
 
       <Modal
         isOpen={isGoalModalOpen}
-        onClose={() => {
-          setIsGoalModalOpen(false);
-          setEditingGoal(null);
-        }}
+        onClose={closeGoalModal}
         title={editingGoal ? 'Edit Goal' : 'Add Goal'}
       >
-        <GoalForm
-          goal={editingGoal}
-          onSuccess={handleSuccess}
-          onCancel={() => {
-            setIsGoalModalOpen(false);
-            setEditingGoal(null);
-          }}
-        />
+        {isGoalModalOpen && (
+          <GoalForm
+            goal={editingGoal}
+            accounts={accounts}
+            onSuccess={handleGoalSaved}
+            onCancel={closeGoalModal}
+          />
+        )}
       </Modal>
 
       <Modal
-        isOpen={isContributionModalOpen}
-        onClose={() => {
-          setIsContributionModalOpen(false);
-          setSelectedGoalForContribution(null);
-        }}
-        title="Add Contribution"
+        isOpen={Boolean(contributionGoal)}
+        onClose={closeContributionModal}
+        title={
+          contributionGoal
+            ? `${editingContribution ? 'Edit contribution' : 'Add contribution'} · ${contributionGoal.name}`
+            : 'Contribution'
+        }
       >
-        {selectedGoalForContribution && (
+        {contributionGoal && (
           <ContributionForm
-            goalId={selectedGoalForContribution}
+            key={editingContribution?.id ?? 'new'}
+            goal={contributionGoal}
+            contribution={editingContribution}
             accounts={accounts}
-            onSuccess={handleSuccess}
-            onCancel={() => {
-              setIsContributionModalOpen(false);
-              setSelectedGoalForContribution(null);
-            }}
+            onSuccess={handleContributionSaved}
+            onCancel={closeContributionModal}
           />
         )}
       </Modal>

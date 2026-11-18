@@ -3,6 +3,13 @@
  * that is currently on screen (e.g. /expenses) without reloading the page.
  */
 
+/** A friend's share of a split expense (one IOU entry). */
+export type ExpenseFriendShare = {
+  id: string;
+  amount: number;
+  friend: { id: string; name: string; color: string };
+};
+
 export type ExpenseRow = {
   id: string;
   date: Date;
@@ -19,6 +26,9 @@ export type ExpenseRow = {
   subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
   toAccount: { id: string; name: string } | null;
+  /** What friends owe you for this expense; your share is amount - sharedAmount. */
+  sharedAmount?: number | null;
+  friendEntries?: ExpenseFriendShare[];
 };
 
 export type ExpenseEvent =

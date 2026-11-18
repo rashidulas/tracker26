@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
+import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/transactions';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -31,17 +32,23 @@ export async function getBudgetMonth(key: string) {
         orderBy: { name: 'asc' },
       }),
       prisma.budget.findMany({ where: { month } }),
-      prisma.transaction.groupBy({
-        by: ['categoryId'],
+      // Totalled in code: category-split expenses keep their categories in
+      // splitItems, and only your share of an expense split with friends counts.
+      prisma.transaction.findMany({
         where: { kind: 'EXPENSE', date: { gte: month, lt: next } },
-        _sum: { amount: true },
+        select: { amount: true, categoryId: true, splitItems: true, sharedAmount: true },
       }),
     ]);
 
     const budgetByCategory = new Map(budgets.map((b) => [b.categoryId, b]));
-    const spentByCategory = new Map(
-      spending.map((s) => [s.categoryId ?? 'uncategorized', s._sum.amount ?? 0])
-    );
+    const spentByCategory = new Map<string, number>();
+    const addSpent = (key: string, amount: number) =>
+      spentByCategory.set(key, (spentByCategory.get(key) ?? 0) + amount);
+    for (const expense of spending) {
+      const shares = expenseCategoryAllocations(expense);
+      if (shares.length === 0) addSpent('uncategorized', myShareOfExpense(expense));
+      for (const share of shares) addSpent(share.categoryId, share.amount);
+    }
 
     const rows = categories.map((c) => ({
       categoryId: c.id,

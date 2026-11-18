@@ -1,13 +1,13 @@
 /**
  * What still points at an account or category. Used to refuse deletes that
  * would cascade-delete transfers, orphan account/category splits, or leave
- * goal contributions and budgets dangling.
+ * goal contributions, goals, friend settlements and budgets dangling.
  */
 import type { PrismaClient } from '@prisma/client';
 
 type ReferenceDb = Pick<
   PrismaClient,
-  'transaction' | 'goalContribution' | 'budget' | 'subcategory'
+  'transaction' | 'goalContribution' | 'budget' | 'subcategory' | 'goal' | 'friendEntry'
 >;
 
 function plural(n: number, one: string, many = `${one}s`) {
@@ -24,7 +24,7 @@ function sentence(subject: string, parts: string[]) {
 }
 
 export async function accountReferences(db: ReferenceDb, accountId: string) {
-  const [primary, transfersIn, splitShares, contributions] = await Promise.all([
+  const [primary, transfersIn, splitShares, contributions, goals, friendEntries] = await Promise.all([
     db.transaction.count({ where: { accountId } }),
     db.transaction.count({ where: { toAccountId: accountId, NOT: { accountId } } }),
     db.transaction.count({
@@ -34,8 +34,10 @@ export async function accountReferences(db: ReferenceDb, accountId: string) {
       },
     }),
     db.goalContribution.count({ where: { fromAccountId: accountId } }),
+    db.goal.count({ where: { accountId } }),
+    db.friendEntry.count({ where: { accountId } }),
   ]);
-  return { primary, transfersIn, splitShares, contributions };
+  return { primary, transfersIn, splitShares, contributions, goals, friendEntries };
 }
 
 /** null when the account can be deleted; otherwise a message listing what is attached. */
@@ -46,6 +48,10 @@ export async function accountDeleteBlocker(db: ReferenceDb, accountId: string, n
   if (r.transfersIn) parts.push(`${plural(r.transfersIn, 'transfer')} into it`);
   if (r.splitShares) parts.push(`${plural(r.splitShares, 'split transaction')} with a share in it`);
   if (r.contributions) parts.push(plural(r.contributions, 'goal contribution'));
+  if (r.goals) parts.push(`${plural(r.goals, 'goal')} saving into it`);
+  if (r.friendEntries) {
+    parts.push(`${plural(r.friendEntries, 'friend entry', 'friend entries')} paid through it`);
+  }
   return sentence(name ? `account "${name}"` : 'account', parts);
 }
 

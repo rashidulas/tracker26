@@ -1,11 +1,12 @@
 import { getFriends } from './actions';
+import { getAccountsForSelect } from '@/app/accounts/actions';
 import FriendsClient from './FriendsClient';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function FriendsPage() {
-  const result = await getFriends();
+  const [result, accountsResult] = await Promise.all([getFriends(), getAccountsForSelect()]);
 
   if (!result.success) {
     return (
@@ -17,5 +18,10 @@ export default async function FriendsPage() {
     );
   }
 
-  return <FriendsClient initialFriends={result.data || []} />;
+  return (
+    <FriendsClient
+      initialFriends={result.data || []}
+      accounts={accountsResult.success ? accountsResult.data || [] : []}
+    />
+  );
 }

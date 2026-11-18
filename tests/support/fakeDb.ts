@@ -16,6 +16,9 @@ const MODELS = [
   'transaction',
   'goalContribution',
   'budget',
+  'goal',
+  'friend',
+  'friendEntry',
 ] as const;
 type ModelName = (typeof MODELS)[number];
 
@@ -34,9 +37,13 @@ const DEFAULTS: Record<ModelName, Doc> = {
     splitItems: [],
     accountSplits: [],
     splitGroupId: null,
+    sharedAmount: null,
   },
-  goalContribution: { notes: null },
+  goalContribution: { notes: null, transactionId: null },
   budget: {},
+  goal: { dueDate: null, accountId: null },
+  friend: { notes: null, color: '#7aa2f7' },
+  friendEntry: { description: null, notes: null, transactionId: null, accountId: null },
 };
 
 let counter = 0;
@@ -113,6 +120,9 @@ export class FakeDb {
     transaction: [],
     goalContribution: [],
     budget: [],
+    goal: [],
+    friend: [],
+    friendEntry: [],
   };
   private inTransaction = false;
   /** Number of $transaction calls that committed. */
@@ -201,6 +211,9 @@ export class FakeDb {
   transaction = this.model('transaction');
   goalContribution = this.model('goalContribution');
   budget = this.model('budget');
+  goal = this.model('goal');
+  friend = this.model('friend');
+  friendEntry = this.model('friendEntry');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) throw new Error('FakeDb: nested $transaction');

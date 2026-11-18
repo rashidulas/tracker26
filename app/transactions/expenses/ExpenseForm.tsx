@@ -27,7 +27,28 @@ import {
   ChevronUp,
   Plus,
   Store,
+  Users,
 } from 'lucide-react';
+
+export interface FriendOption {
+  id: string;
+  name: string;
+  color?: string | null;
+}
+
+type SplitRow = { friendId: string; amount: string };
+
+const toCents = (raw: string | number) => Math.round(Number(raw) * 100);
+
+/**
+ * Equal split of `total` between you and each friend. Friends get the same
+ * whole-cent share; you absorb the leftover cent(s).
+ */
+function equalFriendShares(total: number, friendCount: number): string[] {
+  if (!(total > 0) || friendCount === 0) return Array(friendCount).fill('');
+  const each = Math.floor(toCents(total) / (friendCount + 1));
+  return Array(friendCount).fill((each / 100).toFixed(2));
+}
 
 const DEBT_PAYMENT_SENTINEL = '__DEBT_PAYMENT__';
 const PAYMENT_SENTINEL = '__PAYMENT__';
@@ -110,7 +131,10 @@ interface ExpenseFormProps {
     merchantOrSource?: string | null;
     notes?: string | null;
     tags: string[];
+    friendEntries?: Array<{ amount: number; friend: { id: string } }>;
   };
+  /** Friends you can split this expense with. */
+  friends?: FriendOption[];
   categories: Array<{
     id: string;
     name: string;
@@ -157,6 +181,7 @@ export default function ExpenseForm({
   categories,
   accounts,
   merchants = [],
+  friends = [],
   serverAccountByCategory = {},
   serverLastAccountId = null,
   onSuccess,
@@ -184,6 +209,17 @@ export default function ExpenseForm({
   // Once the user picks an account themselves, smart defaults stop touching it.
   const accountTouched = useRef(Boolean(expense));
   const amountRef = useRef<HTMLInputElement | null>(null);
+
+  // ---- Split with friends ----------------------------------------------------
+  const initialSplit: SplitRow[] = (expense?.friendEntries ?? []).map((e) => ({
+    friendId: e.friend.id,
+    amount: e.amount.toFixed(2),
+  }));
+  const [splitOpen, setSplitOpen] = useState(initialSplit.length > 0);
+  const [splitRows, setSplitRows] = useState<SplitRow[]>(initialSplit);
+  // Equal shares follow the amount until a share is typed by hand. An existing
+  // split keeps its saved amounts.
+  const [splitCustom, setSplitCustom] = useState(initialSplit.length > 0);
 
   const accountExists = (id: string | null | undefined): id is string =>
     Boolean(id && accounts.some((a) => a.id === id));
@@ -226,6 +262,7 @@ export default function ExpenseForm({
   const selectedSubcategoryId = useWatch({ control, name: 'subcategoryId' });
   const selectedDate = useWatch({ control, name: 'date' });
   const merchantVal = useWatch({ control, name: 'merchantOrSource' }) || '';
+  const amountVal = useWatch({ control, name: 'amount' }) || '';
 
   const isDebtPayment = selectedCategoryId === DEBT_PAYMENT_SENTINEL;
   const isPayment = selectedCategoryId === PAYMENT_SENTINEL;
@@ -384,6 +421,41 @@ export default function ExpenseForm({
     resetNewCategory();
   };
 
+  const totalAmount = Number(amountVal) > 0 ? Number(amountVal) : 0;
+  const splitShares: SplitRow[] = splitCustom
+    ? splitRows
+    : (() => {
+        const equal = equalFriendShares(totalAmount, splitRows.length);
+        return splitRows.map((r, i) => ({ ...r, amount: equal[i] }));
+      })();
+  const friendsTotalCents = splitShares.reduce((sum, r) => sum + (toCents(r.amount) || 0), 0);
+  const myShareCents = toCents(totalAmount) - friendsTotalCents;
+  const splitActive = splitOpen && splitShares.length > 0;
+  const splitError = !splitActive
+    ? ''
+    : splitShares.some((r) => !(Number(r.amount) > 0))
+    ? "Enter each friend's share"
+    : myShareCents < 0
+    ? "Friends' shares are more than the amount"
+    : '';
+
+  const toggleSplitFriend = (friendId: string) => {
+    // Changing who is in the split goes back to equal shares.
+    setSplitCustom(false);
+    setSplitRows((rows) =>
+      rows.some((r) => r.friendId === friendId)
+        ? rows.filter((r) => r.friendId !== friendId)
+        : [...rows, { friendId, amount: '' }]
+    );
+  };
+
+  const setSplitAmount = (friendId: string, value: string) => {
+    setSplitCustom(true);
+    setSplitRows(
+      splitShares.map((r) => (r.friendId === friendId ? { ...r, amount: value } : r))
+    );
+  };
+
   // ---- Submit ----------------------------------------------------------------
 
   const fromAccount = accounts.find((a) => a.id === selectedFromAccountId);
@@ -403,6 +475,10 @@ export default function ExpenseForm({
   };
 
   const onSubmit = async (data: ExpenseFormData) => {
+    if (!isTransfer && splitError) {
+      toast.error(splitError);
+      return;
+    }
     const intent: SubmitIntent = submitIntentRef?.current ?? 'save';
     if (submitIntentRef) submitIntentRef.current = 'save';
     setIsSubmitting(true);
@@ -432,6 +508,14 @@ export default function ExpenseForm({
         formData.append('merchantOrSource', data.merchantOrSource || '');
         formData.append('notes', data.notes || '');
         formData.append('tags', data.tags || '');
+        formData.append(
+          'friendSplits',
+          JSON.stringify(
+            splitActive
+              ? splitShares.map((r) => ({ friendId: r.friendId, amount: Number(r.amount) }))
+              : []
+          )
+        );
         result = expense
           ? await updateExpense(expense.id, formData)
           : await createExpense(formData);
@@ -468,6 +552,9 @@ export default function ExpenseForm({
           payAmount: '',
         });
         accountTouched.current = true;
+        setSplitOpen(false);
+        setSplitRows([]);
+        setSplitCustom(false);
         requestAnimationFrame(() => amountRef.current?.focus());
       }
 
@@ -988,6 +1075,119 @@ export default function ExpenseForm({
               ...accounts.map((a) => ({ value: a.id, label: a.name })),
             ]}
           />
+
+          {friends.length > 0 && (
+            <div className="rounded-2xl border border-graphite-border-subtle bg-graphite-surface-2/40 p-3.5">
+              <button
+                type="button"
+                onClick={() => setSplitOpen((v) => !v)}
+                aria-expanded={splitOpen}
+                aria-controls={`${formId}-split`}
+                className="w-full flex items-center justify-between gap-2 text-sm font-medium text-ink-secondary hover:text-ink"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Users size={16} aria-hidden="true" />
+                  Split with friends
+                  {splitActive && (
+                    <span className="text-xs font-normal text-ink-muted">
+                      · {splitShares.length} friend{splitShares.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </span>
+                {splitOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+
+              {splitOpen && (
+                <div id={`${formId}-split`} className="mt-3 space-y-3">
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Friends in this split"
+                  >
+                    {friends.map((f) => {
+                      const on = splitRows.some((r) => r.friendId === f.id);
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => toggleSplitFriend(f.id)}
+                          aria-pressed={on}
+                          className={chipClass(on)}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+                            style={{ backgroundColor: f.color || '#7aa2f7' }}
+                          />
+                          {f.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {splitShares.length > 0 && (
+                    <div className="space-y-2">
+                      {splitShares.map((row) => {
+                        const friend = friends.find((f) => f.id === row.friendId);
+                        return (
+                          <div key={row.friendId} className="flex items-center gap-3">
+                            <label
+                              htmlFor={`${formId}-split-${row.friendId}`}
+                              className="flex-1 min-w-0 truncate text-sm text-ink-secondary"
+                            >
+                              {friend?.name ?? 'Friend'} owes you
+                            </label>
+                            <div className="relative w-32">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">
+                                $
+                              </span>
+                              <input
+                                id={`${formId}-split-${row.friendId}`}
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                inputMode="decimal"
+                                value={row.amount}
+                                onChange={(e) => setSplitAmount(row.friendId, e.target.value)}
+                                placeholder="0.00"
+                                className="w-full rounded-xl border border-graphite-border-subtle bg-graphite-surface px-3 py-2 pl-6 text-right text-sm text-ink money outline-none focus:border-mint/50"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div className="flex items-center justify-between gap-3 border-t border-graphite-border-subtle pt-2 text-sm">
+                        <span className="text-ink-muted">
+                          Your share{' '}
+                          <span className={myShareCents < 0 ? 'text-danger' : 'text-ink money'}>
+                            ${(myShareCents / 100).toFixed(2)}
+                          </span>
+                        </span>
+                        {splitCustom && (
+                          <button
+                            type="button"
+                            onClick={() => setSplitCustom(false)}
+                            className="text-xs text-mint hover:underline"
+                          >
+                            Split equally
+                          </button>
+                        )}
+                      </div>
+                      {splitError && (
+                        <p className="text-sm text-danger" role="alert">
+                          {splitError}
+                        </p>
+                      )}
+                      <p className="text-xs text-ink-muted">
+                        The account pays the full amount. Budgets and spending count only your
+                        share; each friend gets a &ldquo;they owe me&rdquo; entry.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"

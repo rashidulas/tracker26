@@ -71,9 +71,11 @@ model Account {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  transactionsFrom Transaction[]            @relation("FromAccount")
-  transactionsTo   Transaction[]            @relation("ToAccount")
+  transactionsFrom  Transaction[]      @relation("FromAccount")
+  transactionsTo    Transaction[]      @relation("ToAccount")
   goalContributions GoalContribution[]
+  goals             Goal[]
+  friendEntries     FriendEntry[]
 
   @@index([type])
 }
@@ -104,6 +106,10 @@ model Transaction {
   splitItems       SplitItem[]
   accountSplits    AccountSplitItem[]
   splitGroupId     String?
+  /// Expenses only: the part of `amount` that friends owe you (the sum of the
+  /// linked FriendEntry rows). Your spending is amount - sharedAmount; the
+  /// account balance still moves by the full amount. Kept by lib/transactions.
+  sharedAmount     Float?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -111,6 +117,9 @@ model Transaction {
   subcategory Subcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   account     Account?     @relation("FromAccount", fields: [accountId], references: [id], onDelete: Cascade)
   toAccount   Account?     @relation("ToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  friendEntries     FriendEntry[]
+  goalContributions GoalContribution[]
 
   @@index([date])
   @@index([kind])
@@ -123,14 +132,20 @@ model Transaction {
 }
 
 model Goal {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
   name         String
   targetAmount Float
   dueDate      DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  /// Optional account that holds this goal's savings. When set, contributions
+  /// are real transfers into it; otherwise they are earmarks on the source.
+  accountId    String?   @db.ObjectId
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  account       Account?           @relation(fields: [accountId], references: [id])
   contributions GoalContribution[]
+
+  @@index([accountId])
 }
 
 model GoalContribution {
@@ -139,15 +154,20 @@ model GoalContribution {
   date          DateTime
   amount        Float
   fromAccountId String   @db.ObjectId
+  /// The TRANSFER that moved this money into the goal's account. Null means
+  /// an earmark: the money stays in fromAccount but is no longer "available".
+  transactionId String?  @db.ObjectId
   notes         String?
   createdAt     DateTime @default(now())
 
-  goal        Goal    @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  fromAccount Account @relation(fields: [fromAccountId], references: [id])
+  goal        Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  fromAccount Account      @relation(fields: [fromAccountId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([goalId])
   @@index([fromAccountId])
+  @@index([transactionId])
 }
 
 model Budget {
@@ -193,12 +213,22 @@ model FriendEntry {
   type        FriendEntryType
   description String?
   notes       String?
+  /// Set when this IOU is a friend's share of one of your expenses. The
+  /// expense moved the money, so an entry with a transaction has no account.
+  transactionId String?       @db.ObjectId
+  /// Account the money went through (lent, borrowed, received or paid back).
+  /// Moves that account's balance. Never set together with transactionId.
+  accountId     String?       @db.ObjectId
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  friend Friend @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  friend      Friend       @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     Account?     @relation(fields: [accountId], references: [id])
 
   @@index([friendId])
   @@index([date])
   @@index([friendId, date])
+  @@index([transactionId])
+  @@index([accountId])
 }

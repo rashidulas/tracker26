@@ -9,6 +9,8 @@ const emptyData = {
   monthExpenses: 0,
   totalBalance: 0,
   cashBalance: 0,
+  earmarkedForGoals: 0,
+  goals: [],
   creditCards: [],
   loans: [],
   friends: [],

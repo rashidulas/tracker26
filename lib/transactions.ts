@@ -12,6 +12,16 @@
  *   - editing a transfer keeps its category and system tags ("payment", ...)
  *   - every multi-document write runs inside one prisma.$transaction
  *   - every page that shows transactions or balances is revalidated
+ *   - an expense split with friends keeps one THEY_OWE_ME FriendEntry per
+ *     friend (FriendEntry.transactionId) and Transaction.sharedAmount = their
+ *     sum; deleting the expense deletes those entries
+ *   - a transfer that is a goal contribution (GoalContribution.transactionId)
+ *     keeps the contribution's amount, date and source account in step, and
+ *     deleting the transfer deletes the contribution
+ *
+ * lib/friendLedger.ts and lib/goalLedger.ts build on the *In primitives and
+ * runLedgerWrite here, so a friend entry or goal contribution and the
+ * transaction it belongs to are written in the same database transaction.
  *
  * Server-only. Not a 'use server' file: callers are server actions.
  */
@@ -23,6 +33,8 @@ import { isValidDay, parseDay, toDayString } from '@/lib/dates';
 
 export type TransactionDb = Pick<PrismaClient, '$transaction'>;
 type Tx = Prisma.TransactionClient;
+/** The client handed to work running inside runLedgerWrite. */
+export type LedgerTx = Tx;
 
 export type TransactionDeps = {
   db: TransactionDb;
@@ -38,6 +50,8 @@ export const TRANSACTION_PAGES = [
   '/transactions/income',
   '/transactions/transfers',
   '/plan/budgets',
+  '/plan/goals',
+  '/friends',
   '/chat',
 ] as const;
 
@@ -132,6 +146,11 @@ const splitItemSchema = z.object({
   notes: optionalText(200),
 });
 
+const friendSplitSchema = z.object({
+  friendId: objectId('Friend'),
+  amount: z.number().finite().positive("A friend's share must be positive"),
+});
+
 const common = {
   date: dateSchema,
   amount: amountSchema,
@@ -148,6 +167,11 @@ const expenseInputSchema = z.object({
   accountId: optionalObjectId('Account'),
   accountSplits: z.array(accountSplitSchema).optional(),
   splitItems: z.array(splitItemSchema).optional(),
+  /**
+   * What each friend owes you for this expense. undefined = keep the current
+   * split on update; [] = not split.
+   */
+  friendSplits: z.array(friendSplitSchema).optional(),
 });
 
 const incomeInputSchema = z.object({
@@ -177,6 +201,7 @@ export type ExpenseInput = z.input<typeof expenseInputSchema>;
 export type IncomeInput = z.input<typeof incomeInputSchema>;
 export type TransferInput = z.input<typeof transferInputSchema>;
 export type TransactionInput = z.input<typeof transactionInputSchema>;
+export type FriendSplit = z.input<typeof friendSplitSchema>;
 type ParsedInput = z.output<typeof transactionInputSchema>;
 
 export type TransactionResult<T = Transaction> =
@@ -188,11 +213,12 @@ export type TransactionResult<T = Transaction> =
 /** A problem with the request that the user can fix. Message is shown as-is. */
 export class TransactionError extends Error {}
 
-function fail(message: string): never {
+export function fail(message: string): never {
   throw new TransactionError(message);
 }
 
-const cents = (n: number) => Math.round(n * 100);
+export const cents = (n: number) => Math.round(n * 100);
+const money = (n: number) => `$${n.toFixed(2)}`;
 
 function kindLabel(kind: TransactionKind) {
   return kind === 'INCOME' ? 'income' : kind === 'EXPENSE' ? 'an expense' : 'a transfer';
@@ -423,7 +449,12 @@ function parseInput(input: TransactionInput): ParsedInput {
 
 // ==================== RUNNER ====================
 
-async function run<T>(
+/**
+ * Runs `work` in one database transaction, turns TransactionError into a
+ * user-facing error and revalidates every page that shows money. Used by this
+ * module and by lib/friendLedger.ts and lib/goalLedger.ts.
+ */
+export async function runLedgerWrite<T>(
   deps: Partial<TransactionDeps> | undefined,
   label: string,
   work: (tx: Tx) => Promise<T>
@@ -441,20 +472,209 @@ async function run<T>(
   return { success: true, data };
 }
 
+const run = runLedgerWrite;
+
+// ==================== LINKED FRIEND ENTRIES ====================
+
+/** Description given to the IOU entries of a split expense. */
+async function sharedExpenseDescription(
+  tx: Tx,
+  t: Pick<Transaction, 'merchantOrSource' | 'categoryId'>
+): Promise<string> {
+  if (t.merchantOrSource) return t.merchantOrSource;
+  if (t.categoryId) {
+    const category = await tx.category.findUnique({
+      where: { id: t.categoryId },
+      select: { name: true },
+    });
+    if (category) return category.name;
+  }
+  return 'Shared expense';
+}
+
+/**
+ * Makes the expense's linked THEY_OWE_ME entries match `splits` (one per
+ * friend) and stores their sum in sharedAmount. With `splits` undefined the
+ * current entries are kept and only follow the expense's date and name.
+ *
+ * `previousDescription` is the auto description before this edit: an entry
+ * whose description was changed by hand keeps it.
+ */
+async function syncFriendSplits(
+  tx: Tx,
+  transaction: Transaction,
+  splits: { friendId: string; amount: number }[] | undefined,
+  previousDescription: string | null
+): Promise<void> {
+  const existing = await tx.friendEntry.findMany({ where: { transactionId: transaction.id } });
+  if (splits === undefined && existing.length === 0) return;
+  if (transaction.kind !== 'EXPENSE') {
+    if ((splits?.length ?? 0) > 0 || existing.length > 0) {
+      fail('Only expenses can be split with friends');
+    }
+    return;
+  }
+
+  const description = await sharedExpenseDescription(tx, transaction);
+  const keepsAutoDescription = (current: string | null) =>
+    !current || current === previousDescription || current === description;
+
+  let shared = 0;
+  if (splits === undefined) {
+    for (const entry of existing) {
+      shared += entry.amount;
+      await tx.friendEntry.update({
+        where: { id: entry.id },
+        data: {
+          date: transaction.date,
+          ...(keepsAutoDescription(entry.description) ? { description } : {}),
+        },
+      });
+    }
+  } else {
+    const friendIds = splits.map((s) => s.friendId);
+    if (new Set(friendIds).size !== friendIds.length) {
+      fail('Each friend can only be in a split once');
+    }
+    if (friendIds.length > 0) {
+      const found = await tx.friend.findMany({
+        where: { id: { in: friendIds } },
+        select: { id: true },
+      });
+      if (found.length !== friendIds.length) fail('Friend not found');
+    }
+
+    const kept = new Set<string>();
+    for (const split of splits) {
+      shared += split.amount;
+      const current = existing.find((e) => e.friendId === split.friendId && !kept.has(e.id));
+      if (current) {
+        kept.add(current.id);
+        await tx.friendEntry.update({
+          where: { id: current.id },
+          data: {
+            amount: split.amount,
+            date: transaction.date,
+            ...(keepsAutoDescription(current.description) ? { description } : {}),
+          },
+        });
+      } else {
+        await tx.friendEntry.create({
+          data: {
+            friendId: split.friendId,
+            transactionId: transaction.id,
+            accountId: null,
+            type: 'THEY_OWE_ME',
+            amount: split.amount,
+            date: transaction.date,
+            description,
+          },
+        });
+      }
+    }
+    const removed = existing.filter((e) => !kept.has(e.id)).map((e) => e.id);
+    if (removed.length > 0) {
+      await tx.friendEntry.deleteMany({ where: { id: { in: removed } } });
+    }
+  }
+
+  if (cents(shared) > cents(transaction.amount)) {
+    fail(
+      `Friends' shares (${money(shared)}) can't be more than the expense (${money(transaction.amount)})`
+    );
+  }
+  const sharedAmount = shared > 0 ? cents(shared) / 100 : null;
+  if ((transaction.sharedAmount ?? null) !== sharedAmount) {
+    await tx.transaction.update({ where: { id: transaction.id }, data: { sharedAmount } });
+    transaction.sharedAmount = sharedAmount;
+  }
+}
+
+/**
+ * Recomputes an expense's sharedAmount from its linked friend entries, after
+ * one of them was edited or deleted on the Friends page.
+ */
+export async function refreshSharedAmount(tx: Tx, transactionId: string): Promise<void> {
+  const transaction = await tx.transaction.findUnique({ where: { id: transactionId } });
+  if (!transaction) return;
+  const entries = await tx.friendEntry.findMany({
+    where: { transactionId },
+    select: { amount: true },
+  });
+  const shared = entries.reduce((sum, e) => sum + e.amount, 0);
+  if (cents(shared) > cents(transaction.amount)) {
+    fail(
+      `Friends' shares (${money(shared)}) can't be more than the expense (${money(transaction.amount)})`
+    );
+  }
+  const sharedAmount = shared > 0 ? cents(shared) / 100 : null;
+  if ((transaction.sharedAmount ?? null) !== sharedAmount) {
+    await tx.transaction.update({ where: { id: transactionId }, data: { sharedAmount } });
+  }
+}
+
+// ==================== LINKED GOAL CONTRIBUTIONS ====================
+
+/**
+ * A transfer that funds a goal: the contribution follows the transfer's
+ * amount, date and source account. Its destination must stay the goal's
+ * account, otherwise the goal and the account would disagree.
+ */
+async function syncGoalContributions(tx: Tx, transfer: Transaction): Promise<void> {
+  const linked = await tx.goalContribution.findMany({
+    where: { transactionId: transfer.id },
+    select: { id: true, goalId: true },
+  });
+  for (const contribution of linked) {
+    const goal = await tx.goal.findUnique({
+      where: { id: contribution.goalId },
+      select: { name: true, accountId: true },
+    });
+    if (transfer.kind !== 'TRANSFER' || !transfer.accountId) {
+      fail('This transaction funds a goal and must stay a transfer');
+    }
+    if (goal?.accountId && goal.accountId !== transfer.toAccountId) {
+      fail(
+        `This transfer is a contribution to "${goal.name}" and has to go into that goal's account. Change it from Goals instead.`
+      );
+    }
+    await tx.goalContribution.update({
+      where: { id: contribution.id },
+      data: { amount: transfer.amount, date: transfer.date, fromAccountId: transfer.accountId },
+    });
+  }
+}
+
+/** Friend entries and goal contributions that exist only because of these rows. */
+async function deleteLinkedRecords(tx: Tx, transactionIds: string[]) {
+  if (transactionIds.length === 0) return;
+  await tx.friendEntry.deleteMany({ where: { transactionId: { in: transactionIds } } });
+  await tx.goalContribution.deleteMany({ where: { transactionId: { in: transactionIds } } });
+}
+
+// ==================== IN-TRANSACTION PRIMITIVES ====================
+
+/** createTransaction, inside a transaction the caller already opened. */
+export async function createTransactionIn(tx: Tx, input: TransactionInput): Promise<Transaction> {
+  const parsed = parseInput(input);
+  const data =
+    parsed.kind === 'TRANSFER'
+      ? await buildTransfer(tx, parsed)
+      : await buildIncomeOrExpense(tx, parsed);
+  const created = await tx.transaction.create({ data });
+  if (parsed.kind === 'EXPENSE' && (parsed.friendSplits?.length ?? 0) > 0) {
+    await syncFriendSplits(tx, created, parsed.friendSplits, null);
+  }
+  return created;
+}
+
 // ==================== PUBLIC API ====================
 
 export async function createTransaction(
   input: TransactionInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult> {
-  return run(deps, 'save transaction', async (tx) => {
-    const parsed = parseInput(input);
-    const data =
-      parsed.kind === 'TRANSFER'
-        ? await buildTransfer(tx, parsed)
-        : await buildIncomeOrExpense(tx, parsed);
-    return tx.transaction.create({ data });
-  });
+  return run(deps, 'save transaction', (tx) => createTransactionIn(tx, input));
 }
 
 export type UpdateOptions = {
@@ -465,60 +685,93 @@ export type UpdateOptions = {
   absorbLegacyIds?: string[];
 };
 
+/** updateTransaction, inside a transaction the caller already opened. */
+export async function updateTransactionIn(
+  tx: Tx,
+  id: string,
+  input: TransactionInput,
+  options: UpdateOptions = {}
+): Promise<Transaction> {
+  const existing = await tx.transaction.findUnique({ where: { id } });
+  if (!existing) fail('Transaction not found');
+
+  let parsed = parseInput(input);
+
+  // Card / debt payments are listed on the Expenses page, so the expense
+  // form can edit them. Keep them transfers: same destination account,
+  // category and tags.
+  if (parsed.kind === 'EXPENSE' && isPaymentTransfer(existing) && existing.toAccountId) {
+    if ((parsed.friendSplits?.length ?? 0) > 0) {
+      fail('A card or debt payment cannot be split with friends');
+    }
+    const fromAccountId =
+      parsed.accountId ?? parsed.accountSplits?.[0]?.accountId ?? existing.accountId;
+    if (!fromAccountId) fail('Choose the account this payment was made from');
+    parsed = parseInput({
+      kind: 'TRANSFER',
+      date: parsed.date,
+      amount: parsed.amount,
+      accountId: fromAccountId,
+      toAccountId: existing.toAccountId,
+      merchantOrSource: parsed.merchantOrSource,
+      notes: parsed.notes,
+      tags: parsed.tags,
+    });
+  }
+
+  if (parsed.kind !== existing.kind) {
+    fail(
+      `This is ${kindLabel(existing.kind)} and can't be changed into ${kindLabel(parsed.kind)}. Delete it and add a new one instead.`
+    );
+  }
+
+  const previousDescription =
+    existing.kind === 'EXPENSE' ? await sharedExpenseDescription(tx, existing) : null;
+
+  const data =
+    parsed.kind === 'TRANSFER'
+      ? await buildTransfer(tx, parsed, existing)
+      : await buildIncomeOrExpense(tx, parsed, existing);
+
+  const siblings = (options.absorbLegacyIds ?? []).filter((s) => s !== id);
+  const siblingWhere: Prisma.TransactionWhereInput[] = [];
+  if (siblings.length > 0) siblingWhere.push({ id: { in: siblings } });
+  if (existing.splitGroupId) siblingWhere.push({ splitGroupId: existing.splitGroupId });
+  if (siblingWhere.length > 0) {
+    const doomed = await tx.transaction.findMany({
+      where: { OR: siblingWhere, kind: existing.kind, id: { not: id } },
+      select: { id: true },
+    });
+    await deleteLinkedRecords(
+      tx,
+      doomed.map((d) => d.id)
+    );
+    await tx.transaction.deleteMany({
+      where: { OR: siblingWhere, kind: existing.kind, id: { not: id } },
+    });
+  }
+
+  const updated = await tx.transaction.update({ where: { id }, data });
+  if (updated.kind === 'TRANSFER') {
+    await syncGoalContributions(tx, updated);
+  } else {
+    await syncFriendSplits(
+      tx,
+      updated,
+      parsed.kind === 'EXPENSE' ? parsed.friendSplits : undefined,
+      previousDescription
+    );
+  }
+  return updated;
+}
+
 export async function updateTransaction(
   id: string,
   input: TransactionInput,
   options: UpdateOptions = {},
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult> {
-  return run(deps, 'update transaction', async (tx) => {
-    const existing = await tx.transaction.findUnique({ where: { id } });
-    if (!existing) fail('Transaction not found');
-
-    let parsed = parseInput(input);
-
-    // Card / debt payments are listed on the Expenses page, so the expense
-    // form can edit them. Keep them transfers: same destination account,
-    // category and tags.
-    if (parsed.kind === 'EXPENSE' && isPaymentTransfer(existing) && existing.toAccountId) {
-      const fromAccountId =
-        parsed.accountId ?? parsed.accountSplits?.[0]?.accountId ?? existing.accountId;
-      if (!fromAccountId) fail('Choose the account this payment was made from');
-      parsed = parseInput({
-        kind: 'TRANSFER',
-        date: parsed.date,
-        amount: parsed.amount,
-        accountId: fromAccountId,
-        toAccountId: existing.toAccountId,
-        merchantOrSource: parsed.merchantOrSource,
-        notes: parsed.notes,
-        tags: parsed.tags,
-      });
-    }
-
-    if (parsed.kind !== existing.kind) {
-      fail(
-        `This is ${kindLabel(existing.kind)} and can't be changed into ${kindLabel(parsed.kind)}. Delete it and add a new one instead.`
-      );
-    }
-
-    const data =
-      parsed.kind === 'TRANSFER'
-        ? await buildTransfer(tx, parsed, existing)
-        : await buildIncomeOrExpense(tx, parsed, existing);
-
-    const siblings = (options.absorbLegacyIds ?? []).filter((s) => s !== id);
-    const siblingWhere: Prisma.TransactionWhereInput[] = [];
-    if (siblings.length > 0) siblingWhere.push({ id: { in: siblings } });
-    if (existing.splitGroupId) siblingWhere.push({ splitGroupId: existing.splitGroupId });
-    if (siblingWhere.length > 0) {
-      await tx.transaction.deleteMany({
-        where: { OR: siblingWhere, kind: existing.kind, id: { not: id } },
-      });
-    }
-
-    return tx.transaction.update({ where: { id }, data });
-  });
+  return run(deps, 'update transaction', (tx) => updateTransactionIn(tx, id, input, options));
 }
 
 export type DeleteOptions = {
@@ -526,24 +779,39 @@ export type DeleteOptions = {
   legacyMemberIds?: string[];
 };
 
+/**
+ * deleteTransaction, inside a transaction the caller already opened. Also
+ * deletes the friend IOUs of a split expense and the goal contribution a
+ * transfer paid for.
+ */
+export async function deleteTransactionIn(
+  tx: Tx,
+  id: string,
+  options: DeleteOptions = {}
+): Promise<{ deleted: number }> {
+  const existing = await tx.transaction.findUnique({ where: { id } });
+  if (!existing) fail('Transaction not found');
+
+  const ids = new Set([id, ...(options.legacyMemberIds ?? [])]);
+  const or: Prisma.TransactionWhereInput[] = [{ id: { in: [...ids] } }];
+  if (existing.splitGroupId) or.push({ splitGroupId: existing.splitGroupId });
+  const where: Prisma.TransactionWhereInput = { OR: or, kind: existing.kind };
+
+  const doomed = await tx.transaction.findMany({ where, select: { id: true } });
+  await deleteLinkedRecords(
+    tx,
+    doomed.map((d) => d.id)
+  );
+  const { count } = await tx.transaction.deleteMany({ where });
+  return { deleted: count };
+}
+
 export async function deleteTransaction(
   id: string,
   options: DeleteOptions = {},
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<{ deleted: number }>> {
-  return run(deps, 'delete transaction', async (tx) => {
-    const existing = await tx.transaction.findUnique({ where: { id } });
-    if (!existing) fail('Transaction not found');
-
-    const ids = new Set([id, ...(options.legacyMemberIds ?? [])]);
-    const or: Prisma.TransactionWhereInput[] = [{ id: { in: [...ids] } }];
-    if (existing.splitGroupId) or.push({ splitGroupId: existing.splitGroupId });
-
-    const { count } = await tx.transaction.deleteMany({
-      where: { OR: or, kind: existing.kind },
-    });
-    return { deleted: count };
-  });
+  return run(deps, 'delete transaction', (tx) => deleteTransactionIn(tx, id, options));
 }
 
 // ==================== BULK (list pages) ====================
@@ -634,6 +902,11 @@ export async function deleteTransactions(
     const groups = [...new Set(rows.map((r) => r.splitGroupId).filter((g): g is string => !!g))];
     const or: Prisma.TransactionWhereInput[] = [{ id: { in: unique } }];
     if (groups.length > 0) or.push({ splitGroupId: { in: groups } });
+    const doomed = await tx.transaction.findMany({ where: { OR: or }, select: { id: true } });
+    await deleteLinkedRecords(
+      tx,
+      doomed.map((d) => d.id)
+    );
     const { count } = await tx.transaction.deleteMany({ where: { OR: or } });
     return { deleted: count };
   });
@@ -682,15 +955,36 @@ export async function detachSubcategories(tx: Tx, subcategoryIds: string[]) {
 // ==================== READ HELPERS ====================
 
 /**
- * How an expense's amount is spread over categories. A split expense has no
- * categoryId of its own; its split items carry the categories.
+ * Your part of an expense: the full amount minus what friends owe you for it.
+ * Budgets, category totals and "spent" figures use this; account balances use
+ * the full amount, because that is what left the account.
+ */
+export function myShareOfExpense(t: { amount: number; sharedAmount?: number | null }): number {
+  const shared = t.sharedAmount ?? 0;
+  return shared > 0 ? Math.max(0, t.amount - shared) : t.amount;
+}
+
+/** Sums my share over expenses (see myShareOfExpense). */
+export function sumMyShare(rows: { amount: number; sharedAmount?: number | null }[]): number {
+  return rows.reduce((sum, t) => sum + myShareOfExpense(t), 0);
+}
+
+/**
+ * How your share of an expense is spread over categories. A category-split
+ * expense has no categoryId of its own; its split items carry the categories.
+ * When friends owe part of it, every category is scaled down by the same ratio.
  */
 export function expenseCategoryAllocations(t: {
   amount: number;
   categoryId: string | null;
   splitItems?: { categoryId: string; amount: number }[] | null;
+  sharedAmount?: number | null;
 }): { categoryId: string; amount: number }[] {
+  const mine = myShareOfExpense(t);
+  const ratio = t.amount > 0 ? mine / t.amount : 1;
   const items = (t.splitItems || []).filter((s) => s.categoryId);
-  if (items.length > 0) return items.map((s) => ({ categoryId: s.categoryId, amount: s.amount }));
-  return t.categoryId ? [{ categoryId: t.categoryId, amount: t.amount }] : [];
+  if (items.length > 0) {
+    return items.map((s) => ({ categoryId: s.categoryId, amount: s.amount * ratio }));
+  }
+  return t.categoryId ? [{ categoryId: t.categoryId, amount: mine }] : [];
 }

@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { computeBalancesForAccounts } from '@/lib/accountBalance';
+import { loadAccountBalances } from '@/lib/ledgerBalances';
 import { accountDeleteBlocker } from '@/lib/references';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -25,26 +25,8 @@ function parseCreditLimit(formData: FormData, type: string): number | null {
 
 export async function getAccounts() {
   try {
-    const [accounts, transactions] = await Promise.all([
-      prisma.account.findMany({ orderBy: { name: 'asc' } }),
-      prisma.transaction.findMany({
-        select: {
-          amount: true,
-          kind: true,
-          accountId: true,
-          toAccountId: true,
-          accountSplits: true,
-        },
-      }),
-    ]);
-
-    const balances = computeBalancesForAccounts(accounts, transactions);
-    const accountsWithBalance = accounts.map((account) => ({
-      ...account,
-      currentBalance: balances.get(account.id)?.balance ?? account.startingBalance,
-      transactionCount: balances.get(account.id)?.transactionCount ?? 0,
-    }));
-
+    // Includes friend settlements, goal transfers and goal earmarks.
+    const accountsWithBalance = await loadAccountBalances(prisma);
     return { success: true, data: accountsWithBalance };
   } catch (error) {
     console.error('Error fetching accounts:', error);
@@ -149,6 +131,7 @@ export async function deleteAccount(id: string) {
     revalidatePath('/accounts');
     revalidatePath('/');
     revalidatePath('/plan/goals');
+    revalidatePath('/friends');
     return { success: true };
   } catch (error) {
     console.error('Error deleting account:', error);
