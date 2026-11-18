@@ -155,6 +155,10 @@ model Budget {
   month      DateTime
   categoryId String   @db.ObjectId
   amount     Float
+  // Unspent amount carries into next month's budget for this category;
+  // overspend reduces it.
+  // Optional so budgets saved before this field existed still load (null = off).
+  rolloverEnabled Boolean? @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

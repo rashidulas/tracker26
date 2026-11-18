@@ -14,6 +14,9 @@ import {
   createPaymentTransfer,
 } from './actions';
 import { createCategory } from '@/app/settings/categories/actions';
+import { getBudgetHint } from '@/app/plan/budgets/actions';
+import type { BudgetHint } from '@/lib/budgetData';
+import { formatCurrency } from '@/lib/utils';
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { addDays, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
@@ -148,6 +151,70 @@ const QUICK_ICONS = ['📁', '🚗', '🛒', '🍽️', '🏠', '💡', '✈️'
 
 type CategoryOption = ExpenseFormProps['categories'][number];
 
+/**
+ * "$120 left in Groceries this month" under the category picker. Figures come
+ * from the server (lib/budgetData.ts), the same numbers as the Budgets page.
+ */
+function BudgetHintLine({
+  categoryId,
+  categoryName,
+  date,
+  amount,
+  editingAmount,
+}: {
+  categoryId: string;
+  categoryName: string;
+  date: string;
+  amount: string | undefined;
+  /** When editing, the saved amount is already counted in "spent". */
+  editingAmount: number | null;
+}) {
+  const [hint, setHint] = useState<{ key: string; value: BudgetHint | null } | null>(null);
+  const key = `${categoryId}|${date}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    getBudgetHint(categoryId, date)
+      .then((value) => !cancelled && setHint({ key, value }))
+      .catch(() => !cancelled && setHint({ key, value: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId, date, key]);
+
+  if (!hint || hint.key !== key || !hint.value) return null;
+  const { remaining, month } = hint.value;
+  const typed = Number(amount);
+  const delta = Number.isFinite(typed) && typed > 0 ? typed - (editingAmount ?? 0) : 0;
+  const after = remaining - delta;
+  const thisMonth = month === todayInAppTimeZone().slice(0, 7);
+  const when = thisMonth
+    ? 'this month'
+    : `in ${new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long' })}`;
+
+  return (
+    <p className="mt-2 text-xs text-ink-muted" aria-live="polite">
+      {remaining >= 0 ? (
+        <>
+          <span className="text-ink-secondary money">{formatCurrency(remaining)}</span> left in {categoryName}{' '}
+          {when}
+        </>
+      ) : (
+        <>
+          {categoryName} is <span className="text-danger money">{formatCurrency(-remaining)}</span> over budget{' '}
+          {when}
+        </>
+      )}
+      {delta !== 0 && (
+        <span className={after < 0 ? 'text-danger' : ''}>
+          {' · '}
+          {after >= 0 ? `${formatCurrency(after)} after this` : `${formatCurrency(-after)} over after this`}
+        </span>
+      )}
+    </p>
+  );
+}
+
 function localYesterdayForInput() {
   return addDays(todayInAppTimeZone(), -1);
 }
@@ -225,6 +292,7 @@ export default function ExpenseForm({
   const payAmountVal = useWatch({ control, name: 'payAmount' });
   const selectedSubcategoryId = useWatch({ control, name: 'subcategoryId' });
   const selectedDate = useWatch({ control, name: 'date' });
+  const amountVal = useWatch({ control, name: 'amount' });
   const merchantVal = useWatch({ control, name: 'merchantOrSource' }) || '';
 
   const isDebtPayment = selectedCategoryId === DEBT_PAYMENT_SENTINEL;
@@ -839,6 +907,21 @@ export default function ExpenseForm({
           </p>
         )}
         <input type="hidden" {...register('categoryId')} />
+        {!isTransfer && selectedCategory && selectedDate && (
+          <BudgetHintLine
+            categoryId={selectedCategory.id}
+            categoryName={selectedCategory.name}
+            date={selectedDate}
+            amount={amountVal}
+            editingAmount={
+              expense &&
+              expense.categoryId === selectedCategory.id &&
+              toDayString(expense.date).slice(0, 7) === selectedDate.slice(0, 7)
+                ? expense.amount
+                : null
+            }
+          />
+        )}
       </div>
 
       {!isTransfer && availableSubcategories.length > 0 && (

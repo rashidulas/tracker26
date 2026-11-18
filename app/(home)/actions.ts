@@ -8,6 +8,7 @@ import {
 import { signedFriendAmount } from '@/lib/friends';
 import { expenseCategoryAllocations } from '@/lib/transactions';
 import { todayInAppTimeZone, monthRange, toDayString, eachDay, formatDay } from '@/lib/dates';
+import { loadBudgetOverview } from '@/lib/budgetData';
 
 export async function getDashboardData() {
   try {
@@ -24,6 +25,7 @@ export async function getDashboardData() {
       dailyTransactions,
       friendsRaw,
       splitTransactionsRaw,
+      budget,
     ] = await Promise.all([
       prisma.transaction.aggregate({
         where: { kind: 'INCOME', date: thisMonth },
@@ -85,6 +87,10 @@ export async function getDashboardData() {
           accountId: true,
           accountSplits: true,
         },
+      }),
+      loadBudgetOverview(today).catch((error) => {
+        console.error('Error loading budget overview:', error);
+        return null;
       }),
     ]);
 
@@ -229,6 +235,7 @@ export async function getDashboardData() {
         monthlyTrend,
         recentTransactions,
         dailySpending,
+        budget,
       },
     };
   } catch (error) {

@@ -20,18 +20,19 @@ export async function getExpenses(filters?: {
   search?: string;
 }) {
   try {
-    const baseWhere: any = {
-      OR: [
-        { kind: 'EXPENSE' },
-        { kind: 'TRANSFER', tags: { has: 'payment' } },
-      ],
-    };
+    // Only real spending. Card payments and debt payments are transfers
+    // (lib/budgets.ts explains why) and are listed under Transfers.
+    const baseWhere: any = { kind: 'EXPENSE' };
 
     const dateRange = dayFilter(filters?.startDate, filters?.endDate);
     if (dateRange) baseWhere.date = dateRange;
 
     if (filters?.categoryId) {
-      baseWhere.categoryId = filters.categoryId;
+      // Split expenses keep their categories in splitItems.
+      baseWhere.OR = [
+        { categoryId: filters.categoryId },
+        { splitItems: { some: { categoryId: filters.categoryId } } },
+      ];
     }
 
     if (filters?.subcategoryId) {

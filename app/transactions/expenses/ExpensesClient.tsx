@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Filter, X, Camera, Receipt, ArrowRight } from 'lucide-react';
@@ -40,6 +40,7 @@ import {
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 import { useExpenseSaved } from '@/components/quickadd/useExpenseSaved';
 import { onExpenseEvent, type ExpenseRow } from '@/lib/expenseEvents';
+import { expenseCategoryAllocations } from '@/lib/expenseAllocations';
 import type { ExpenseSaveResult } from './ExpenseForm';
 
 interface Expense {
@@ -53,6 +54,7 @@ interface Expense {
   merchantOrSource: string | null;
   notes: string | null;
   tags: string[];
+  splitItems?: Array<{ categoryId: string; amount: number }> | null;
   category: { id: string; name: string; icon: string | null } | null;
   subcategory?: { id: string; name: string } | null;
   account: { id: string; name: string } | null;
@@ -69,6 +71,16 @@ interface ExpensesClientProps {
     subcategories?: Array<{ id: string; name: string }>;
   }>;
   accounts: Array<{ id: string; name: string }>;
+}
+
+/** The part of an expense that belongs to `categoryId` (split items included). */
+function categoryShare(
+  e: { amount: number; categoryId: string | null; splitItems?: Array<{ categoryId: string; amount: number }> | null },
+  categoryId: string
+): number {
+  return expenseCategoryAllocations(e)
+    .filter((s) => s.categoryId === categoryId)
+    .reduce((sum, s) => sum + s.amount, 0);
 }
 
 const EMPTY_FILTERS = { startDate: '', endDate: '', categoryId: '', subcategoryId: '' };
@@ -99,6 +111,11 @@ export default function ExpensesClient({
           return;
         }
         const row = event.row as ExpenseRow & Expense;
+        // Card and debt payments are transfers; they belong on the Transfers list.
+        if (row.kind !== 'EXPENSE') {
+          setExpenses((prev) => prev.filter((e) => e.id !== row.id));
+          return;
+        }
         setExpenses((prev) => [row, ...prev.filter((e) => e.id !== row.id)]);
       }),
     []
@@ -143,7 +160,7 @@ export default function ExpensesClient({
         const key = dayKey(expense.date);
         if (filters.startDate && key < filters.startDate) return false;
         if (filters.endDate && key > filters.endDate) return false;
-        if (filters.categoryId && expense.categoryId !== filters.categoryId) return false;
+        if (filters.categoryId && categoryShare(expense, filters.categoryId) === 0) return false;
         if (filters.subcategoryId && expense.subcategoryId !== filters.subcategoryId) return false;
         return matchesSearch(
           debouncedQuery,
@@ -162,9 +179,15 @@ export default function ExpensesClient({
     [expenses, pendingDelete, month, filters, debouncedQuery]
   );
 
+  // With a category filter, a split expense counts only its share of that category.
+  const amountInView = useCallback(
+    (e: Expense) => (filters.categoryId ? categoryShare(e, filters.categoryId) : e.amount),
+    [filters.categoryId]
+  );
+
   const groups = useMemo(
-    () => groupByDay(filteredExpenses, (e) => e.date, (e) => e.amount),
-    [filteredExpenses]
+    () => groupByDay(filteredExpenses, (e) => e.date, amountInView),
+    [filteredExpenses, amountInView]
   );
 
   const selection = useSelection(filteredExpenses.map((e) => e.id));
@@ -172,7 +195,7 @@ export default function ExpensesClient({
     .filter((e) => selection.selected.has(e.id))
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + amountInView(e), 0);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}`;
 

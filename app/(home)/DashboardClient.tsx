@@ -34,6 +34,8 @@ import {
 } from 'recharts';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { formatDay, todayInAppTimeZone } from '@/lib/dates';
+import type { BudgetOverview } from '@/lib/budgetData';
+import BudgetPanel from './BudgetPanel';
 
 interface LiabilityItem {
   id: string;
@@ -76,6 +78,7 @@ interface DashboardClientProps {
       toAccount?: { name: string } | null;
     }>;
     dailySpending: Array<{ date: string; amount: number }>;
+    budget: BudgetOverview | null;
   };
 }
 
@@ -199,6 +202,8 @@ export default function DashboardClient({ data }: DashboardClientProps) {
 
   return (
     <div className="space-y-6 lg:space-y-8">
+      {data.budget && <BudgetPanel budget={data.budget} />}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-5">
         {summaryCards.map((card, i) => {
           const Icon = card.icon;
