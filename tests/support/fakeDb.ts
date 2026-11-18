@@ -24,6 +24,8 @@ const MODELS = [
   'recurringPosting',
   'dismissedRecurringSuggestion',
   'idempotencyKey',
+  'conversation',
+  'message',
 ] as const;
 
 type ModelName = (typeof MODELS)[number];
@@ -67,6 +69,8 @@ const DEFAULTS: Record<ModelName, Doc> = {
   recurringPosting: { transactionId: null },
   dismissedRecurringSuggestion: {},
   idempotencyKey: {},
+  conversation: { titleState: 'placeholder', activeRunId: null, runStartedAt: null },
+  message: {},
 };
 
 /** Unique indexes the code relies on (field lists). */
@@ -75,6 +79,7 @@ const UNIQUE: Partial<Record<ModelName, string[][]>> = {
   recurringPosting: [['recurringId', 'dueDate']],
   dismissedRecurringSuggestion: [['key']],
   idempotencyKey: [['key']],
+  message: [['conversationId', 'messageId']],
 };
 
 /** Compound unique keys used in where clauses, e.g. name_type. */
@@ -195,6 +200,8 @@ export class FakeDb {
     recurringPosting: [],
     dismissedRecurringSuggestion: [],
     idempotencyKey: [],
+    conversation: [],
+    message: [],
   };
   private inTransaction = false;
   /** Number of $transaction calls that committed. */
@@ -310,6 +317,8 @@ export class FakeDb {
   recurringPosting = this.model('recurringPosting');
   dismissedRecurringSuggestion = this.model('dismissedRecurringSuggestion');
   idempotencyKey = this.model('idempotencyKey');
+  conversation = this.model('conversation');
+  message = this.model('message');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) throw new Error('FakeDb: nested $transaction');

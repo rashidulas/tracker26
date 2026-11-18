@@ -308,6 +308,51 @@ model IdempotencyKey {
   createdAt     DateTime @default(now())
 }
 
+// Chat assistant history (lib/assistant/conversations.ts).
+//
+// The id is an opaque token the browser generates before the first message is
+// sent, so a new chat needs no round trip and an abandoned one leaves no row.
+model Conversation {
+  id            String    @id @map("_id")
+  title         String
+  /// placeholder (cut from the first message) | generated (by the model) |
+  /// custom (renamed by the user; never overwritten).
+  titleState    String    @default("placeholder")
+  /// The request currently producing a reply, or null when idle. A reply is
+  /// only saved by the run that still owns the conversation, so a stopped or
+  /// superseded run cannot write over newer messages.
+  activeRunId   String?
+  runStartedAt  DateTime?
+  /// When the last message was sent; the sidebar sorts and groups by this.
+  lastMessageAt DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages Message[]
+
+  @@index([lastMessageAt])
+}
+
+/// One AI SDK UI message. `parts` is the message's parts array as JSON text:
+/// tool inputs and provider metadata can carry keys MongoDB restricts, and
+/// nothing queries inside it.
+model Message {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String
+  /// The UI message id (from useChat for user messages, from the server for replies).
+  messageId      String
+  role           String
+  /// 0-based order within the conversation.
+  position       Int
+  parts          String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, messageId])
+  @@index([conversationId, position])
+}
+
 // Friends / shared IOUs
 // Balance from your perspective: positive = they owe you, negative = you owe them
 enum FriendEntryType {

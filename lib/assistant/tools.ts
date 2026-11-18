@@ -32,8 +32,10 @@ import {
   checkProposal,
   saveProposal,
   SaveError,
+  applyProposalEdit,
   type Proposal,
   type ProposalDb,
+  type ProposalEdit,
   type ProposalKind,
 } from '@/lib/assistant/write';
 
@@ -42,6 +44,11 @@ export type AssistantToolDeps = {
   today: DayString;
   /** Overrides for lib/transactions (tests pass a fake database). */
   transactionDeps?: Partial<TransactionDeps>;
+  /**
+   * Changes the user made on approval cards, by tool call id. Applied when an
+   * approved proposal is saved; the proposal the server signed stays as it was.
+   */
+  proposalEdits?: ReadonlyMap<string, ProposalEdit>;
 };
 
 // ==================== SCHEMAS ====================
@@ -96,6 +103,21 @@ const proposalSchema = (kind: ProposalKind) =>
     tags: z.array(z.string().max(40)).max(10).nullish(),
   });
 
+/** One approval card's edits, as sent by the browser. Unknown fields are rejected. */
+export const proposalEditSchema = z
+  .object({
+    amount: z.number().positive().optional(),
+    date: day.optional(),
+    categoryId: id.optional(),
+    subcategoryId: id.nullable().optional(),
+    accountId: id.optional(),
+    merchant: z.string().max(100).nullable().optional(),
+  })
+  .strict();
+
+/** Edits for one request: tool call id → edit. */
+export const proposalEditsSchema = z.record(z.string().min(1).max(200), proposalEditSchema);
+
 // ==================== ERRORS ====================
 
 /** Run a read, turning failures into messages the model can act on. */
@@ -126,6 +148,7 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
           saveProposal(kind, input as Proposal, toolCallId, {
             db: deps.db,
             tx: deps.transactionDeps,
+            edit: deps.proposalEdits?.get(toolCallId),
           })
         ),
     });
@@ -228,6 +251,10 @@ export type AssistantTools = ReturnType<typeof buildAssistantTools>;
 /** Prefix the model is told to look for on proposals the server rejected (not the user). */
 export const INVALID_PROPOSAL_PREFIX = 'Invalid proposal, nothing was shown to the user:';
 
+/** Prefix on proposals whose user-edited version could not be saved. */
+export const EDITED_PROPOSAL_PREFIX =
+  'The user changed this proposal before approving, and the changed version is not valid:';
+
 /**
  * Approval rules. Write tools are checked against the database first: a
  * valid proposal waits for the user; an invalid one is denied straight away
@@ -235,14 +262,22 @@ export const INVALID_PROPOSAL_PREFIX = 'Invalid proposal, nothing was shown to t
  * something that cannot be saved.
  */
 export function buildToolApproval(
-  deps: Pick<AssistantToolDeps, 'db'>
+  deps: Pick<AssistantToolDeps, 'db' | 'proposalEdits'>
 ) {
-  const rule = (kind: ProposalKind) => async (input: unknown) => {
+  const rule = (kind: ProposalKind) => async (input: unknown, options: { toolCallId: string }) => {
     try {
-      const check = await checkProposal(deps.db, kind, input as Proposal);
-      return check.ok
-        ? { type: 'user-approval' as const, reason: check.summary }
-        : { type: 'denied' as const, reason: `${INVALID_PROPOSAL_PREFIX} ${check.problem}.` };
+      // When an approval comes back with the user's edits, the edited
+      // version is the one that will be saved, so that is the one to check.
+      const edit = deps.proposalEdits?.get(options.toolCallId);
+      const proposal = edit ? applyProposalEdit(input as Proposal, edit) : (input as Proposal);
+      const check = await checkProposal(deps.db, kind, proposal);
+      if (check.ok) return { type: 'user-approval' as const, reason: check.summary };
+      return {
+        type: 'denied' as const,
+        reason: edit
+          ? `${EDITED_PROPOSAL_PREFIX} ${check.problem}. Nothing was saved. Tell the user and offer to propose it again.`
+          : `${INVALID_PROPOSAL_PREFIX} ${check.problem}.`,
+      };
     } catch (error) {
       console.error('Assistant proposal check failed:', error);
       return {

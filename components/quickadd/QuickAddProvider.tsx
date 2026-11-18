@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -117,15 +117,20 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
     [announceSaved, router]
   );
 
+  const pathname = usePathname();
+  const onChat = pathname === '/chat' || pathname.startsWith('/chat/');
+
   return (
     <QuickAddContext.Provider value={{ open }}>
       {children}
 
-      {/* Desktop floating action button */}
+      {/* Desktop floating action button. Not on the chat page, where it would
+          sit on top of the composer; the N shortcut still works there. */}
       <button
         type="button"
         onClick={open}
-        className="hidden lg:flex fixed bottom-6 right-6 z-40 items-center gap-2 pl-4 pr-5 h-12 rounded-full bg-mint text-graphite font-semibold shadow-[0_10px_30px_-8px_var(--mint-glow)] border border-mint/40 hover:bg-mint-bright transition-colors"
+        hidden={onChat}
+        className="hidden lg:flex [&[hidden]]:!hidden fixed bottom-6 right-6 z-40 items-center gap-2 pl-4 pr-5 h-12 rounded-full bg-mint text-graphite font-semibold shadow-[0_10px_30px_-8px_var(--mint-glow)] border border-mint/40 hover:bg-mint-bright transition-colors"
         aria-label="Add expense (shortcut N)"
         title="Add expense (N)"
       >

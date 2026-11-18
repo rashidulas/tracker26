@@ -6,13 +6,17 @@
  *    proposal (the approval card's text) or explains what is wrong so the
  *    model can fix it.
  * 2. The user approves or denies the proposal in the UI (AI SDK tool approval).
+ *    Before approving, the user may change the amount, date, category,
+ *    account or merchant on the card. Those changes arrive beside the
+ *    approval as a ProposalEdit; the signed proposal itself is never altered.
  * 3. Only after approval does the SDK run the tool, which calls saveProposal.
- *    It saves through lib/transactions.ts with the tool call id as the
- *    idempotency key, so a retried request or a double tap returns the first
- *    save instead of creating a second transaction.
+ *    It applies the user's edit, checks the result against the database
+ *    again, and saves through lib/transactions.ts with the tool call id as
+ *    the idempotency key, so a retried request or a double tap returns the
+ *    first save instead of creating a second transaction.
  */
 import type { PrismaClient } from '@prisma/client';
-import { isValidDay } from '@/lib/dates';
+import { isValidDay, toDayString } from '@/lib/dates';
 import { cleanMerchantName, normalizeMerchantName } from '@/lib/merchants';
 import { createTransactionOnce, type TransactionDeps } from '@/lib/transactions';
 import { formatCurrency } from '@/lib/utils';
@@ -30,6 +34,45 @@ export type Proposal = {
   tags?: string[] | null;
 };
 
+/**
+ * What the user changed on the approval card. Only these fields can be
+ * edited; a missing field keeps the proposed value.
+ */
+export type ProposalEdit = {
+  amount?: number;
+  date?: string;
+  categoryId?: string;
+  subcategoryId?: string | null;
+  accountId?: string;
+  merchant?: string | null;
+};
+
+/** The proposal with the user's changes applied. */
+export function applyProposalEdit(p: Proposal, edit: ProposalEdit): Proposal {
+  const next: Proposal = { ...p };
+  if (edit.amount !== undefined) next.amount = edit.amount;
+  if (edit.date !== undefined) next.date = edit.date;
+  if (edit.accountId !== undefined) next.accountId = edit.accountId;
+  if (edit.merchant !== undefined) next.merchant = edit.merchant;
+  if (edit.categoryId !== undefined && edit.categoryId !== p.categoryId) {
+    next.categoryId = edit.categoryId;
+    // A subcategory belongs to one category; it does not survive a change.
+    next.subcategoryId = null;
+  }
+  if (edit.subcategoryId !== undefined) next.subcategoryId = edit.subcategoryId;
+  return next;
+}
+
+/** The checked proposal in words, for the approval card and its saved state. */
+export type ProposalDetails = {
+  amount: number;
+  date: string;
+  category: string;
+  subcategory: string | null;
+  account: string;
+  merchant: string | null;
+};
+
 export type ProposalDb = Pick<PrismaClient, 'category' | 'subcategory' | 'account' | 'merchant'>;
 
 export type ProposalCheck =
@@ -39,6 +82,7 @@ export type ProposalCheck =
       summary: string;
       /** The merchant as the user first saved it ("costco " → "Costco"), or the cleaned text if new. */
       merchant: string | null;
+      details: ProposalDetails;
     }
   | { ok: false; problem: string };
 
@@ -111,7 +155,19 @@ export async function checkProposal(
     `${kind === 'EXPENSE' ? 'from' : 'into'} ${account.name}`,
     p.date,
   ];
-  return { ok: true, summary: parts.join(' · '), merchant };
+  return {
+    ok: true,
+    summary: parts.join(' · '),
+    merchant,
+    details: {
+      amount: p.amount,
+      date: p.date,
+      category: category.name,
+      subcategory: subName,
+      account: account.name,
+      merchant,
+    },
+  };
 }
 
 export type SaveResult = {
@@ -119,7 +175,12 @@ export type SaveResult = {
   transactionId: string;
   /** True when this tool call had already been saved; nothing new was written. */
   alreadySaved: boolean;
+  /** What was saved, in one line. */
   summary: string;
+  /** What was saved, field by field. */
+  details: ProposalDetails;
+  /** Present when the user changed the proposal on the card before approving. */
+  editedByUser?: true;
 };
 
 /** Thrown when an approved proposal could not be saved. The message is readable. */
@@ -127,12 +188,20 @@ export class SaveError extends Error {}
 
 export async function saveProposal(
   kind: ProposalKind,
-  p: Proposal,
+  proposed: Proposal,
   toolCallId: string,
-  deps: { db: ProposalDb; tx?: Partial<TransactionDeps> }
+  deps: { db: ProposalDb; tx?: Partial<TransactionDeps>; edit?: ProposalEdit }
 ): Promise<SaveResult> {
+  // The user's changes are checked exactly like the model's proposal was.
+  const p = deps.edit ? applyProposalEdit(proposed, deps.edit) : proposed;
   const check = await checkProposal(deps.db, kind, p);
-  if (!check.ok) throw new SaveError(`Not saved: ${check.problem}.`);
+  if (!check.ok) {
+    throw new SaveError(
+      deps.edit
+        ? `Not saved: the user changed this proposal before approving, and the changed version is not valid (${check.problem}). Tell the user and offer to propose it again.`
+        : `Not saved: ${check.problem}.`
+    );
+  }
 
   const result = await createTransactionOnce(
     `assistant:${toolCallId}`,
@@ -151,10 +220,28 @@ export async function saveProposal(
   );
   if (!result.success) throw new SaveError(`Not saved: ${result.error}.`);
 
+  const { transaction, replayed } = result.data;
+  // A replay returns the first save, which is what gets described, whatever
+  // this call asked for.
+  let saved: { summary: string; details: ProposalDetails } = check;
+  if (replayed && transaction.categoryId && transaction.accountId) {
+    const first = await checkProposal(deps.db, kind, {
+      amount: transaction.amount,
+      date: toDayString(transaction.date),
+      categoryId: transaction.categoryId,
+      subcategoryId: transaction.subcategoryId,
+      accountId: transaction.accountId,
+      merchant: transaction.merchantOrSource,
+    });
+    if (first.ok) saved = first;
+  }
+
   return {
     status: 'saved',
-    transactionId: result.data.transaction.id,
-    alreadySaved: result.data.replayed,
-    summary: check.summary,
+    transactionId: transaction.id,
+    alreadySaved: replayed,
+    summary: saved.summary,
+    details: saved.details,
+    ...(deps.edit && !replayed ? { editedByUser: true as const } : {}),
   };
 }

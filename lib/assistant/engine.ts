@@ -34,6 +34,7 @@ import {
 import {
   buildAssistantTools,
   buildToolApproval,
+  proposalEditsSchema,
   type AssistantToolDeps,
   type AssistantTools,
 } from '@/lib/assistant/tools';
@@ -174,6 +175,24 @@ export type RunAssistantInput = {
   deps: AssistantToolDeps & { timeZone: string; currency: string };
   approvalSecret: string;
   abortSignal?: AbortSignal;
+  /**
+   * Untrusted: changes the user made on approval cards, by tool call id
+   * (see proposalEditsSchema). Checked again on the server before saving.
+   */
+  proposalEdits?: unknown;
+  /** Ids for reply messages. Set it when replies are stored, so ids are stable. */
+  generateMessageId?: () => string;
+  /** Runs after the history is validated and before the model is called. */
+  beforeStream?: (messages: AssistantUIMessage[]) => Promise<void>;
+  /** Runs when the reply stream ends, including when it was aborted or the reader went away. */
+  onEnd?: (event: {
+    responseMessage: AssistantUIMessage;
+    /** True when the reply extended the last message (after an approval) instead of adding one. */
+    isContinuation: boolean;
+    isAborted: boolean;
+    /** The model or the stream failed part-way; the reply is incomplete. */
+    failed: boolean;
+  }) => Promise<void> | void;
 };
 
 export type RunAssistantResult =
@@ -184,7 +203,12 @@ const FRIENDLY_STREAM_ERROR =
   'Sorry, something went wrong while answering. Please try again.';
 
 export async function runAssistant(input: RunAssistantInput): Promise<RunAssistantResult> {
-  const tools = buildAssistantTools(input.deps);
+  const edits = proposalEditsSchema.safeParse(input.proposalEdits ?? {});
+  if (!edits.success) {
+    return { ok: false, status: 400, error: 'Those changes could not be read. Check the amount and date and try again.' };
+  }
+  const deps = { ...input.deps, proposalEdits: new Map(Object.entries(edits.data)) };
+  const tools = buildAssistantTools(deps);
 
   const validated = await safeValidateUIMessages<AssistantUIMessage>({
     messages: input.messages,
@@ -205,17 +229,26 @@ export async function runAssistant(input: RunAssistantInput): Promise<RunAssista
     currency: input.deps.currency,
   });
 
+  await input.beforeStream?.(messages);
+
+  // Set when the model call itself fails. Tool errors do not count: the
+  // model reads those and carries on.
+  let modelFailed = false;
+
   const result = streamText({
     model: input.model,
     instructions: buildInstructions(promptContext, input.provider),
     messages: await convertToModelMessages(messages, { tools }),
     tools,
-    toolApproval: buildToolApproval(input.deps),
+    toolApproval: buildToolApproval(deps),
     experimental_toolApprovalSecret: input.approvalSecret,
     stopWhen: isStepCount(MAX_STEPS),
     providerOptions: providerOptionsFor(input.provider),
     abortSignal: input.abortSignal,
-    onError: ({ error }) => console.error('Assistant stream error:', describeError(error)),
+    onError: ({ error }) => {
+      modelFailed = true;
+      console.error('Assistant stream error:', describeError(error));
+    },
   });
 
   return {
@@ -229,6 +262,18 @@ export async function runAssistant(input: RunAssistantInput): Promise<RunAssista
       // throw readable messages (lib/assistant/tools.ts); the UI decides
       // whether to show them.
       redactToolErrors: false,
+      generateMessageId: input.generateMessageId,
+      onEnd: input.onEnd
+        ? ({ responseMessage, isContinuation, isAborted, outcome }) =>
+            input.onEnd!({
+              responseMessage,
+              isContinuation,
+              isAborted,
+              // The stream's own outcome is not enough: a model error part
+              // followed by a normal finish is reported as completed.
+              failed: modelFailed || outcome.status === 'failed',
+            })
+        : undefined,
       onError: (error) => {
         console.error('Assistant error:', describeError(error));
         return FRIENDLY_STREAM_ERROR;

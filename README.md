@@ -50,3 +50,16 @@ Configure it in `.env.local` (see `.env.example`): `ASSISTANT_PROVIDER`
 key, and `ASSISTANT_APPROVAL_SECRET` (any long random string; it signs approval
 requests). Node 22 or later is required. After pulling, run
 `npx prisma db push` to create the `IdempotencyKey` unique index.
+
+Conversations are stored (`Conversation` and `Message`; run
+`npx prisma db push` once after pulling to create their indexes). `/chat` is a
+new chat and `/chat/<id>` a stored one. The server keeps the history: the
+browser sends only its newest message, and a reply is finished and saved even
+if the tab is closed mid-answer (`lib/assistant/chat.ts`). On a proposal card
+you can change the amount, date, category, account or merchant before saving;
+the changes are checked on the server like the original proposal, and the
+approval still saves at most once.
+
+The interface is in `components/assistant/`. `ChatPanel` is the conversation
+itself (messages and composer) and can be mounted outside the Chat page;
+`FinanceAssistant` is the page around it, with the list of past chats.
