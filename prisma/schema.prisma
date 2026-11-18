@@ -165,6 +165,17 @@ model Budget {
   @@index([categoryId])
 }
 
+// Records that a write keyed by an idempotency key (for example the chat
+// assistant's tool call id) already happened, so a retry or a double tap on
+// "approve" returns the first result instead of saving twice. Written in the
+// same database transaction as the row it points to.
+model IdempotencyKey {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  key           String   @unique
+  transactionId String   @db.ObjectId
+  createdAt     DateTime @default(now())
+}
+
 // Friends / shared IOUs
 // Balance from your perspective: positive = they owe you, negative = you owe them
 enum FriendEntryType {

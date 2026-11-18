@@ -1,6 +1,9 @@
 // Utility functions for the app
 
 // ==================== CURRENCY FORMATTING ====================
+/** The one currency the app records and shows amounts in (ISO 4217). */
+export const APP_CURRENCY = 'USD';
+
 const currencyFormatters = new Map<string, Intl.NumberFormat>();
 
 /**
@@ -20,7 +23,7 @@ export function formatCurrency(
   if (!formatter) {
     formatter = new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD',
+      currency: APP_CURRENCY,
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
       signDisplay,

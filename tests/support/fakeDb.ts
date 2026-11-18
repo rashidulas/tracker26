@@ -16,7 +16,14 @@ const MODELS = [
   'transaction',
   'goalContribution',
   'budget',
+  'goal',
+  'friend',
+  'friendEntry',
+  'idempotencyKey',
 ] as const;
+
+/** Fields with a unique index: create throws on a duplicate, like MongoDB. */
+const UNIQUE: Partial<Record<ModelName, string[]>> = { idempotencyKey: ['key'] };
 type ModelName = (typeof MODELS)[number];
 
 const DEFAULTS: Record<ModelName, Doc> = {
@@ -37,6 +44,10 @@ const DEFAULTS: Record<ModelName, Doc> = {
   },
   goalContribution: { notes: null },
   budget: {},
+  goal: { dueDate: null },
+  friend: { notes: null, color: '#7aa2f7' },
+  friendEntry: { description: null, notes: null },
+  idempotencyKey: {},
 };
 
 let counter = 0;
@@ -94,8 +105,36 @@ export function matches(doc: Doc, where: Where): boolean {
     }
     if ('gte' in cond && !(value >= cond.gte)) return false;
     if ('lte' in cond && !(value <= cond.lte)) return false;
+    if ('lt' in cond && !(value < cond.lt)) return false;
+    if ('gt' in cond && !(value > cond.gt)) return false;
+    if ('contains' in cond) {
+      const insensitive = cond.mode === 'insensitive';
+      const hay = typeof value === 'string' ? value : '';
+      const needle = String(cond.contains);
+      const hit = insensitive
+        ? hay.toLowerCase().includes(needle.toLowerCase())
+        : hay.includes(needle);
+      if (!hit) return false;
+    }
   }
   return true;
+}
+
+/** Prisma-style orderBy: { field: 'asc' | 'desc' } or an array of those. */
+function compareBy(orderBy: any) {
+  const keys: [string, 'asc' | 'desc'][] = (Array.isArray(orderBy) ? orderBy : [orderBy]).flatMap(
+    (o: Record<string, 'asc' | 'desc'>) => Object.entries(o)
+  );
+  return (a: Doc, b: Doc) => {
+    for (const [k, dir] of keys) {
+      const av = a[k] instanceof Date ? a[k].getTime() : a[k];
+      const bv = b[k] instanceof Date ? b[k].getTime() : b[k];
+      if (av === bv) continue;
+      const cmp = av < bv ? -1 : 1;
+      return dir === 'desc' ? -cmp : cmp;
+    }
+    return 0;
+  };
 }
 
 function project(doc: Doc, select?: Record<string, boolean>) {
@@ -113,6 +152,10 @@ export class FakeDb {
     transaction: [],
     goalContribution: [],
     budget: [],
+    goal: [],
+    friend: [],
+    friendEntry: [],
+    idempotencyKey: [],
   };
   private inTransaction = false;
   /** Number of $transaction calls that committed. */
@@ -136,14 +179,28 @@ export class FakeDb {
         const doc = rows().find((d) => matches(d, where));
         return doc ? project(doc, select) : null;
       },
-      findMany: async ({ where, select }: { where?: Where; select?: any } = {}) =>
-        rows()
-          .filter((d) => matches(d, where))
-          .map((d) => project(d, select)),
+      findMany: async ({
+        where,
+        select,
+        orderBy,
+        skip,
+        take,
+      }: { where?: Where; select?: any; orderBy?: any; skip?: number; take?: number } = {}) => {
+        let hits = rows().filter((d) => matches(d, where));
+        if (orderBy) hits = [...hits].sort(compareBy(orderBy));
+        const start = skip ?? 0;
+        hits = hits.slice(start, take === undefined ? undefined : start + take);
+        return hits.map((d) => project(d, select));
+      },
       count: async ({ where }: { where?: Where } = {}) =>
         rows().filter((d) => matches(d, where)).length,
       create: async ({ data, select }: { data: Doc; select?: any }) => {
         self.guardWrite(name, 'create');
+        for (const field of UNIQUE[name] ?? []) {
+          if (rows().some((d) => eq(d[field], data[field]))) {
+            throw new Error(`FakeDb: unique constraint failed on ${name}.${field}`);
+          }
+        }
         const now = new Date();
         const doc = {
           ...clone(DEFAULTS[name]),
@@ -201,6 +258,10 @@ export class FakeDb {
   transaction = this.model('transaction');
   goalContribution = this.model('goalContribution');
   budget = this.model('budget');
+  goal = this.model('goal');
+  friend = this.model('friend');
+  friendEntry = this.model('friendEntry');
+  idempotencyKey = this.model('idempotencyKey');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) throw new Error('FakeDb: nested $transaction');

@@ -1,26 +1,43 @@
 'use client';
 
-import { formatCurrency } from '@/lib/utils';
+/**
+ * Chat with the finance assistant (engine: app/api/assistant/chat, lib/assistant).
+ *
+ * Minimal rendering on top of useChat: text, images, a short line while tools
+ * run, and an approve / discard card for proposed expenses and income. The
+ * full interface is still to come.
+ */
+import { useChat } from '@ai-sdk/react';
+import {
+  DefaultChatTransport,
+  isToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from 'ai';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ImagePlus, Loader2, Send, X } from 'lucide-react';
 import Button from '@/components/Button';
-import { confirmAssistantDraft } from '@/app/assistant/actions';
-import type { AssistantDraft } from '@/lib/assistant';
 import { useToast } from '@/components/ToastProvider';
+import type { AssistantUIMessage } from '@/lib/assistant/engine';
+import type { SaveResult } from '@/lib/assistant/write';
 
-type UiDraft = AssistantDraft & {
-  categoryName?: string;
-  accountName?: string | null;
+type Part = AssistantUIMessage['parts'][number];
+type ToolPart = Extract<Part, { toolCallId: string }>;
+
+const WELCOME =
+  'Hey — ask me anything about your accounts, spending, income, budgets, goals or friends. Or say something like “I spent $42 on groceries at Walmart” and I’ll propose it for you to approve.';
+
+const TOOL_LABELS: Record<string, string> = {
+  searchTransactions: 'Searching transactions',
+  summarizeTransactions: 'Adding up transactions',
+  comparePeriods: 'Comparing periods',
+  accountBalances: 'Checking balances',
+  budgetStatus: 'Checking budgets',
+  goalProgress: 'Checking goals',
+  friendBalances: 'Checking friends',
+  upcomingRecurring: 'Looking for upcoming bills',
 };
 
-type UiMessage = {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  imagePreview?: string;
-  draft?: UiDraft | null;
-};
-
+const isWriteTool = (type: string) => type === 'tool-createExpense' || type === 'tool-createIncome';
 
 export default function FinanceAssistant({
   variant = 'card',
@@ -31,24 +48,22 @@ export default function FinanceAssistant({
 }) {
   const isPage = variant === 'page';
   const isEmbedded = variant === 'embedded';
-  const { success, error: toastError } = useToast();
+  const { error: toastError } = useToast();
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<UiMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        'Hey — I can see your accounts, balances, spending, income, friends, and loans. Ask me anything, or say something like “I spent $42 on groceries at Walmart” and I’ll draft it for you to confirm.',
-    },
-  ]);
   const [pendingImage, setPendingImage] = useState<{
     dataUrl: string;
     mimeType: string;
   } | null>(null);
-  const [isSending, setIsSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  const { messages, sendMessage, addToolApprovalResponse, status, error, clearError } =
+    useChat<AssistantUIMessage>({
+      transport: new DefaultChatTransport({ api: '/api/assistant/chat' }),
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+      onError: () => toastError('The assistant could not answer. Please try again.'),
+    });
+  const isSending = status === 'submitted' || status === 'streaming';
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -92,87 +107,18 @@ export default function FinanceAssistant({
       image?: { dataUrl: string; mimeType: string } | null;
     }) => {
       const text = payload.text.trim();
-      if (!text && !payload.image) return;
-
-      const userMessage: UiMessage = {
-        id: `u-${Date.now()}`,
-        role: 'user',
-        content: text || 'Please review this image.',
-        imagePreview: payload.image?.dataUrl,
-      };
-
-      // Build history synchronously — do not rely on setState updater side effects
-      // (React 18+ may defer updaters, which previously sent an empty messages array).
-      const nextMessages = [...messages, userMessage];
-      setMessages(nextMessages);
+      if ((!text && !payload.image) || isSending) return;
+      if (error) clearError();
       setInput('');
       setPendingImage(null);
-      setIsSending(true);
-
-      try {
-        const history = nextMessages
-          .filter((m) => m.id !== 'welcome')
-          .map((m) => ({
-            role: m.role,
-            content: m.content,
-          }));
-
-        if (history.length === 0) {
-          throw new Error('Nothing to send');
-        }
-
-        const apiMessages = history.map((m, i) => {
-          if (i === history.length - 1 && payload.image) {
-            return {
-              role: m.role,
-              content: m.content,
-              image: payload.image,
-            };
-          }
-          return { role: m.role, content: m.content };
-        });
-
-        const res = await fetch('/api/assistant/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: apiMessages }),
-        });
-
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Assistant failed');
-        }
-
-        setMessages((prev) => {
-          const cleared = data.data.draft
-            ? prev.map((m) => (m.draft ? { ...m, draft: null } : m))
-            : prev;
-          return [
-            ...cleared,
-            {
-              id: `a-${Date.now()}`,
-              role: 'assistant',
-              content: data.data.message,
-              draft: data.data.draft,
-            },
-          ];
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Something went wrong';
-        toastError(msg);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `a-err-${Date.now()}`,
-            role: 'assistant',
-            content: `I hit a snag: ${msg}`,
-          },
-        ]);
-      } finally {
-        setIsSending(false);
-      }
+      const files = payload.image
+        ? [{ type: 'file' as const, mediaType: payload.image.mimeType, url: payload.image.dataUrl }]
+        : undefined;
+      await sendMessage(
+        text ? { text, files } : { files: files!, metadata: undefined }
+      );
     },
-    [messages, toastError]
+    [clearError, error, isSending, sendMessage]
   );
 
   sendRef.current = sendToAssistant;
@@ -270,51 +216,110 @@ export default function FinanceAssistant({
     reader.readAsDataURL(file);
   };
 
-  const handleConfirm = async (messageId: string, draft: UiDraft) => {
-    setConfirmingId(messageId);
-    try {
-      const clean = {
-        kind: draft.kind,
-        amount: Number(draft.amount),
-        date: draft.date,
-        categoryId: draft.categoryId,
-        accountId: draft.accountId ?? null,
-        merchantOrSource: draft.merchantOrSource ?? null,
-        notes: draft.notes ?? null,
-        tags: draft.tags || [],
-        confidence: draft.confidence,
-      };
-      const result = await confirmAssistantDraft(clean);
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to save');
-      }
-      success(draft.kind === 'INCOME' ? 'Income added' : 'Expense added');
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                draft: null,
-                content: `${m.content}\n\nSaved ${draft.kind === 'INCOME' ? 'income' : 'expense'} of ${formatCurrency(draft.amount)}${
-                  draft.accountName ? ` to ${draft.accountName}` : ''
-                }.`,
-              }
-            : m.draft
-              ? { ...m, draft: null }
-              : m
-        )
-      );
-    } catch (err) {
-      toastError(err instanceof Error ? err.message : 'Failed to save');
-    } finally {
-      setConfirmingId(null);
-    }
-  };
+  const lastMessageId = messages[messages.length - 1]?.id;
 
-  const handleDiscard = (messageId: string) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === messageId ? { ...m, draft: null } : m))
-    );
+  const renderToolPart = (part: ToolPart, messageId: string) => {
+    const key = part.toolCallId;
+    if (!isWriteTool(part.type)) {
+      if (part.state === 'input-streaming' || part.state === 'input-available') {
+        return (
+          <p key={key} className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+            <Loader2 size={11} className="animate-spin" />
+            {TOOL_LABELS[part.type.slice(5)] ?? 'Looking that up'}…
+          </p>
+        );
+      }
+      return null;
+    }
+
+    const kind = part.type === 'tool-createIncome' ? 'Income' : 'Expense';
+    switch (part.state) {
+      case 'input-streaming':
+      case 'input-available':
+        return (
+          <p key={key} className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+            <Loader2 size={11} className="animate-spin" /> Preparing {kind.toLowerCase()}…
+          </p>
+        );
+      case 'approval-requested': {
+        if (part.approval.isAutomatic) return null;
+        // A newer message means this card was skipped; the server treats it as not approved.
+        const stale = messageId !== lastMessageId;
+        return (
+          <div
+            key={key}
+            className="mt-2.5 rounded-xl border border-graphite-border bg-graphite-elevated/90 p-2.5 space-y-1.5"
+          >
+            <span
+              className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                kind === 'Income' ? 'text-mint' : 'text-danger'
+              }`}
+            >
+              {kind} to approve
+            </span>
+            <p className="text-[13px] text-ink">{part.approval.requestReason}</p>
+            {stale ? (
+              <p className="text-[11px] text-ink-muted">Not saved.</p>
+            ) : (
+              <div className="flex gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="flex-1"
+                  disabled={isSending}
+                  onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
+                >
+                  <Check size={14} /> Save
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={isSending}
+                  onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
+                >
+                  Discard
+                </Button>
+              </div>
+            )}
+          </div>
+        );
+      }
+      case 'approval-responded':
+        return (
+          <p key={key} className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+            {part.approval.approved ? (
+              <>
+                <Loader2 size={11} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              'Discarded.'
+            )}
+          </p>
+        );
+      case 'output-available':
+        return (
+          <p key={key} className="flex items-center gap-1.5 text-[11px] text-mint">
+            <Check size={12} /> Saved: {(part.output as SaveResult).summary}
+          </p>
+        );
+      case 'output-denied':
+        // Automatic denials are proposals the server rejected; the model fixes those.
+        return part.approval.isAutomatic ? null : (
+          <p key={key} className="text-[11px] text-ink-muted">
+            {kind} not saved.
+          </p>
+        );
+      case 'output-error':
+        return (
+          <p key={key} className="text-[11px] text-danger">
+            Couldn’t save that {kind.toLowerCase()}.
+          </p>
+        );
+      default:
+        return null;
+    }
   };
 
   const statusLabel = isRecording
@@ -351,6 +356,13 @@ export default function FinanceAssistant({
     </div>
   );
 
+  const bubble = (role: 'user' | 'assistant') =>
+    `max-w-[92%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${
+      role === 'user'
+        ? 'bg-mint-dim text-ink border border-mint/20'
+        : 'bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle'
+    }`;
+
   const messageList = (
     <div
       className={`overflow-y-auto rounded-xl border border-graphite-border-subtle bg-graphite-elevated/50 px-3 py-3 space-y-2.5 ${
@@ -359,86 +371,49 @@ export default function FinanceAssistant({
           : 'h-[150px] sm:h-[200px] mb-3'
       }`}
     >
-      {messages.map((m) => (
-        <div
-          key={m.id}
-          className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-        >
-          <div
-            className={`max-w-[92%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed ${
-              m.role === 'user'
-                ? 'bg-mint-dim text-ink border border-mint/20'
-                : 'bg-graphite-surface-2 text-ink-secondary border border-graphite-border-subtle'
-            }`}
-          >
-            {m.imagePreview && (
+      <div className="flex justify-start">
+        <div className={bubble('assistant')}>
+          <p className="whitespace-pre-wrap">{WELCOME}</p>
+        </div>
+      </div>
+      {messages.map((m) => {
+        const role = m.role === 'user' ? 'user' : 'assistant';
+        const content = m.parts.map((part, i) => {
+          if (part.type === 'text') {
+            return part.text ? (
+              <p key={i} className="whitespace-pre-wrap">
+                {part.text}
+              </p>
+            ) : null;
+          }
+          if (part.type === 'file' && part.mediaType.startsWith('image')) {
+            return (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={m.imagePreview}
+                key={i}
+                src={part.url}
                 alt="Uploaded"
                 className="mb-2 rounded-lg max-h-28 object-cover w-full"
               />
-            )}
-            <p className="whitespace-pre-wrap">{m.content}</p>
-
-            {m.draft && (
-              <div className="mt-2.5 rounded-xl border border-graphite-border bg-graphite-elevated/90 p-2.5 space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                      m.draft.kind === 'INCOME' ? 'text-mint' : 'text-danger'
-                    }`}
-                  >
-                    {m.draft.kind} draft
-                  </span>
-                  {m.draft.confidence && (
-                    <span className="text-[10px] text-ink-muted capitalize">
-                      {m.draft.confidence}
-                    </span>
-                  )}
-                </div>
-                <p className="text-lg font-semibold text-ink money">
-                  {formatCurrency(m.draft.amount)}
-                </p>
-                <p className="text-[11px] text-ink-muted">
-                  {m.draft.categoryName || 'Category'} · {m.draft.date}
-                  {m.draft.accountName || m.draft.merchantOrSource
-                    ? ` · ${[m.draft.accountName, m.draft.merchantOrSource]
-                        .filter(Boolean)
-                        .join(' · ')}`
-                    : ''}
-                </p>
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="flex-1"
-                    disabled={confirmingId === m.id}
-                    onClick={() => void handleConfirm(m.id, m.draft!)}
-                  >
-                    {confirmingId === m.id ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Check size={14} />
-                    )}
-                    Confirm
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="flex-1"
-                    onClick={() => handleDiscard(m.id)}
-                    disabled={confirmingId === m.id}
-                  >
-                    Discard
-                  </Button>
-                </div>
-              </div>
-            )}
+            );
+          }
+          if (isToolUIPart(part)) return renderToolPart(part as ToolPart, m.id);
+          return null;
+        });
+        if (content.every((c) => c === null)) return null;
+        return (
+          <div key={m.id} className={`flex ${role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={bubble(role)}>{content}</div>
+          </div>
+        );
+      })}
+      {error && !isSending && (
+        <div className="flex justify-start">
+          <div className={bubble('assistant')}>
+            <p>I hit a snag answering that. Please try again.</p>
           </div>
         </div>
-      ))}
+      )}
       {(isSending || isTranscribing) && (
         <div className="flex items-center gap-2 text-xs text-ink-muted px-1">
           <Loader2 size={13} className="animate-spin text-mint" />

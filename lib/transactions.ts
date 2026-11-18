@@ -457,6 +457,52 @@ export async function createTransaction(
   });
 }
 
+/**
+ * createTransaction that runs at most once per `key`.
+ *
+ * The key is stored in IdempotencyKey in the same database transaction as the
+ * new row. Calling again with a key that was already used returns the row the
+ * first call saved (`replayed: true`) instead of saving a second one. If two
+ * calls race, the unique index on the key makes one of them fail; that one
+ * then finds the winner's row and returns it.
+ */
+export async function createTransactionOnce(
+  key: string,
+  input: TransactionInput,
+  deps?: Partial<TransactionDeps>
+): Promise<TransactionResult<{ transaction: Transaction; replayed: boolean }>> {
+  if (!key.trim()) return { success: false, error: 'Missing idempotency key' };
+
+  const findPrior = async (tx: Tx) => {
+    const prior = await tx.idempotencyKey.findUnique({ where: { key } });
+    if (!prior) return null;
+    const transaction = await tx.transaction.findUnique({ where: { id: prior.transactionId } });
+    if (!transaction) fail('This was already saved once and has since been deleted');
+    return transaction;
+  };
+
+  const result = await run(deps, 'save transaction', async (tx) => {
+    const prior = await findPrior(tx);
+    if (prior) return { transaction: prior, replayed: true };
+    const parsed = parseInput(input);
+    const data =
+      parsed.kind === 'TRANSFER'
+        ? await buildTransfer(tx, parsed)
+        : await buildIncomeOrExpense(tx, parsed);
+    const transaction = await tx.transaction.create({ data });
+    await tx.idempotencyKey.create({ data: { key, transactionId: transaction.id } });
+    return { transaction, replayed: false };
+  });
+  if (result.success) return result;
+
+  // Lost a race with a concurrent call using the same key?
+  const winner = await run(deps, 'save transaction', findPrior);
+  if (winner.success && winner.data) {
+    return { success: true, data: { transaction: winner.data, replayed: true } };
+  }
+  return result;
+}
+
 export type UpdateOptions = {
   /**
    * Legacy multi-row income splits: ids of sibling rows of the same kind that

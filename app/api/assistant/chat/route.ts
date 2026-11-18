@@ -1,230 +1,55 @@
-import OpenAI from 'openai';
+import { createUIMessageStreamResponse } from 'ai';
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  assistantResponseSchema,
-  buildAssistantSystemPrompt,
-  type ChatMessage,
-} from '@/lib/assistant';
-import { formatFinanceContextForPrompt, getFinanceContext } from '@/lib/financeContext';
+import { approvalSecret, runAssistant } from '@/lib/assistant/engine';
+import { getAssistantModel } from '@/lib/assistant/model';
+import { getAppTimeZone, todayInAppTimeZone } from '@/lib/dates';
+import { prisma } from '@/lib/prisma';
+import { APP_CURRENCY } from '@/lib/utils';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
-type IncomingMessage = {
-  role: 'user' | 'assistant';
-  content: string;
-  image?: { dataUrl: string; mimeType: string };
-};
-
-function extractJson(text: string) {
-  const trimmed = text.trim();
-  if (trimmed.startsWith('{')) return trimmed;
-  const match = trimmed.match(/\{[\s\S]*\}/);
-  return match ? match[0] : trimmed;
-}
-
+/**
+ * Streams one assistant turn as an AI SDK UI message stream (for useChat).
+ * Body: { messages: UIMessage[] } — the whole conversation so far.
+ */
 export async function POST(request: NextRequest) {
+  const config = getAssistantModel();
+  if (!config.ok) {
+    console.error('Assistant config:', config.error);
+    return NextResponse.json({ error: config.error }, { status: 500 });
+  }
+
+  let body: { messages?: unknown };
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OPENAI_API_KEY is not configured. Add it to your .env file.' },
-        { status: 500 }
-      );
-    }
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Request body must be JSON' }, { status: 400 });
+  }
 
-    const body = await request.json();
-    const messages = (body.messages || []) as IncomingMessage[];
-
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json({ error: 'messages are required' }, { status: 400 });
-    }
-
-    const ctx = await getFinanceContext();
-
-    const systemPrompt = buildAssistantSystemPrompt({
-      today: ctx.today,
-      expenseCategories: ctx.expenseCategories,
-      incomeCategories: ctx.incomeCategories,
-      accounts: ctx.accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })),
-      snapshotJson: formatFinanceContextForPrompt(ctx),
-    });
-
-    const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemPrompt },
-    ];
-
-    for (const msg of messages.slice(-12)) {
-      if (msg.role === 'assistant') {
-        openaiMessages.push({ role: 'assistant', content: msg.content });
-        continue;
-      }
-
-      if (msg.image?.dataUrl) {
-        const dataUrl = msg.image.dataUrl.includes('base64,')
-          ? msg.image.dataUrl
-          : `data:${msg.image.mimeType || 'image/jpeg'};base64,${msg.image.dataUrl}`;
-
-        openaiMessages.push({
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text:
-                msg.content ||
-                'Please review this image and log the transaction if it is a receipt or payment.',
-            },
-            { type: 'image_url', image_url: { url: dataUrl } },
-          ],
-        });
-      } else {
-        openaiMessages.push({ role: 'user', content: msg.content });
-      }
-    }
-
-    const openai = new OpenAI({ apiKey });
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: openaiMessages,
-    });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) {
-      return NextResponse.json({ error: 'Empty response from model' }, { status: 502 });
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(extractJson(raw));
-    } catch {
-      return NextResponse.json({ error: 'Model returned invalid JSON' }, { status: 502 });
-    }
-
-    const validated = assistantResponseSchema.safeParse(parsed);
-    if (!validated.success) {
-      return NextResponse.json(
-        { error: 'Model response failed validation', details: validated.error.flatten() },
-        { status: 502 }
-      );
-    }
-
-    let draft = validated.data.draft;
-    const categories = [
-      ...ctx.expenseCategories.map((c) => ({ ...c, type: 'EXPENSE' as const })),
-      ...ctx.incomeCategories.map((c) => ({ ...c, type: 'INCOME' as const })),
-    ];
-    const accounts = ctx.accounts;
-
-    const lastUserText = [...messages]
-      .reverse()
-      .find((m) => m.role === 'user')
-      ?.content?.toLowerCase() || '';
-
-    const userNamedAccount = accounts.some((a) => {
-      const name = a.name.toLowerCase();
-      if (name && lastUserText.includes(name)) return true;
-      const typeHints: Record<string, string[]> = {
-        CASH: ['cash', 'wallet'],
-        CHECKING: ['checking'],
-        SAVINGS: ['savings'],
-        CREDIT_CARD: ['credit card', 'card'],
-        LOAN: ['loan'],
-        INVESTMENT: ['investment'],
-      };
-      return (typeHints[a.type] || []).some((hint) => lastUserText.includes(hint));
-    });
-
-    const accountChoices = accounts
-      .filter((a) => a.type !== 'LOAN')
-      .map((a) => a.name)
-      .join(', ');
-
-    if (draft) {
-      const category = categories.find((c) => c.id === draft!.categoryId);
-      if (!category) {
-        return NextResponse.json({
-          success: true,
-          data: {
-            message:
-              validated.data.message +
-              ' I could not match that to a category in your list — please create the category or try again.',
-            draft: null,
-          },
-        });
-      }
-
-      if (draft.kind === 'EXPENSE' && category.type !== 'EXPENSE') {
-        draft = null;
-      } else if (draft.kind === 'INCOME' && category.type !== 'INCOME') {
-        draft = null;
-      } else if (draft.kind === 'INCOME' && (!draft.accountId || !userNamedAccount)) {
-        return NextResponse.json({
-          success: true,
-          data: {
-            message: `Got it — $${draft.amount.toFixed(2)} income${
-              draft.merchantOrSource ? ` from ${draft.merchantOrSource}` : ''
-            }. Which account should it go into? (${accountChoices || 'add an account first'})`,
-            draft: null,
-          },
-        });
-      } else if (
-        draft.kind === 'EXPENSE' &&
-        draft.accountId &&
-        !userNamedAccount &&
-        accounts.filter((a) => a.type !== 'LOAN').length > 1
-      ) {
-        return NextResponse.json({
-          success: true,
-          data: {
-            message: `Got it — $${draft.amount.toFixed(2)} expense. Which account should I use? (${accountChoices})`,
-            draft: null,
-          },
-        });
-      } else if (draft.accountId && !accounts.some((a) => a.id === draft!.accountId)) {
-        draft = { ...draft, accountId: null };
-        if (draft.kind === 'INCOME') {
-          return NextResponse.json({
-            success: true,
-            data: {
-              message: `That account was not found — which account should I use? (${accountChoices})`,
-              draft: null,
-            },
-          });
-        }
-      }
-    }
-
-    const historySafe: ChatMessage[] = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const enrichedDraft = draft
-      ? {
-          ...draft,
-          categoryName: categories.find((c) => c.id === draft.categoryId)?.name ?? 'Category',
-          accountName: draft.accountId
-            ? accounts.find((a) => a.id === draft.accountId)?.name ?? null
-            : null,
-        }
-      : null;
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        message: validated.data.message,
-        draft: enrichedDraft,
+  try {
+    const result = await runAssistant({
+      messages: body.messages,
+      model: config.model,
+      provider: config.provider,
+      deps: {
+        db: prisma,
+        today: todayInAppTimeZone(),
+        timeZone: getAppTimeZone(),
+        currency: APP_CURRENCY,
       },
-      meta: {
-        historyLength: historySafe.length,
-        categoryCount: categories.length,
-        accountCount: accounts.length,
-      },
+      approvalSecret: approvalSecret(),
+      abortSignal: request.signal,
     });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return createUIMessageStreamResponse({ stream: result.stream });
   } catch (error) {
     console.error('Assistant chat error:', error);
-    const message = error instanceof Error ? error.message : 'Assistant request failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: 'The assistant is unavailable right now. Please try again.' },
+      { status: 500 }
+    );
   }
 }
