@@ -8,6 +8,7 @@ import {
 import { signedFriendAmount } from '@/lib/friends';
 import { expenseCategoryAllocations } from '@/lib/transactions';
 import { todayInAppTimeZone, monthRange, toDayString, eachDay, formatDay } from '@/lib/dates';
+import { loadSuggestions, loadUpcoming } from '@/lib/recurringQueries';
 
 export async function getDashboardData() {
   try {
@@ -24,6 +25,9 @@ export async function getDashboardData() {
       dailyTransactions,
       friendsRaw,
       splitTransactionsRaw,
+      trendRows,
+      upcoming,
+      suggestions,
     ] = await Promise.all([
       prisma.transaction.aggregate({
         where: { kind: 'INCOME', date: thisMonth },
@@ -69,7 +73,7 @@ export async function getDashboardData() {
           kind: 'EXPENSE',
           date: thisMonth,
         },
-        select: { date: true, amount: true },
+        select: { date: true, amount: true, recurringId: true },
         orderBy: { date: 'asc' },
       }),
       prisma.friend.findMany({
@@ -86,6 +90,16 @@ export async function getDashboardData() {
           accountSplits: true,
         },
       }),
+      // 12-month trend, split into recurring and everyday spending.
+      prisma.transaction.findMany({
+        where: {
+          kind: { in: ['INCOME', 'EXPENSE'] },
+          date: { gte: monthRange(today, -11).gte, lt: thisMonth.lt },
+        },
+        select: { kind: true, amount: true, date: true, recurringId: true },
+      }),
+      loadUpcoming(today),
+      loadSuggestions(today),
     ]);
 
     const totalsByCategory = new Map<string, number>();
@@ -111,26 +125,26 @@ export async function getDashboardData() {
       };
     });
 
-    // Monthly trend (12 months)
+    // Monthly trend (12 months). "Recurring" is spending posted from (or
+    // linked to) a recurring entry; "everyday" is the rest.
     const monthlyTrend = [];
     for (let i = 11; i >= 0; i--) {
       const range = monthRange(today, -i);
-
-      const [income, expenses] = await Promise.all([
-        prisma.transaction.aggregate({
-          where: { kind: 'INCOME', date: range },
-          _sum: { amount: true },
-        }),
-        prisma.transaction.aggregate({
-          where: { kind: 'EXPENSE', date: range },
-          _sum: { amount: true },
-        }),
-      ]);
-
+      let income = 0;
+      let recurring = 0;
+      let everyday = 0;
+      for (const t of trendRows) {
+        if (t.date < range.gte || t.date >= range.lt) continue;
+        if (t.kind === 'INCOME') income += t.amount;
+        else if (t.recurringId) recurring += t.amount;
+        else everyday += t.amount;
+      }
       monthlyTrend.push({
         month: formatDay(range.gte, { month: 'short' }),
-        income: income._sum.amount || 0,
-        expenses: expenses._sum.amount || 0,
+        income,
+        expenses: recurring + everyday,
+        recurring,
+        everyday,
       });
     }
 
@@ -203,15 +217,23 @@ export async function getDashboardData() {
 
     // Daily spending trend for area chart
     const days = eachDay(toDayString(monthStart), today);
-    const dailyMap = new Map<string, number>();
+    const dailyMap = new Map<string, { recurring: number; everyday: number }>();
     for (const t of dailyTransactions) {
       const key = toDayString(t.date);
-      dailyMap.set(key, (dailyMap.get(key) || 0) + t.amount);
+      const day = dailyMap.get(key) ?? { recurring: 0, everyday: 0 };
+      if (t.recurringId) day.recurring += t.amount;
+      else day.everyday += t.amount;
+      dailyMap.set(key, day);
     }
-    const dailySpending = days.map((d) => ({
-      date: formatDay(d, { month: 'short', day: '2-digit' }),
-      amount: dailyMap.get(d) || 0,
-    }));
+    const dailySpending = days.map((d) => {
+      const day = dailyMap.get(d) ?? { recurring: 0, everyday: 0 };
+      return {
+        date: formatDay(d, { month: 'short', day: '2-digit' }),
+        amount: day.recurring + day.everyday,
+        recurring: day.recurring,
+        everyday: day.everyday,
+      };
+    });
 
     return {
       success: true,
@@ -229,6 +251,8 @@ export async function getDashboardData() {
         monthlyTrend,
         recentTransactions,
         dailySpending,
+        upcoming,
+        suggestionCount: suggestions.length,
       },
     };
   } catch (error) {

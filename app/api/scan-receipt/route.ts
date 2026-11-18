@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
+import { findMerchantDefaults } from '@/lib/merchantLookup';
 
 const CATEGORY_MAPPING_PROMPT = `You are a smart expense categorizer for a personal finance app.
 
@@ -88,7 +89,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error }, { status: 422 });
     }
 
-    return NextResponse.json({ success: true, data: parsed });
+    // Defaults the user set for this merchant win over the model's guess.
+    const merchant = await findMerchantDefaults(parsed.merchant).catch(() => null);
+    const merchantDefaults = merchant
+      ? {
+          name: merchant.name,
+          categoryId: merchant.defaultCategory?.type === 'EXPENSE' ? merchant.defaultCategory.id : null,
+          subcategoryId: merchant.defaultCategory?.type === 'EXPENSE' ? merchant.defaultSubcategoryId : null,
+          accountId: merchant.defaultAccount?.id ?? null,
+        }
+      : null;
+
+    return NextResponse.json({ success: true, data: { ...parsed, merchantDefaults } });
   } catch (error) {
     console.error('Receipt scan error:', error);
     const message = error instanceof Error ? error.message : 'Failed to scan receipt';

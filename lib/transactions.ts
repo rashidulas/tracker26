@@ -12,12 +12,15 @@
  *   - editing a transfer keeps its category and system tags ("payment", ...)
  *   - every multi-document write runs inside one prisma.$transaction
  *   - every page that shows transactions or balances is revalidated
+ *   - income and expenses with merchant text are linked to a Merchant
+ *     (created on first use), and the text becomes the merchant's name
  *
  * Server-only. Not a 'use server' file: callers are server actions.
  */
 import type { Prisma, PrismaClient, Transaction, TransactionKind } from '@prisma/client';
 import { z } from 'zod';
 import { isValidDay, parseDay, toDayString } from '@/lib/dates';
+import { ensureMerchant } from '@/lib/merchants';
 
 // ==================== DEPENDENCIES ====================
 
@@ -38,6 +41,8 @@ export const TRANSACTION_PAGES = [
   '/transactions/income',
   '/transactions/transfers',
   '/plan/budgets',
+  '/plan/recurring',
+  '/settings/merchants',
   '/chat',
 ] as const;
 
@@ -347,6 +352,9 @@ async function buildIncomeOrExpense(
   // Sequential on purpose: one MongoDB session should not run queries in parallel.
   const cat = await resolveCategory(tx, input);
   const acct = await resolveAccounts(tx, input);
+  const merchantText =
+    input.merchantOrSource !== undefined ? input.merchantOrSource : existing?.merchantOrSource ?? null;
+  const merchant = await ensureMerchant(tx, merchantText);
   return {
     kind: input.kind,
     date: input.date,
@@ -357,8 +365,8 @@ async function buildIncomeOrExpense(
     accountId: acct.accountId,
     accountSplits: acct.accountSplits,
     toAccountId: null,
-    merchantOrSource:
-      input.merchantOrSource !== undefined ? input.merchantOrSource : existing?.merchantOrSource ?? null,
+    merchantOrSource: merchant?.name ?? null,
+    merchantId: merchant?.id ?? null,
     notes: input.notes !== undefined ? input.notes : existing?.notes ?? null,
     tags: input.tags !== undefined ? normalizeTags(input.tags) : existing?.tags ?? [],
     splitGroupId: null,
@@ -409,6 +417,7 @@ async function buildTransfer(
     splitItems: [],
     accountSplits: [],
     merchantOrSource,
+    merchantId: null,
     notes,
     tags,
     splitGroupId: null,
@@ -422,6 +431,15 @@ function parseInput(input: TransactionInput): ParsedInput {
 }
 
 // ==================== RUNNER ====================
+
+/** Runs `work` in one database transaction, then revalidates every transaction page. */
+export async function runTransactionWrite<T>(
+  deps: Partial<TransactionDeps> | undefined,
+  label: string,
+  work: (tx: Tx) => Promise<T>
+): Promise<TransactionResult<T>> {
+  return run(deps, label, work);
+}
 
 async function run<T>(
   deps: Partial<TransactionDeps> | undefined,
@@ -447,14 +465,24 @@ export async function createTransaction(
   input: TransactionInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult> {
-  return run(deps, 'save transaction', async (tx) => {
-    const parsed = parseInput(input);
-    const data =
-      parsed.kind === 'TRANSFER'
-        ? await buildTransfer(tx, parsed)
-        : await buildIncomeOrExpense(tx, parsed);
-    return tx.transaction.create({ data });
-  });
+  return run(deps, 'save transaction', (tx) => createTransactionInTx(tx, input));
+}
+
+/**
+ * Create inside a caller's database transaction (recurring posting), with the
+ * same rules as createTransaction. Throws TransactionError on bad input.
+ */
+export async function createTransactionInTx(
+  tx: Tx,
+  input: TransactionInput,
+  extra: { recurringId?: string | null } = {}
+): Promise<Transaction> {
+  const parsed = parseInput(input);
+  const data =
+    parsed.kind === 'TRANSFER'
+      ? await buildTransfer(tx, parsed)
+      : await buildIncomeOrExpense(tx, parsed);
+  return tx.transaction.create({ data: { ...data, recurringId: extra.recurringId ?? null } });
 }
 
 export type UpdateOptions = {
@@ -666,6 +694,53 @@ export async function recategorizeTransactions(
 }
 
 /**
+ * Gives every income/expense of `merchantId` the category `categoryId` (and
+ * subcategory, which may be null). Rows of the other kind and split expenses
+ * are left alone. Used by "apply to past transactions" after the user sets a
+ * merchant default.
+ */
+export async function applyMerchantCategory(
+  merchantId: string,
+  categoryId: string,
+  subcategoryId: string | null,
+  deps?: Partial<TransactionDeps>
+): Promise<TransactionResult<{ updated: number }>> {
+  return run(deps, 'update past transactions', async (tx) => {
+    if (!/^[a-f\d]{24}$/i.test(merchantId)) fail('Merchant not found');
+    if (!/^[a-f\d]{24}$/i.test(categoryId)) fail('Category not found');
+    const category = await tx.category.findUnique({
+      where: { id: categoryId },
+      select: { id: true, type: true },
+    });
+    if (!category) fail('Category not found');
+    if (subcategoryId) {
+      const sub = await tx.subcategory.findFirst({
+        where: { id: subcategoryId, categoryId },
+        select: { id: true },
+      });
+      if (!sub) fail('Subcategory does not belong to the selected category');
+    }
+    // Split expenses are filtered here, not with `splitItems: { isEmpty: true }`:
+    // older documents have no splitItems field at all, and MongoDB's isEmpty
+    // does not match a missing field.
+    const rows = await tx.transaction.findMany({
+      where: { merchantId, kind: category.type },
+      select: { id: true, categoryId: true, subcategoryId: true, splitItems: true },
+    });
+    const ids = rows
+      .filter((r) => (r.splitItems ?? []).length === 0)
+      .filter((r) => r.categoryId !== categoryId || (r.subcategoryId ?? null) !== subcategoryId)
+      .map((r) => r.id);
+    if (ids.length === 0) return { updated: 0 };
+    const { count } = await tx.transaction.updateMany({
+      where: { id: { in: ids } },
+      data: { categoryId, subcategoryId },
+    });
+    return { updated: count };
+  });
+}
+
+/**
  * Clear subcategoryId on transactions before those subcategories are deleted.
  * Runs inside the caller's database transaction (category edit). Does not
  * change any amount or account, so balances are unaffected.
@@ -673,6 +748,15 @@ export async function recategorizeTransactions(
 export async function detachSubcategories(tx: Tx, subcategoryIds: string[]) {
   if (subcategoryIds.length === 0) return 0;
   const { count } = await tx.transaction.updateMany({
+    where: { subcategoryId: { in: subcategoryIds } },
+    data: { subcategoryId: null },
+  });
+  // Merchant defaults and recurring templates point at subcategories too.
+  await tx.merchant.updateMany({
+    where: { defaultSubcategoryId: { in: subcategoryIds } },
+    data: { defaultSubcategoryId: null },
+  });
+  await tx.recurringTransaction.updateMany({
     where: { subcategoryId: { in: subcategoryIds } },
     data: { subcategoryId: null },
   });

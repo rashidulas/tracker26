@@ -9,6 +9,8 @@ import Button from '@/components/Button';
 import CategoryForm from './CategoryForm';
 import { deleteCategory } from './actions';
 import PageHeader from '@/components/PageHeader';
+import TabNav from '@/components/TabNav';
+import { SETTINGS_TABS } from '../tabs';
 import { Plus, Pencil, Trash2, Tags, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
 interface Subcategory {
@@ -130,8 +132,8 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
   return (
     <div className="page-shell">
       <PageHeader
-        title="Categories"
-        subtitle="Shape how you track money — with optional subcategories"
+        title="Settings"
+        subtitle="Categories and merchant memory"
         actions={
           <Button onClick={handleAdd} className="w-full sm:w-auto">
             <Plus size={18} />
@@ -139,6 +141,7 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
           </Button>
         }
       />
+      <TabNav tabs={SETTINGS_TABS} label="Settings sections" />
 
       <div className="flex flex-wrap items-center gap-2 mb-6">
         {tabs.map((tab) => {

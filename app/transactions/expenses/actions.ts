@@ -9,6 +9,7 @@ import {
   type TransferPurpose,
 } from '@/lib/transactions';
 import { dayFilter } from '@/lib/dates';
+import { getMerchantMemory } from '@/app/settings/merchants/actions';
 
 export async function getExpenses(filters?: {
   startDate?: string;
@@ -166,7 +167,7 @@ export async function createDebtPaymentTransfer(formData: FormData) {
  */
 export async function getQuickAddData() {
   try {
-    const [categories, accounts, recent] = await Promise.all([
+    const [categories, accounts, recent, merchants] = await Promise.all([
       prisma.category.findMany({
         where: { type: 'EXPENSE' },
         select: {
@@ -185,40 +186,21 @@ export async function getQuickAddData() {
       prisma.transaction.findMany({
         where: { kind: 'EXPENSE' },
         select: {
-          merchantOrSource: true,
           categoryId: true,
-          subcategoryId: true,
           accountId: true,
         },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         take: 500,
       }),
+      // Defaults the user set, else what was used last time (lib/merchants.ts).
+      getMerchantMemory('EXPENSE'),
     ]);
 
-    const merchants: Array<{
-      name: string;
-      categoryId: string | null;
-      subcategoryId: string | null;
-      accountId: string | null;
-    }> = [];
-    const seen = new Set<string>();
     const accountByCategory: Record<string, string> = {};
-
     for (const t of recent) {
       if (t.categoryId && t.accountId && !accountByCategory[t.categoryId]) {
         accountByCategory[t.categoryId] = t.accountId;
       }
-      const name = t.merchantOrSource?.trim();
-      if (!name) continue;
-      const key = name.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merchants.push({
-        name,
-        categoryId: t.categoryId,
-        subcategoryId: t.subcategoryId,
-        accountId: t.accountId,
-      });
     }
 
     return {
@@ -226,7 +208,7 @@ export async function getQuickAddData() {
       data: {
         categories,
         accounts,
-        merchants: merchants.slice(0, 200),
+        merchants,
         accountByCategory,
         lastAccountId: recent.find((t) => t.accountId)?.accountId ?? null,
       },

@@ -6,6 +6,8 @@ import {
   type ChatMessage,
 } from '@/lib/assistant';
 import { formatFinanceContextForPrompt, getFinanceContext } from '@/lib/financeContext';
+import { findMerchantDefaults, listMerchantDefaults } from '@/lib/merchantLookup';
+import { defaultCategoryForKind } from '@/lib/merchants';
 
 export const runtime = 'nodejs';
 
@@ -39,7 +41,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'messages are required' }, { status: 400 });
     }
 
-    const ctx = await getFinanceContext();
+    const [ctx, merchantDefaults] = await Promise.all([
+      getFinanceContext(),
+      listMerchantDefaults().catch(() => []),
+    ]);
 
     const systemPrompt = buildAssistantSystemPrompt({
       today: ctx.today,
@@ -47,6 +52,12 @@ export async function POST(request: NextRequest) {
       incomeCategories: ctx.incomeCategories,
       accounts: ctx.accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })),
       snapshotJson: formatFinanceContextForPrompt(ctx),
+      merchantDefaults: merchantDefaults.map((m) => ({
+        name: m.name,
+        categoryId: m.defaultCategory?.id ?? null,
+        categoryName: m.defaultCategory?.name ?? null,
+        accountName: m.defaultAccount?.name ?? null,
+      })),
     });
 
     const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -140,6 +151,31 @@ export async function POST(request: NextRequest) {
       .map((a) => a.name)
       .join(', ');
 
+    // Merchant defaults the user set win over the model's guess. The account
+    // default only fills in when the user did not name an account.
+    let accountFromMerchant = false;
+    if (draft?.merchantOrSource) {
+      const merchant = await findMerchantDefaults(draft.merchantOrSource).catch(() => null);
+      if (merchant) {
+        const def = defaultCategoryForKind(
+          {
+            defaultCategoryId: merchant.defaultCategory?.id ?? null,
+            defaultSubcategoryId: merchant.defaultSubcategoryId,
+          },
+          (id) => categories.find((c) => c.id === id)?.type,
+          draft.kind
+        );
+        draft = { ...draft, merchantOrSource: merchant.name };
+        if (def) draft = { ...draft, categoryId: def.categoryId };
+        const defaultAccountId = merchant.defaultAccount?.id;
+        if (defaultAccountId && accounts.some((a) => a.id === defaultAccountId) && !userNamedAccount) {
+          draft = { ...draft, accountId: defaultAccountId };
+          accountFromMerchant = true;
+        }
+      }
+    }
+    const accountKnown = userNamedAccount || accountFromMerchant;
+
     if (draft) {
       const category = categories.find((c) => c.id === draft!.categoryId);
       if (!category) {
@@ -158,7 +194,7 @@ export async function POST(request: NextRequest) {
         draft = null;
       } else if (draft.kind === 'INCOME' && category.type !== 'INCOME') {
         draft = null;
-      } else if (draft.kind === 'INCOME' && (!draft.accountId || !userNamedAccount)) {
+      } else if (draft.kind === 'INCOME' && (!draft.accountId || !accountKnown)) {
         return NextResponse.json({
           success: true,
           data: {
@@ -171,7 +207,7 @@ export async function POST(request: NextRequest) {
       } else if (
         draft.kind === 'EXPENSE' &&
         draft.accountId &&
-        !userNamedAccount &&
+        !accountKnown &&
         accounts.filter((a) => a.type !== 'LOAN').length > 1
       ) {
         return NextResponse.json({

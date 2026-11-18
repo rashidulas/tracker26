@@ -34,7 +34,23 @@ export function buildAssistantSystemPrompt(context: {
   incomeCategories: { id: string; name: string }[];
   accounts: { id: string; name: string; type: string }[];
   snapshotJson?: string;
+  /** Defaults the user set per merchant ("Always use ... for <merchant>"). */
+  merchantDefaults?: { name: string; categoryId: string | null; categoryName: string | null; accountName: string | null }[];
 }) {
+  const merchantBlock =
+    context.merchantDefaults && context.merchantDefaults.length > 0
+      ? `\nMerchant defaults (the user chose these — use them for that merchant unless they say otherwise):\n${context.merchantDefaults
+          .map(
+            (m) =>
+              `- ${m.name}: ${[
+                m.categoryName && m.categoryId ? `category ${m.categoryName} (id: ${m.categoryId})` : null,
+                m.accountName ? `account ${m.accountName}` : null,
+              ]
+                .filter(Boolean)
+                .join(', ')}`
+          )
+          .join('\n')}\n`
+      : '';
   const expenseList =
     context.expenseCategories.map((c) => `- ${c.name} (id: ${c.id})`).join('\n') ||
     '- (none — ask user to create expense categories first)';
@@ -72,14 +88,15 @@ ${incomeList}
 
 Accounts:
 ${accountList}
-
+${merchantBlock}
 Rules:
 - Prefer EXPENSE for spending, purchases, bills, dining, groceries, receipts
 - Prefer INCOME for salary, freelance, refunds received, pay deposited into an account
 - Always pick categoryId from the matching list (EXPENSE categories for expenses, INCOME for income)
 - NEVER guess a missing account. If the user did not clearly name which account (by name or type like "cash", "checking", "wallet", "Discover"), set draft to null and ask which account — list the relevant account names from the Accounts list.
 - For INCOME: account is REQUIRED. If missing, ask (do not default to checking).
-- For EXPENSE: account is REQUIRED too (an expense cannot be saved without one). Set accountId only when the user named it or there is exactly one non-loan account; otherwise set draft to null and ask which account.
+- For EXPENSE: account is REQUIRED too (an expense cannot be saved without one). Set accountId only when the user named it, the merchant has a default account above, or there is exactly one non-loan account; otherwise set draft to null and ask which account.
+- Always fill merchantOrSource when a merchant or payer is mentioned or visible on a receipt.
 - If amount, kind, or category is missing/unclear, set draft to null and ask the next missing piece (one question at a time).
 - Dates must be YYYY-MM-DD
 - Amounts must be positive numbers in USD

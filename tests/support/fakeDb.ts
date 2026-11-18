@@ -16,6 +16,10 @@ const MODELS = [
   'transaction',
   'goalContribution',
   'budget',
+  'merchant',
+  'recurringTransaction',
+  'recurringPosting',
+  'dismissedRecurringSuggestion',
 ] as const;
 type ModelName = (typeof MODELS)[number];
 
@@ -29,6 +33,8 @@ const DEFAULTS: Record<ModelName, Doc> = {
     accountId: null,
     toAccountId: null,
     merchantOrSource: null,
+    merchantId: null,
+    recurringId: null,
     notes: null,
     tags: [],
     splitItems: [],
@@ -37,7 +43,36 @@ const DEFAULTS: Record<ModelName, Doc> = {
   },
   goalContribution: { notes: null },
   budget: {},
+  merchant: { defaultCategoryId: null, defaultSubcategoryId: null, defaultAccountId: null },
+  recurringTransaction: {
+    categoryId: null,
+    subcategoryId: null,
+    toAccountId: null,
+    merchantId: null,
+    merchantOrSource: null,
+    notes: null,
+    endDate: null,
+    autoPost: false,
+    active: true,
+  },
+  recurringPosting: { transactionId: null },
+  dismissedRecurringSuggestion: {},
 };
+
+/** Unique indexes the code relies on (field lists). */
+const UNIQUE: Partial<Record<ModelName, string[][]>> = {
+  merchant: [['normalizedName']],
+  recurringPosting: [['recurringId', 'dueDate']],
+  dismissedRecurringSuggestion: [['key']],
+};
+
+/** Compound unique keys used in where clauses, e.g. name_type. */
+const COMPOUND_KEYS = new Set(['name_type', 'recurringId_dueDate']);
+
+/** Thrown like Prisma's P2002 when a unique index would be violated. */
+export class UniqueConstraintError extends Error {
+  code = 'P2002';
+}
 
 let counter = 0;
 export function newId() {
@@ -70,7 +105,7 @@ export function matches(doc: Doc, where: Where): boolean {
       if (list.some((w: Where) => matches(doc, w))) return false;
       continue;
     }
-    if (key === 'name_type') {
+    if (COMPOUND_KEYS.has(key)) {
       if (!matches(doc, cond)) return false;
       continue;
     }
@@ -94,6 +129,8 @@ export function matches(doc: Doc, where: Where): boolean {
     }
     if ('gte' in cond && !(value >= cond.gte)) return false;
     if ('lte' in cond && !(value <= cond.lte)) return false;
+    if ('gt' in cond && !(value > cond.gt)) return false;
+    if ('lt' in cond && !(value < cond.lt)) return false;
   }
   return true;
 }
@@ -113,6 +150,10 @@ export class FakeDb {
     transaction: [],
     goalContribution: [],
     budget: [],
+    merchant: [],
+    recurringTransaction: [],
+    recurringPosting: [],
+    dismissedRecurringSuggestion: [],
   };
   private inTransaction = false;
   /** Number of $transaction calls that committed. */
@@ -121,6 +162,15 @@ export class FakeDb {
   private guardWrite(model: string, op: string) {
     if (!this.inTransaction) {
       throw new Error(`FakeDb: ${model}.${op} called outside $transaction`);
+    }
+  }
+
+  private checkUnique(name: ModelName, doc: Doc) {
+    for (const fields of UNIQUE[name] ?? []) {
+      const clash = this.data[name].some(
+        (other) => other !== doc && fields.every((f) => eq(other[f], doc[f]))
+      );
+      if (clash) throw new UniqueConstraintError(`FakeDb: unique ${name}(${fields.join(', ')})`);
     }
   }
 
@@ -136,10 +186,31 @@ export class FakeDb {
         const doc = rows().find((d) => matches(d, where));
         return doc ? project(doc, select) : null;
       },
-      findMany: async ({ where, select }: { where?: Where; select?: any } = {}) =>
-        rows()
-          .filter((d) => matches(d, where))
-          .map((d) => project(d, select)),
+      findMany: async ({
+        where,
+        select,
+        orderBy,
+        take,
+      }: { where?: Where; select?: any; orderBy?: any; take?: number } = {}) => {
+        let list = rows().filter((d) => matches(d, where));
+        const orders: Record<string, 'asc' | 'desc'>[] = Array.isArray(orderBy)
+          ? orderBy
+          : orderBy
+          ? [orderBy]
+          : [];
+        if (orders.length) {
+          list = [...list].sort((a, b) => {
+            for (const o of orders) {
+              const [k, dir] = Object.entries(o)[0];
+              if (a[k] < b[k]) return dir === 'asc' ? -1 : 1;
+              if (a[k] > b[k]) return dir === 'asc' ? 1 : -1;
+            }
+            return 0;
+          });
+        }
+        if (take !== undefined) list = list.slice(0, take);
+        return list.map((d) => project(d, select));
+      },
       count: async ({ where }: { where?: Where } = {}) =>
         rows().filter((d) => matches(d, where)).length,
       create: async ({ data, select }: { data: Doc; select?: any }) => {
@@ -152,6 +223,7 @@ export class FakeDb {
           updatedAt: now,
           ...clone(data),
         };
+        self.checkUnique(name, doc);
         rows().push(doc);
         return project(doc, select);
       },
@@ -201,6 +273,10 @@ export class FakeDb {
   transaction = this.model('transaction');
   goalContribution = this.model('goalContribution');
   budget = this.model('budget');
+  merchant = this.model('merchant');
+  recurringTransaction = this.model('recurringTransaction');
+  recurringPosting = this.model('recurringPosting');
+  dismissedRecurringSuggestion = this.model('dismissedRecurringSuggestion');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) throw new Error('FakeDb: nested $transaction');

@@ -19,6 +19,8 @@ import { addDays, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
 import { loadExpensePrefs, rememberExpense } from '@/lib/expensePrefs';
 import type { ExpenseRow } from '@/lib/expenseEvents';
+import { normalizeMerchantName } from '@/lib/merchants';
+import { useMerchantRulePrompt } from '@/components/merchants/MerchantRulePrompt';
 import {
   CreditCard,
   ArrowRight,
@@ -90,6 +92,9 @@ export interface MerchantSuggestion {
   categoryId: string | null;
   subcategoryId: string | null;
   accountId: string | null;
+  merchantId?: string | null;
+  /** The category is a default the user chose ("Always use ..."). */
+  hasDefault?: boolean;
 }
 
 export interface ExpenseSaveResult {
@@ -119,7 +124,7 @@ interface ExpenseFormProps {
     subcategories?: Array<{ id: string; name: string }>;
   }>;
   accounts: Array<{ id: string; name: string; type?: string }>;
-  /** Past merchants from the server, most recent first. */
+  /** Merchant memory from the server: user defaults, else last used; most recent first. */
   merchants?: MerchantSuggestion[];
   /** Server-side fallbacks for when nothing is remembered locally. */
   serverAccountByCategory?: Record<string, string>;
@@ -167,6 +172,7 @@ export default function ExpenseForm({
   submitIntentRef,
 }: ExpenseFormProps) {
   const toast = useToast();
+  const merchantRule = useMerchantRulePrompt();
   const [prefs] = useState(() => loadExpensePrefs());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localCategories, setLocalCategories] = useState<CategoryOption[]>(categories);
@@ -183,6 +189,8 @@ export default function ExpenseForm({
   const [highlighted, setHighlighted] = useState(0);
   // Once the user picks an account themselves, smart defaults stop touching it.
   const accountTouched = useRef(Boolean(expense));
+  // The merchant's account beats "the account last used with this category".
+  const accountFromMerchant = useRef(false);
   const amountRef = useRef<HTMLInputElement | null>(null);
 
   const accountExists = (id: string | null | undefined): id is string =>
@@ -258,18 +266,31 @@ export default function ExpenseForm({
 
   const merchantIndex = useMemo(() => {
     const map = new Map<string, MerchantSuggestion>();
-    // Local memory first (this device, most recent), then server history.
+    // A default the user chose wins; then this device's memory (most recent);
+    // then what the server saw used last.
     Object.values(prefs.merchants)
       .sort((a, b) => b.usedAt - a.usedAt)
-      .forEach((m) => map.set(m.name.toLowerCase(), m));
+      .forEach((m) => {
+        const key = normalizeMerchantName(m.name);
+        if (key && !map.has(key)) map.set(key, m);
+      });
     merchants.forEach((m) => {
-      const key = m.name.toLowerCase();
-      if (!map.has(key)) map.set(key, m);
+      const key = normalizeMerchantName(m.name);
+      if (!key) return;
+      const local = map.get(key);
+      if (m.hasDefault) {
+        map.set(key, { ...m, accountId: m.accountId ?? local?.accountId ?? null });
+      } else if (!local) {
+        map.set(key, m);
+      } else {
+        // Keep the server's canonical spelling and id.
+        map.set(key, { ...local, name: m.name, merchantId: m.merchantId });
+      }
     });
     return map;
   }, [prefs, merchants]);
 
-  const merchantQuery = merchantVal.trim().toLowerCase();
+  const merchantQuery = normalizeMerchantName(merchantVal) ?? '';
   const suggestions = useMemo(() => {
     if (!merchantQuery) return [];
     const starts: MerchantSuggestion[] = [];
@@ -290,7 +311,7 @@ export default function ExpenseForm({
     Boolean(id && localCategories.some((c) => c.id === id));
 
   const applyAccountForCategory = (categoryId: string) => {
-    if (expense || accountTouched.current) return;
+    if (expense || accountTouched.current || accountFromMerchant.current) return;
     const candidate = prefs.accountByCategory[categoryId] ?? serverAccountByCategory[categoryId];
     if (accountExists(candidate)) setValue('accountId', candidate);
   };
@@ -304,7 +325,7 @@ export default function ExpenseForm({
 
   /** Fill category / subcategory / account from what was used with this merchant. */
   const applyMerchantMemory = (name: string, { overrideCategory }: { overrideCategory: boolean }) => {
-    const memory = merchantIndex.get(name.trim().toLowerCase());
+    const memory = merchantIndex.get(normalizeMerchantName(name) ?? '');
     if (!memory) return;
     // Picking a suggestion is explicit, so it wins; a typed match only fills blanks.
     const canSetCategory = overrideCategory || !getValues('categoryId');
@@ -317,6 +338,7 @@ export default function ExpenseForm({
     }
     if (!expense && !accountTouched.current && accountExists(memory.accountId)) {
       setValue('accountId', memory.accountId);
+      accountFromMerchant.current = true;
     } else if (canSetCategory && memory.categoryId) {
       applyAccountForCategory(memory.categoryId);
     }
@@ -402,6 +424,36 @@ export default function ExpenseForm({
     });
   };
 
+  /**
+   * After a save: if the category was changed for a merchant (on an edit, or
+   * away from what that merchant usually gets), offer to make it the default.
+   */
+  const offerMerchantRule = (
+    data: ExpenseFormData,
+    saved: { merchantId?: string | null; merchantOrSource?: string | null } | null
+  ) => {
+    const name = saved?.merchantOrSource || data.merchantOrSource?.trim();
+    if (!name || !data.categoryId) return;
+    const memory = merchantIndex.get(normalizeMerchantName(name) ?? '');
+    const sub = data.subcategoryId || null;
+    const sameAs = (categoryId?: string | null, subcategoryId?: string | null) =>
+      categoryId === data.categoryId && (subcategoryId || null) === sub;
+    if (memory?.hasDefault && sameAs(memory.categoryId, memory.subcategoryId)) return;
+    const changedOnEdit = Boolean(expense) && !sameAs(expense?.categoryId, expense?.subcategoryId);
+    const differsFromUsual = Boolean(memory?.categoryId) && !sameAs(memory?.categoryId, memory?.subcategoryId);
+    if (!changedOnEdit && !differsFromUsual) return;
+    const category = localCategories.find((c) => c.id === data.categoryId);
+    if (!category) return;
+    const subName = category.subcategories?.find((s) => s.id === sub)?.name;
+    merchantRule.offer({
+      merchantId: saved?.merchantId ?? memory?.merchantId ?? null,
+      merchantName: name,
+      categoryId: data.categoryId,
+      subcategoryId: sub,
+      categoryLabel: `${category.icon ? `${category.icon} ` : ''}${category.name}${subName ? ` › ${subName}` : ''}`,
+    });
+  };
+
   const onSubmit = async (data: ExpenseFormData) => {
     const intent: SubmitIntent = submitIntentRef?.current ?? 'save';
     if (submitIntentRef) submitIntentRef.current = 'save';
@@ -443,6 +495,7 @@ export default function ExpenseForm({
       }
 
       if (mode === 'expense') {
+        offerMerchantRule(data, (result.data as { merchantId?: string | null; merchantOrSource?: string | null } | undefined) ?? null);
         rememberExpense({
           accountId: data.accountId,
           categoryId: data.categoryId,
@@ -661,6 +714,7 @@ export default function ExpenseForm({
                       {cat && (
                         <span className="shrink-0 text-xs text-ink-muted">
                           {cat.icon || '📁'} {cat.name}
+                          {s.hasDefault && <span className="ml-1 text-mint">· default</span>}
                         </span>
                       )}
                     </button>

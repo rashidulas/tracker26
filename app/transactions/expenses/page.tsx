@@ -2,15 +2,20 @@ import { getExpenses } from './actions';
 import { getCategoriesForSelect } from '@/app/settings/categories/actions';
 import { getAccountsForSelect } from '@/app/accounts/actions';
 import ExpensesClient from './ExpensesClient';
+import { getMerchantMemory } from '@/app/settings/merchants/actions';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export default async function ExpensesPage() {
-  const [expensesResult, categoriesResult, accountsResult] = await Promise.all([
+  const [expensesResult, categoriesResult, accountsResult, merchants] = await Promise.all([
     getExpenses(),
     getCategoriesForSelect('EXPENSE'),
     getAccountsForSelect(),
+    getMerchantMemory('EXPENSE').catch((error) => {
+      console.error('Error loading merchant memory:', error);
+      return [];
+    }),
   ]);
 
   if (!expensesResult.success || !categoriesResult.success || !accountsResult.success) {
@@ -24,6 +29,7 @@ export default async function ExpensesPage() {
       initialExpenses={expensesResult.data || []}
       categories={categoriesResult.data || []}
       accounts={accountsResult.data || []}
+      merchants={merchants}
     />
   );
 }

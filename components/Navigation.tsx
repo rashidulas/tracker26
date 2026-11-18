@@ -40,7 +40,7 @@ const TRANSACTIONS: NavItem = {
   icon: ListOrdered,
   hint: 'Expenses, income, transfers',
 };
-const PLAN: NavItem = { href: '/plan', label: 'Plan', icon: Target, hint: 'Budgets and goals' };
+const PLAN: NavItem = { href: '/plan', label: 'Plan', icon: Target, hint: 'Budgets, goals, recurring' };
 const ACCOUNTS: NavItem = {
   href: '/accounts',
   label: 'Accounts',
@@ -63,7 +63,7 @@ const SETTINGS: NavItem = {
   href: '/settings',
   label: 'Settings',
   icon: Settings,
-  hint: 'Categories',
+  hint: 'Categories and merchants',
 };
 
 const desktopNavItems = [HOME, TRANSACTIONS, PLAN, ACCOUNTS, FRIENDS, CHAT];

@@ -40,7 +40,9 @@ import {
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 import { useExpenseSaved } from '@/components/quickadd/useExpenseSaved';
 import { onExpenseEvent, type ExpenseRow } from '@/lib/expenseEvents';
-import type { ExpenseSaveResult } from './ExpenseForm';
+import type { ExpenseSaveResult, MerchantSuggestion } from './ExpenseForm';
+import { useMerchantRulePrompt } from '@/components/merchants/MerchantRulePrompt';
+import { normalizeMerchantName } from '@/lib/merchants';
 
 interface Expense {
   id: string;
@@ -69,6 +71,7 @@ interface ExpensesClientProps {
     subcategories?: Array<{ id: string; name: string }>;
   }>;
   accounts: Array<{ id: string; name: string }>;
+  merchants?: MerchantSuggestion[];
 }
 
 const EMPTY_FILTERS = { startDate: '', endDate: '', categoryId: '', subcategoryId: '' };
@@ -77,8 +80,10 @@ export default function ExpensesClient({
   initialExpenses,
   categories,
   accounts,
+  merchants = [],
 }: ExpensesClientProps) {
   const router = useRouter();
+  const merchantRule = useMerchantRulePrompt();
   const searchParams = useSearchParams();
   const toast = useToast();
   const quickAdd = useQuickAdd();
@@ -274,6 +279,28 @@ export default function ExpensesClient({
         `Moved ${result.count} to ${category.name}` +
           (skipped > 0 ? ` (${skipped} transfer${skipped === 1 ? '' : 's'} skipped)` : '')
       );
+      // All from one merchant: offer to make it that merchant's default.
+      const names = expenses
+        .filter((e) => moved.has(e.id) && e.kind === 'EXPENSE' && e.merchantOrSource)
+        .map((e) => e.merchantOrSource as string);
+      const keys = new Set(names.map((n) => normalizeMerchantName(n)));
+      const memory = names.length
+        ? merchants.find((m) => normalizeMerchantName(m.name) === normalizeMerchantName(names[0]))
+        : undefined;
+      if (
+        result.count > 0 &&
+        names.length === result.count &&
+        keys.size === 1 &&
+        !(memory?.hasDefault && memory.categoryId === categoryId && !memory.subcategoryId)
+      ) {
+        merchantRule.offer({
+          merchantId: memory?.merchantId ?? null,
+          merchantName: names[0],
+          categoryId,
+          subcategoryId: null,
+          categoryLabel: `${category.icon ? `${category.icon} ` : ''}${category.name}`,
+        });
+      }
     } else {
       toast.error(result.error);
     }
@@ -521,6 +548,7 @@ export default function ExpensesClient({
           expense={editingExpense || undefined}
           categories={categories}
           accounts={accounts}
+          merchants={merchants}
           onSuccess={handleSuccess}
           onCancel={closeModal}
           hideActions
