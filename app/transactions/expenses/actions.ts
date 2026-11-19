@@ -88,10 +88,31 @@ function friendSplitsFromForm(formData: FormData): FriendSplit[] | undefined {
   }
 }
 
+/** "splitItems" is JSON: [{ categoryId, amount, notes? }] (receipts split by category). */
+function splitItemsFromForm(formData: FormData): ExpenseInput['splitItems'] {
+  const raw = formData.get('splitItems');
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    return parsed.map((s) => ({
+      categoryId: String(s?.categoryId ?? ''),
+      amount: Number(s?.amount),
+      notes: typeof s?.notes === 'string' ? s.notes.slice(0, 200) : null,
+    }));
+  } catch {
+    return undefined;
+  }
+}
+
 function expenseFromForm(formData: FormData): ExpenseInput {
   const tags = (formData.get('tags') as string) || '';
+  // How it was entered, when not typed into the form (lib/transactions).
+  const source = formData.get('source');
   return {
     friendSplits: friendSplitsFromForm(formData),
+    splitItems: splitItemsFromForm(formData),
+    source: source === 'voice' || source === 'receipt' ? source : undefined,
     kind: 'EXPENSE',
     date: (formData.get('date') as string) || '',
     amount: parseFloat(formData.get('amount') as string),

@@ -244,7 +244,7 @@ Two special category sentinels:
 
 These create a `TRANSFER` row, not an `EXPENSE` row. They still appear in the expenses list because the list includes transfers tagged `payment`.
 
-**Receipt scan — Partial (depends on `GEMINI_API_KEY`)**
+**Receipt scan — Partial (depends on the assistant model key, see `.env.example`)**
 
 1. User uploads a photo or camera capture
 2. Gemini 2.0 Flash extracts merchant, date, total, category, line items, notes, tags, confidence
@@ -543,7 +543,7 @@ Outbound transfers are stored as `kind: TRANSFER` on the from-account and are **
 | Charts | Recharts |
 | Forms | react-hook-form + Zod |
 | Data | Prisma 5 + MongoDB |
-| AI | Google Gemini 2.0 Flash (`@google/generative-ai`) |
+| AI | Vercel AI SDK; provider and model from `ASSISTANT_PROVIDER` / `ASSISTANT_MODEL` |
 | Server mutations | Next.js server actions |
 | Toasts | In-app `ToastProvider` |
 
@@ -552,7 +552,7 @@ Outbound transfers are stored as `kind: TRANSFER` on the from-account and are **
 | Variable | Required | Use |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | MongoDB connection |
-| `GEMINI_API_KEY` | No | Receipt scanning |
+| `OPENAI_API_KEY` (or the key of `ASSISTANT_PROVIDER`) | No | Assistant, receipt scanning, AI helpers |
 
 **Scripts**
 

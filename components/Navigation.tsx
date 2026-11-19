@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
+import { useReviewCount } from '@/components/review/reviewCount';
 
 type NavItem = {
   href: string;
@@ -95,12 +96,26 @@ function isActivePath(pathname: string, item: NavItem) {
   return [item.href, ...(item.also ?? [])].some((href) => matchesPrefix(pathname, href));
 }
 
-function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {
+/** Entries waiting in the review inbox, shown on the Transactions item. */
+function ReviewBadge({ count, className = '' }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-mint px-1 text-[10px] font-bold leading-none text-graphite ${className}`}
+    >
+      {count > 99 ? '99+' : count}
+      <span className="sr-only"> to review</span>
+    </span>
+  );
+}
+
+function SidebarLink({ item, pathname, badge = 0 }: { item: NavItem; pathname: string; badge?: number }) {
   const Icon = item.icon;
   const isActive = isActivePath(pathname, item);
   return (
     <Link
-      href={item.href}
+      // With entries waiting, the item opens the inbox.
+      href={badge > 0 ? '/transactions/review' : item.href}
       aria-current={isActive ? 'page' : undefined}
       className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] transition-all duration-200 ${
         isActive
@@ -121,6 +136,7 @@ function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {
         className={isActive ? 'text-mint' : 'text-ink-muted group-hover:text-ink-secondary'}
       />
       <span>{item.label}</span>
+      <ReviewBadge count={badge} className="ml-auto" />
     </Link>
   );
 }
@@ -129,6 +145,7 @@ export default function Navigation() {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const quickAdd = useQuickAdd();
+  const reviewCount = useReviewCount();
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -179,10 +196,11 @@ export default function Navigation() {
   const renderTab = (tab: NavItem) => {
     const Icon = tab.icon;
     const active = isActivePath(pathname, tab);
+    const badge = tab === TRANSACTIONS ? reviewCount : 0;
     return (
       <Link
         key={tab.href}
-        href={tab.href}
+        href={badge > 0 ? '/transactions/review' : tab.href}
         aria-current={active ? 'page' : undefined}
         className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-2xl transition-all duration-200 ${
           active ? 'text-mint' : 'text-ink-muted active:text-ink-secondary'
@@ -195,6 +213,7 @@ export default function Navigation() {
           }`}
         >
           <Icon size={22} strokeWidth={active ? 2.35 : 1.75} />
+          <ReviewBadge count={badge} className="absolute -right-1 -top-1" />
         </span>
         <span
           className={`text-[10px] tracking-wide ${active ? 'font-semibold' : 'font-medium'}`}
@@ -266,7 +285,11 @@ export default function Navigation() {
           <ul className="space-y-0.5">
             {desktopNavItems.map((item) => (
               <li key={item.href}>
-                <SidebarLink item={item} pathname={pathname} />
+                <SidebarLink
+                  item={item}
+                  pathname={pathname}
+                  badge={item === TRANSACTIONS ? reviewCount : 0}
+                />
               </li>
             ))}
           </ul>

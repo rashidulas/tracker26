@@ -48,6 +48,8 @@ import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/expenseAlloc
 import type { ExpenseSaveResult, MerchantSuggestion } from './ExpenseForm';
 import { useMerchantRulePrompt } from '@/components/merchants/MerchantRulePrompt';
 import { normalizeMerchantName } from '@/lib/merchants';
+import { SmartFilterChips, useSmartSearch } from '@/components/transactions/SmartSearch';
+import { matchesFilters } from '@/lib/transactionFilters';
 
 interface Expense {
   id: string;
@@ -159,6 +161,15 @@ export default function ExpensesClient({
   const debouncedQuery = useDebouncedValue(query, 200);
   const [filters, setFilters] = useState(linkedFilters);
   const [showFilters, setShowFilters] = useState(hasLinkedFilters);
+  // "coffee over $5 last month": Enter turns the query into filter chips.
+  const smart = useSmartSearch('EXPENSE');
+  const runSmartSearch = async () => {
+    const applied = await smart.run(query);
+    if (!applied) return;
+    setQuery('');
+    // A date range from the query replaces the month picker's month.
+    if (applied.start || applied.end) setMonth('all');
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -185,6 +196,7 @@ export default function ExpensesClient({
         if (filters.endDate && key > filters.endDate) return false;
         if (filters.categoryId && categoryShare(expense, filters.categoryId) === 0) return false;
         if (filters.subcategoryId && expense.subcategoryId !== filters.subcategoryId) return false;
+        if (smart.active && !matchesFilters(expense, smart.filters)) return false;
         return matchesSearch(
           debouncedQuery,
           [
@@ -200,7 +212,7 @@ export default function ExpensesClient({
           expense.amount
         );
       }),
-    [expenses, pendingDelete, month, filters, debouncedQuery]
+    [expenses, pendingDelete, month, filters, debouncedQuery, smart.active, smart.filters]
   );
 
   // With a category filter, a split expense counts only its share of that category.
@@ -223,7 +235,7 @@ export default function ExpensesClient({
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + amountInView(e), 0);
   const hasSplits = filteredExpenses.some((e) => (e.sharedAmount ?? 0) > 0);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
-  const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}`;
+  const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}|${JSON.stringify(smart.filters)}`;
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -353,6 +365,7 @@ export default function ExpensesClient({
   const clearAll = () => {
     setQuery('');
     setFilters(EMPTY_FILTERS);
+    smart.clear();
     setMonth('all');
   };
 
@@ -372,7 +385,9 @@ export default function ExpensesClient({
       <ListToolbar
         query={query}
         onQueryChange={setQuery}
-        placeholder="Search merchant, notes, category, tag or amount"
+        placeholder="Search, or try “coffee over $5 last month”"
+        onSmartSearch={() => void runSmartSearch()}
+        smartPending={smart.pending}
         month={month}
         monthOptions={monthOptions}
         onMonthChange={setMonth}
@@ -460,6 +475,8 @@ export default function ExpensesClient({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <SmartFilterChips smart={smart} categories={categories} accounts={accounts} />
 
       {/* Summary strip */}
       <div className="relative overflow-hidden rounded-2xl border border-danger/20 bg-gradient-to-r from-danger-dim/80 to-graphite-surface mb-6 px-5 py-4">

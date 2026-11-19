@@ -39,6 +39,7 @@ import {
   type AssistantTools,
 } from '@/lib/assistant/tools';
 import { cacheBreakpoint, providerOptionsFor, type AssistantProvider } from '@/lib/assistant/model';
+import { contextSection, type AskContext } from '@/lib/assistant/context';
 
 /** UI message type for the client (useChat<AssistantUIMessage>). */
 export type AssistantUIMessage = UIMessage<never, UIDataTypes, InferUITools<AssistantTools>>;
@@ -98,13 +99,16 @@ export async function loadPromptContext(
 
 export function buildInstructions(
   ctx: PromptContext,
-  provider: AssistantProvider
+  provider: AssistantProvider,
+  /** Set for a chat opened with "Ask about this". Last, so the cached prefix is shared. */
+  context?: AskContext | null
 ): SystemModelMessage[] {
   return [
     { role: 'system', content: ASSISTANT_BEHAVIOUR },
     // Accounts and categories change rarely: cache through here.
     { role: 'system', content: buildDataSection(ctx), ...cacheBreakpoint(provider) },
     { role: 'system', content: buildDateSection(ctx.today) },
+    ...(context ? [{ role: 'system' as const, content: contextSection(context) }] : []),
   ];
 }
 
@@ -180,6 +184,8 @@ export type RunAssistantInput = {
    * (see proposalEditsSchema). Checked again on the server before saving.
    */
   proposalEdits?: unknown;
+  /** What the user was looking at when the chat was opened (already checked). */
+  context?: AskContext | null;
   /** Ids for reply messages. Set it when replies are stored, so ids are stable. */
   generateMessageId?: () => string;
   /** Runs after the history is validated and before the model is called. */
@@ -207,7 +213,12 @@ export async function runAssistant(input: RunAssistantInput): Promise<RunAssista
   if (!edits.success) {
     return { ok: false, status: 400, error: 'Those changes could not be read. Check the amount and date and try again.' };
   }
-  const deps = { ...input.deps, proposalEdits: new Map(Object.entries(edits.data)) };
+  const deps = {
+    ...input.deps,
+    proposalEdits: new Map(Object.entries(edits.data)),
+    // The readReceipt tool reads images with the chat's own model.
+    receiptModel: input.deps.receiptModel ?? input.model,
+  };
   const tools = buildAssistantTools(deps);
 
   const validated = await safeValidateUIMessages<AssistantUIMessage>({
@@ -237,7 +248,7 @@ export async function runAssistant(input: RunAssistantInput): Promise<RunAssista
 
   const result = streamText({
     model: input.model,
-    instructions: buildInstructions(promptContext, input.provider),
+    instructions: buildInstructions(promptContext, input.provider, input.context),
     messages: await convertToModelMessages(messages, { tools }),
     tools,
     toolApproval: buildToolApproval(deps),

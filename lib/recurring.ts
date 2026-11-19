@@ -322,7 +322,9 @@ async function handleOccurrence(
   id: string,
   dueDay: DayString,
   action: 'POST' | 'SKIP',
-  postDate: DayString
+  postDate: DayString,
+  /** Posted by the due check, not by the user: goes to the review inbox. */
+  auto = false
 ) {
   const rec = await tx.recurringTransaction.findUnique({ where: { id } });
   if (!rec) fail('Recurring entry not found');
@@ -336,9 +338,11 @@ async function handleOccurrence(
       data: { recurringId: id, dueDate: due, status: action === 'POST' ? 'POSTED' : 'SKIPPED' },
     });
     if (action === 'POST') {
-      const created = await createTransactionIn(tx, templateToInput(rec, postDate), {
-        recurringId: id,
-      });
+      const created = await createTransactionIn(
+        tx,
+        { ...templateToInput(rec, postDate), ...(auto ? { source: 'recurring' as const } : {}) },
+        { recurringId: id }
+      );
       transactionId = created.id;
       await tx.recurringPosting.update({ where: { id: posting.id }, data: { transactionId } });
     }
@@ -416,7 +420,7 @@ export async function runDueRecurring(
         if (!rec || !rec.active || !rec.autoPost) return null;
         const dueDay = toDayString(rec.nextDueDate);
         if (dueDay > today) return null;
-        return handleOccurrence(tx, entry.id, dueDay, 'POST', dueDay);
+        return handleOccurrence(tx, entry.id, dueDay, 'POST', dueDay, true);
       });
       if (!outcome.success) {
         // Another run got there first: nothing to report.

@@ -27,6 +27,7 @@ import {
 import { z } from 'zod';
 import { runAssistant, type AssistantUIMessage, type RunAssistantInput } from '@/lib/assistant/engine';
 import { WRITE_TOOL_NAMES } from '@/lib/assistant/tools';
+import { parseAskContext } from '@/lib/assistant/context';
 import {
   OUT_OF_SYNC,
   beginRun,
@@ -237,6 +238,11 @@ export type ChatTurnInput = Pick<RunAssistantInput, 'model' | 'provider' | 'deps
   message: unknown;
   /** Untrusted: edits made on approval cards, by tool call id. */
   proposalEdits?: unknown;
+  /**
+   * Untrusted: what the user was looking at ("Ask about this"). Only read
+   * for a conversation's first message; after that the stored copy is used.
+   */
+  context?: unknown;
   /** Defaults to asking the chat model. */
   generateTitle?: TitleGenerator;
   /** Overrides RUN_LIMIT_MS. */
@@ -272,6 +278,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
   const conversation = await loadConversation(chatDb, id, now());
   const merged = mergeIncoming(conversation?.messages ?? [], incoming.data);
   if (!merged.ok) return { ok: false, status: 409, error: merged.error };
+  const context = conversation ? conversation.context : parseAskContext(input.context);
 
   const runId = generateId();
   const controller = new AbortController();
@@ -322,6 +329,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
       deps: input.deps,
       approvalSecret: input.approvalSecret,
       proposalEdits: input.proposalEdits,
+      context,
       // Not the request's signal: a closed tab must not cancel the reply.
       abortSignal: AbortSignal.any([
         controller.signal,
@@ -337,6 +345,7 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnResult>
           fromPosition: merged.fromPosition,
           messages: merged.messages.slice(merged.fromPosition),
           title: placeholderTitle(merged.messages.find((m) => m.role === 'user')),
+          context,
           now: now(),
         });
         begun = true;

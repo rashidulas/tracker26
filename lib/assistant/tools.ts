@@ -15,11 +15,12 @@
  * recover from. Messages are written for the model; nothing raw from Zod or
  * Prisma is passed through.
  */
-import { tool } from 'ai';
+import { tool, type LanguageModel, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import { isValidDay, type DayString } from '@/lib/dates';
 import type { TransactionDb, TransactionDeps } from '@/lib/transactions';
 import type { PrismaClient } from '@prisma/client';
+import { scanReceipt, type ReceiptImage } from '@/lib/ai/receipts';
 import {
   ACTIONS,
   ACTION_NAMES,
@@ -69,6 +70,8 @@ export type AssistantToolDeps = {
    * approved proposal is saved; the proposal the server signed stays as it was.
    */
   proposalEdits?: ReadonlyMap<string, ProposalEdit>;
+  /** The model the readReceipt tool reads images with (the engine passes the chat model). */
+  receiptModel?: LanguageModel;
 };
 
 // ==================== SCHEMAS ====================
@@ -177,6 +180,22 @@ async function safely<T>(name: string, run: () => Promise<T>): Promise<T> {
     console.error(`Assistant tool ${name} failed:`, error);
     throw new Error(`${name} failed because of a temporary server problem. Try once more, then tell the user it is unavailable.`);
   }
+}
+
+// ==================== RECEIPTS ====================
+
+/** The newest image the user sent, as the model message part it arrived in. */
+export function lastUserImage(messages: ModelMessage[]): ReceiptImage | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.role !== 'user' || typeof message.content === 'string') continue;
+    for (let j = message.content.length - 1; j >= 0; j -= 1) {
+      const part = message.content[j];
+      if (part.type === 'image') return part;
+      if (part.type === 'file' && part.mediaType.startsWith('image')) return part;
+    }
+  }
+  return null;
 }
 
 // ==================== TOOLS ====================
@@ -334,6 +353,46 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
         kind: z.enum(['EXPENSE', 'INCOME']).optional(),
       }),
       execute: (input) => safely('upcomingRecurring', () => upcomingRecurring(ctx, input)),
+    }),
+
+    readReceipt: tool({
+      description:
+        'Read the newest receipt, bill or payment screenshot the user sent in this chat. Returns the merchant, date and total as printed, a category from the user\'s own list (null if none clearly fits), and, when the line items clearly belong to different categories, a split by category whose parts add up to the total. Call it for every receipt image before proposing anything; do not read amounts off the image yourself. If status is "not_a_receipt" or "unreadable", tell the user and propose nothing.',
+      inputSchema: z.object({}),
+      execute: (_input, { messages, abortSignal }) =>
+        safely('readReceipt', async () => {
+          const image = lastUserImage(messages);
+          if (!image) throw new ToolInputError('There is no image in this conversation. Ask the user to attach the receipt.');
+          if (!deps.receiptModel) throw new ToolInputError('Receipt reading is not available right now. Ask the user for the amount, date and merchant.');
+          const result = await scanReceipt({
+            db: deps.db,
+            model: deps.receiptModel,
+            image,
+            today: deps.today,
+            abortSignal,
+          });
+          if (!result.ok) {
+            return {
+              status: result.error.startsWith('This does not look like') ? ('not_a_receipt' as const) : ('unreadable' as const),
+              reason: result.error,
+            };
+          }
+          const d = result.draft;
+          return {
+            status: 'read' as const,
+            merchant: d.merchant,
+            date: d.date,
+            total: d.amount,
+            categoryId: d.categoryId,
+            subcategoryId: d.subcategoryId,
+            /** The merchant's default account, when the user has set one. */
+            accountId: d.accountId,
+            categorySplits: d.splits,
+            items: d.items.slice(0, 30),
+            confidence: d.confidence,
+            toCheck: d.issues,
+          };
+        }),
     }),
 
     createExpense: writeTool('EXPENSE'),

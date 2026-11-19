@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeftRight, Plus, ArrowRight } from 'lucide-react';
 import Modal from '@/components/Modal';
@@ -10,6 +10,9 @@ import Select from '@/components/Select';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { parseDay, toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useToast } from '@/components/ToastProvider';
+import { DuplicateWarning, useDuplicateGuard } from '@/components/transactions/DuplicateWarning';
+import { SmartFilterChips, useSmartSearch } from '@/components/transactions/SmartSearch';
+import { matchesFilters } from '@/lib/transactionFilters';
 import {
   createTransaction,
   updateTransaction,
@@ -77,6 +80,9 @@ export default function TransfersClient({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState<Transfer | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const duplicateGuard = useDuplicateGuard();
+  // The form as last submitted, so "Save anyway" saves exactly that.
+  const heldForm = useRef<FormData | null>(null);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
 
@@ -85,17 +91,27 @@ export default function TransfersClient({
     [transfers]
   );
 
+  // "to savings over 500 last month": Enter turns the query into filter chips.
+  const smart = useSmartSearch('TRANSFER');
+  const runSmartSearch = async () => {
+    const applied = await smart.run(query);
+    if (!applied) return;
+    setQuery('');
+    if (applied.start || applied.end) setMonth('all');
+  };
+
   const filtered = useMemo(
     () =>
       transfers.filter((t) => {
         if (month !== 'all' && monthKey(t.date) !== month) return false;
+        if (smart.active && !matchesFilters(t, smart.filters)) return false;
         return matchesSearch(
           debouncedQuery,
           [t.account?.name, t.toAccount?.name, t.merchantOrSource, t.notes, ...(t.tags || [])],
           t.amount
         );
       }),
-    [transfers, month, debouncedQuery]
+    [transfers, month, debouncedQuery, smart.active, smart.filters]
   );
 
   const groups = useMemo(() => groupByDay(filtered, (t) => t.date, (t) => t.amount), [filtered]);
@@ -177,10 +193,25 @@ export default function TransfersClient({
     }
 
     setIsSaving(true);
+    if (!editingTransfer && data.accountId && data.amount > 0) {
+      heldForm.current = formData;
+      const clear = await duplicateGuard.check({
+        kind: 'TRANSFER',
+        accountId: data.accountId,
+        toAccountId: data.toAccountId,
+        amount: data.amount,
+        date: (formData.get('date') as string) || '',
+      });
+      if (!clear) {
+        setIsSaving(false);
+        return;
+      }
+    }
     const result = editingTransfer
       ? await updateTransaction(editingTransfer.id, data)
       : await createTransaction(data);
     setIsSaving(false);
+    duplicateGuard.reset();
 
     if (result.success) {
       toast.success(`Transfer ${editingTransfer ? 'updated' : 'created'}`);
@@ -221,13 +252,17 @@ export default function TransfersClient({
           <ListToolbar
             query={query}
             onQueryChange={setQuery}
-            placeholder="Search account, notes or amount"
+            placeholder="Search, or try “over 500 last month”"
+            onSmartSearch={() => void runSmartSearch()}
+            smartPending={smart.pending}
             month={month}
             monthOptions={monthOptions}
             onMonthChange={setMonth}
             selecting={selection.selecting}
             onToggleSelecting={() => selection.setSelecting(!selection.selecting)}
           />
+
+          <SmartFilterChips smart={smart} categories={[]} accounts={accounts} />
 
           <div className="relative overflow-hidden rounded-2xl border border-info/20 bg-gradient-to-r from-info-dim/80 to-graphite-surface mb-6 px-5 py-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -250,6 +285,7 @@ export default function TransfersClient({
               query={debouncedQuery}
               onClear={() => {
                 setQuery('');
+                smart.clear();
                 setMonth('all');
               }}
             />
@@ -257,7 +293,7 @@ export default function TransfersClient({
             <GroupedList
               groups={groups}
               totalCount={filtered.length}
-              resetKey={`${month}|${debouncedQuery}`}
+              resetKey={`${month}|${debouncedQuery}|${JSON.stringify(smart.filters)}`}
               getId={(t) => t.id}
               selection={selection}
               totalTone="text-info"
@@ -306,10 +342,21 @@ export default function TransfersClient({
 
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          duplicateGuard.reset();
+        }}
         title={editingTransfer ? 'Edit Transfer' : 'Add Transfer'}
       >
-        <form action={handleSubmit} key={editingTransfer?.id || 'new'}>
+        {/* onSubmit, not a form action: a submit that stops at the duplicate
+            warning must leave the fields as they are. */}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSubmit(new FormData(event.currentTarget));
+          }}
+          key={editingTransfer?.id || 'new'}
+        >
           <div className="space-y-4">
             <Input
               label="Date"
@@ -344,6 +391,15 @@ export default function TransfersClient({
               required
             />
             <Input label="Notes" name="notes" defaultValue={editingTransfer?.notes || ''} />
+            <DuplicateWarning
+              match={duplicateGuard.match}
+              busy={isSaving}
+              onCancel={duplicateGuard.reset}
+              onSaveAnyway={() => {
+                duplicateGuard.confirm();
+                if (heldForm.current) void handleSubmit(heldForm.current);
+              }}
+            />
           </div>
 
           <div className="mt-6 flex gap-3">

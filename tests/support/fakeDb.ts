@@ -48,6 +48,8 @@ const DEFAULTS: Record<ModelName, Doc> = {
     accountSplits: [],
     splitGroupId: null,
     sharedAmount: null,
+    source: null,
+    needsReview: false,
   },
   goalContribution: { notes: null, transactionId: null },
   budget: {},
@@ -69,7 +71,7 @@ const DEFAULTS: Record<ModelName, Doc> = {
   recurringPosting: { transactionId: null },
   dismissedRecurringSuggestion: {},
   idempotencyKey: {},
-  conversation: { titleState: 'placeholder', activeRunId: null, runStartedAt: null },
+  conversation: { titleState: 'placeholder', activeRunId: null, runStartedAt: null, context: null },
   message: {},
 };
 

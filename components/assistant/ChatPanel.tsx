@@ -28,6 +28,8 @@ import type { AssistantUIMessage } from '@/lib/assistant/engine';
 import { followUpsFor } from '@/lib/assistant/followUps';
 import type { ChatReference, StarterPrompt } from '@/lib/assistant/starters';
 import type { ProposalEdit } from '@/lib/assistant/write';
+import type { AskContext } from '@/lib/assistant/context';
+import { notifyReviewChanged } from '@/components/review/reviewCount';
 import type { DayString } from '@/lib/dates';
 import Composer, { type ComposerHandle, type ComposerImage } from './Composer';
 import Markdown from './Markdown';
@@ -54,6 +56,14 @@ export type ChatPanelProps = {
   /** Today in the app's timezone. */
   today: DayString;
   greeting: string;
+  /** Under the greeting of an empty chat. */
+  intro?: string;
+  /**
+   * What the user was looking at when this chat was opened from another page
+   * ("Ask about this"). Sent with each request; the server keeps the copy it
+   * got with the first message.
+   */
+  context?: AskContext;
   /** 'sent': a message went out (the chat now exists). 'finished': a reply ended. */
   onChanged?: (event: 'sent' | 'finished') => void;
 };
@@ -373,6 +383,8 @@ export default function ChatPanel({
   reference,
   today,
   greeting,
+  intro,
+  context,
   onChanged,
 }: ChatPanelProps) {
   const toast = useToast();
@@ -403,9 +415,11 @@ export default function ChatPanel({
               proposalEdits[part.toolCallId] = editsRef.current[part.toolCallId];
             }
           }
-          return { body: { id, message, proposalEdits } };
+          return { body: { id, message, proposalEdits, ...(context ? { context } : {}) } };
         },
       }),
+    // The context belongs to the conversation: it is fixed when the panel mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -432,6 +446,8 @@ export default function ChatPanel({
         // Something was recorded: let the rest of the app pick it up.
         if (message.parts.some((p) => isWritePart(p) && p.state === 'output-available' && !p.output.alreadySaved)) {
           router.refresh();
+          // What the assistant records goes to the review inbox.
+          notifyReviewChanged();
         }
       },
     });
@@ -640,7 +656,7 @@ export default function ChatPanel({
                 {greeting}
               </h2>
               <p className="mt-2 text-base text-ink-secondary">
-                Ask about your money, or tell me what you spent and I’ll draft it for you to approve.
+                {intro ?? 'Ask about your money, or tell me what you spent and I’ll draft it for you to approve.'}
               </p>
               <ul className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {starters.map((starter, index) => (

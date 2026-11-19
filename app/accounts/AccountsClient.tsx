@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ToastProvider';
+import { AskButton } from '@/components/assistant/AskAssistant';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import AccountForm from './AccountForm';
@@ -156,7 +157,11 @@ export default function AccountsClient({ initialAccounts }: AccountsClientProps)
               <p className="text-sm text-ink-muted">{account.type.replace('_', ' ')}</p>
             </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex items-center gap-1">
+            <AskButton
+              label={account.name}
+              context={{ page: 'accounts', item: { type: 'account', id: account.id, label: account.name } }}
+            />
             <button
               onClick={() => handleEdit(account)}
               className="w-11 h-11 inline-flex items-center justify-center rounded-xl text-ink-muted hover:text-mint hover:bg-mint-dim transition-colors"

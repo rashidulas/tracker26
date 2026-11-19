@@ -41,6 +41,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { formatDay, todayInAppTimeZone } from '@/lib/dates';
 import type { BudgetOverview } from '@/lib/budgetData';
 import BudgetPanel from './BudgetPanel';
+import { AskButton } from '@/components/assistant/AskAssistant';
 
 interface LiabilityItem {
   id: string;
@@ -326,6 +327,11 @@ export default function DashboardClient({ data }: DashboardClientProps) {
                     <p className="text-[11px] font-medium text-ink-muted uppercase tracking-[0.14em]">
                       {card.title}
                     </p>
+                    <AskButton
+                      label={card.title}
+                      className="-my-1.5"
+                      context={{ page: 'dashboard', item: { type: 'card', label: card.title } }}
+                    />
                   </div>
                   <p className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight money">
                     {card.value}

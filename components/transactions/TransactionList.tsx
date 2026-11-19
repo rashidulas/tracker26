@@ -14,6 +14,7 @@ import {
   MoreVertical,
   CheckSquare,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { sliceGroups, type DayGroup } from '@/lib/transactionList';
@@ -134,10 +135,18 @@ export function ListToolbar({
   onMonthChange,
   selecting,
   onToggleSelecting,
+  onSmartSearch,
+  smartPending = false,
   children,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
+  /**
+   * Enter, or the sparkle button: read the query as filters ("coffee over $5
+   * last month"). Typing alone keeps filtering by plain text.
+   */
+  onSmartSearch?: () => void;
+  smartPending?: boolean;
   placeholder: string;
   month: string;
   monthOptions: Array<{ value: string; label: string }>;
@@ -160,19 +169,44 @@ export function ListToolbar({
             inputMode="search"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && onSmartSearch && query.trim()) {
+                e.preventDefault();
+                onSmartSearch();
+              }
+            }}
+            enterKeyHint="search"
             placeholder={placeholder}
             aria-label="Search transactions"
-            className="w-full pl-10 pr-10 py-2.5 border border-graphite-border rounded-xl text-base sm:text-sm text-ink bg-[var(--surface-2)] placeholder-ink-muted focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors [color-scheme:dark] [&::-webkit-search-cancel-button]:hidden"
+            className="w-full pl-10 pr-[5.5rem] py-2.5 border border-graphite-border rounded-xl text-base sm:text-sm text-ink bg-[var(--surface-2)] placeholder-ink-muted focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none transition-colors [color-scheme:dark] [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
-            <button
-              type="button"
-              onClick={() => onQueryChange('')}
-              className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 inline-flex items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-hover"
-              aria-label="Clear search"
-            >
-              <X size={14} aria-hidden="true" />
-            </button>
+            <div className="absolute right-0.5 top-1/2 -translate-y-1/2 flex items-center">
+              {onSmartSearch && (
+                <button
+                  type="button"
+                  onClick={onSmartSearch}
+                  disabled={smartPending}
+                  className="w-10 h-11 inline-flex items-center justify-center rounded-lg text-mint hover:bg-mint-dim disabled:opacity-60"
+                  aria-label="Turn this search into filters"
+                  title="Turn into filters (Enter)"
+                >
+                  {smartPending ? (
+                    <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Sparkles size={15} aria-hidden="true" />
+                  )}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onQueryChange('')}
+                className="w-10 h-11 inline-flex items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-graphite-surface-hover"
+                aria-label="Clear search"
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </div>
           )}
         </div>
         <div className="flex gap-2">

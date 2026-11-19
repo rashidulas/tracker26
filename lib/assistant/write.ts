@@ -224,6 +224,7 @@ export async function saveProposal(
       merchantOrSource: check.merchant,
       notes: p.notes ?? null,
       tags: p.tags ?? [],
+      source: 'assistant',
     },
     deps.tx
   );

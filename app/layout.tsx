@@ -6,6 +6,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 import { QuickAddProvider } from "@/components/quickadd/QuickAddProvider";
 import { MerchantRuleProvider } from "@/components/merchants/MerchantRulePrompt";
 import DueCheck from "@/components/recurring/DueCheck";
+import { AskAssistantProvider } from "@/components/assistant/AskAssistant";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -47,6 +48,7 @@ export default function RootLayout({
         <ToastProvider>
           <MerchantRuleProvider>
             <QuickAddProvider>
+              <AskAssistantProvider>
               <DueCheck />
               <div className="flex min-h-screen">
                 <Navigation />
@@ -54,6 +56,7 @@ export default function RootLayout({
                   {children}
                 </main>
               </div>
+              </AskAssistantProvider>
             </QuickAddProvider>
           </MerchantRuleProvider>
         </ToastProvider>

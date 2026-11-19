@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Copy, PiggyBank, Repeat } from 'lucide-react';
 import Button from '@/components/Button';
 import { useToast } from '@/components/ToastProvider';
+import { AskButton } from '@/components/assistant/AskAssistant';
 import { formatCurrency } from '@/lib/utils';
 import { formatDay } from '@/lib/dates';
 import type { BudgetMonthData, BudgetRow } from '@/lib/budgetData';
@@ -190,6 +191,14 @@ function BudgetLine({
               className="w-full min-h-[44px] pl-7 pr-3 border border-graphite-border rounded-xl text-sm text-ink bg-[var(--surface-2)] placeholder-ink-muted focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none [color-scheme:dark] money tabular-nums"
             />
           </div>
+          <AskButton
+            label={`${row.name} budget`}
+            context={{
+              page: 'budgets',
+              filters: { month },
+              item: { type: 'budget', id: row.categoryId, label: row.name },
+            }}
+          />
         </form>
       </div>
 

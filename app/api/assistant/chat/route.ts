@@ -18,6 +18,8 @@ export const maxDuration = 60;
  *   message        the browser's newest UI message; earlier ones are loaded
  *                  from the database (lib/assistant/chat.ts)
  *   proposalEdits  changes made on approval cards, by tool call id
+ *   context        what the user was looking at ("Ask about this"); read for
+ *                  the first message of a conversation only
  */
 export async function POST(request: NextRequest) {
   const config = getAssistantModel();
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: config.error }, { status: 500 });
   }
 
-  let body: { id?: unknown; message?: unknown; proposalEdits?: unknown };
+  let body: { id?: unknown; message?: unknown; proposalEdits?: unknown; context?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -39,6 +41,7 @@ export async function POST(request: NextRequest) {
       conversationId: body.id,
       message: body.message,
       proposalEdits: body.proposalEdits,
+      context: body.context,
       model: config.model,
       provider: config.provider,
       deps: {

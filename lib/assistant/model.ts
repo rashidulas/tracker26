@@ -5,7 +5,9 @@
  *   ASSISTANT_MODEL     model id for that provider (defaults below)
  *
  * API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_GENERATIVE_AI_API_KEY
- * (GEMINI_API_KEY, already used for receipt scanning, also works for google).
+ * (GEMINI_API_KEY also works for google).
+ *
+ * Receipt scanning (lib/ai/receipts.ts) uses this same model.
  *
  * The model must support tool calling and image input.
  */
@@ -70,6 +72,17 @@ export function getAssistantModel(env: NodeJS.ProcessEnv = process.env): Assista
       : createGoogle({ apiKey })(modelId);
 
   return { ok: true, provider, modelId, model };
+}
+
+/**
+ * The model for the small one-shot calls outside the chat: quick-add text,
+ * category suggestions and search filters. The same provider and key as the
+ * assistant; ASSISTANT_FAST_MODEL may name a cheaper model id for them.
+ * Receipts use the assistant's own model, which is known to read images.
+ */
+export function getHelperModel(env: NodeJS.ProcessEnv = process.env): AssistantModelConfig {
+  const fast = env.ASSISTANT_FAST_MODEL?.trim();
+  return getAssistantModel(fast ? { ...env, ASSISTANT_MODEL: fast } : env);
 }
 
 /**

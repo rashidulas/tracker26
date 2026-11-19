@@ -1,109 +1,65 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
-import { findMerchantDefaults } from '@/lib/merchantLookup';
+import { getAssistantModel } from '@/lib/assistant/model';
+import { imagePartFromUpload, scanReceipt } from '@/lib/ai/receipts';
+import { todayInAppTimeZone } from '@/lib/dates';
+import { prisma } from '@/lib/prisma';
 
-const CATEGORY_MAPPING_PROMPT = `You are a smart expense categorizer for a personal finance app.
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
-Given a receipt image (photo, screenshot from Apple Pay, Google Pay, bank notification, etc.), extract expense information and categorize it.
+/** A phone photo as a data URL; larger than this is refused before it reaches the model. */
+const MAX_IMAGE_CHARS = 14 * 1024 * 1024;
+/** Kept under maxDuration so a slow model ends in a readable error, not a killed request. */
+const SCAN_TIMEOUT_MS = 45_000;
 
-Available expense categories:
-- "Groceries" — supermarket purchases, household supplies, cleaning products, shampoo, toiletries, food from grocery stores
-- "Dining Out" — restaurant bills, cafe bills, fast food, takeout, any restaurant or food establishment purchase (this is "outside food")
-- "Transportation" — gas, uber, lyft, bus, train, parking, tolls, car maintenance
-- "Utilities" — electricity, water, gas bills, internet, phone bills
-- "Rent/Mortgage" — rent payments, mortgage payments
-- "Healthcare" — pharmacy, doctor visits, medical bills, prescriptions
-- "Entertainment" — movies, streaming services, games, concerts, subscriptions
-- "Shopping" — clothing, electronics, online shopping, Amazon purchases
-- "Travel" — flights, hotels, airbnb, vacation expenses
-- "Education" — courses, books, tuition, school supplies
-- "Insurance" — health insurance, car insurance, home insurance
-- "Other Expenses" — anything that doesn't fit the above categories
-
-Item categorization rules:
-- Shampoo, soap, toothpaste, cleaning supplies → "Groceries"
-- Beef, chicken, meat, produce from a grocery store → "Groceries"
-- Any restaurant/cafe/fast food receipt → "Dining Out"
-- Apple Pay / Google Pay / bank notifications: determine from merchant name and items
-
-Respond ONLY with valid JSON in this exact format (no markdown, no backticks):
-{
-  "merchant": "Store or merchant name",
-  "date": "YYYY-MM-DD",
-  "totalAmount": 0.00,
-  "category": "One of the exact category names listed above",
-  "items": [
-    { "name": "item name", "amount": 0.00, "suggestedCategory": "category name" }
-  ],
-  "notes": "Brief description of the purchase",
-  "tags": ["relevant", "tags"],
-  "confidence": "high" | "medium" | "low"
-}
-
-If you cannot read the receipt clearly, still provide your best guess with confidence "low".
-If the image is not a receipt at all, return:
-{ "error": "This does not appear to be a receipt or payment screenshot" }`;
-
+/**
+ * The Scan button. Reads one image through the shared receipt pipeline
+ * (lib/ai/receipts.ts, the same one the chat assistant's readReceipt tool
+ * uses) with the configured assistant model, and returns a checked draft for
+ * the user to review. Nothing is saved here.
+ *
+ * Body: { image: data URL or base64, mimeType? }
+ */
 export async function POST(request: NextRequest) {
+  const config = getAssistantModel();
+  if (!config.ok) {
+    console.error('Receipt scan config:', config.error);
+    return NextResponse.json(
+      { error: 'Receipt scanning is not set up (no model key). Enter the expense by hand.' },
+      { status: 503 }
+    );
+  }
+
+  let body: { image?: unknown; mimeType?: unknown };
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'GEMINI_API_KEY is not configured. Add it to your .env.local file.' },
-        { status: 500 }
-      );
-    }
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+  }
+  if (typeof body.image !== 'string' || !body.image) {
+    return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+  }
+  if (body.image.length > MAX_IMAGE_CHARS) {
+    return NextResponse.json({ error: 'Image must be smaller than 10MB' }, { status: 413 });
+  }
+  const image = imagePartFromUpload(body.image, typeof body.mimeType === 'string' ? body.mimeType : null);
+  if (!image) return NextResponse.json({ error: 'Please select an image file' }, { status: 400 });
 
-    const body = await request.json();
-    const { image, mimeType } = body;
-
-    if (!image) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-    const base64Data = image.includes('base64,') ? image.split('base64,')[1] : image;
-
-    const result = await model.generateContent([
-      CATEGORY_MAPPING_PROMPT,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType || 'image/jpeg',
-        },
-      },
-    ]);
-
-    const responseText = result.response.text();
-
-    const cleanedText = responseText
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-
-    const parsed = JSON.parse(cleanedText);
-
-    if (parsed.error) {
-      return NextResponse.json({ error: parsed.error }, { status: 422 });
-    }
-
-    // Defaults the user set for this merchant win over the model's guess.
-    const merchant = await findMerchantDefaults(parsed.merchant).catch(() => null);
-    const merchantDefaults = merchant
-      ? {
-          name: merchant.name,
-          categoryId: merchant.defaultCategory?.type === 'EXPENSE' ? merchant.defaultCategory.id : null,
-          subcategoryId: merchant.defaultCategory?.type === 'EXPENSE' ? merchant.defaultSubcategoryId : null,
-          accountId: merchant.defaultAccount?.id ?? null,
-        }
-      : null;
-
-    return NextResponse.json({ success: true, data: { ...parsed, merchantDefaults } });
+  try {
+    const result = await scanReceipt({
+      db: prisma,
+      model: config.model,
+      image,
+      today: todayInAppTimeZone(),
+      abortSignal: AbortSignal.timeout(SCAN_TIMEOUT_MS),
+    });
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 422 });
+    return NextResponse.json({ success: true, data: result.draft });
   } catch (error) {
-    console.error('Receipt scan error:', error);
-    const message = error instanceof Error ? error.message : 'Failed to scan receipt';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('Receipt scan error:', error instanceof Error ? error.message : 'unknown');
+    return NextResponse.json(
+      { error: 'The receipt could not be read right now. Try again or enter it by hand.' },
+      { status: 500 }
+    );
   }
 }

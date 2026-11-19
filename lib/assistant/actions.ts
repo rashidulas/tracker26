@@ -396,7 +396,10 @@ const logTransactions = define({
     const friendIds: string[] = [];
     for (const [index, item] of input.items.entries()) {
       const label = input.items.length > 1 ? `items[${index}]: ` : '';
-      const row = await createTransactionIn(tx, newTransactionInput(item, names, label));
+      const row = await createTransactionIn(tx, {
+        ...newTransactionInput(item, names, label),
+        source: 'assistant',
+      });
       // Friend shares are stored after the row is created; read the final version.
       const saved = (await tx.transaction.findUnique({ where: { id: row.id } })) ?? row;
       created.push(saved);
@@ -707,7 +710,7 @@ const changeTransactions = define({
 
     if (input.action === 'duplicate') {
       const onDay = input.date ?? ctx.today;
-      const copies = (await duplicateTransactionsIn(tx, rows.map((r) => r.id), onDay)) as Transaction[];
+      const copies = (await duplicateTransactionsIn(tx, rows.map((r) => r.id), onDay, { source: 'assistant' })) as Transaction[];
       return {
         preview: {
           v: 1,
@@ -821,6 +824,7 @@ const moveMoney = define({
       accountId: from.id,
       toAccountId: to.id,
       notes: input.notes ?? null,
+      source: 'assistant',
     });
     const what = input.action === 'cardPayment' ? 'Card payment' : input.action === 'loanPayment' ? 'Loan payment' : 'Transfer';
     return {

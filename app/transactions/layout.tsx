@@ -5,6 +5,7 @@ const tabs = [
   { href: '/transactions/expenses', label: 'Expenses' },
   { href: '/transactions/income', label: 'Income' },
   { href: '/transactions/transfers', label: 'Transfers' },
+  { href: '/transactions/review', label: 'Review', badge: 'review' as const },
 ];
 
 export default function TransactionsLayout({ children }: { children: React.ReactNode }) {

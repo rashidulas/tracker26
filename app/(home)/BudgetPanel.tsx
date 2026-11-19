@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { PiggyBank, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { AskButton } from '@/components/assistant/AskAssistant';
 import type { BudgetOverview } from '@/lib/budgetData';
 import type { BudgetStatus } from '@/lib/budgets';
 
@@ -40,12 +41,19 @@ export default function BudgetPanel({ budget }: { budget: BudgetOverview }) {
       className="panel shadow-panel p-5 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-6"
     >
       <div>
-        <h2
-          id="budget-panel-h"
-          className="text-[11px] font-medium text-ink-muted uppercase tracking-[0.14em] mb-2"
-        >
-          Safe to spend today
-        </h2>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2
+            id="budget-panel-h"
+            className="text-[11px] font-medium text-ink-muted uppercase tracking-[0.14em]"
+          >
+            Safe to spend today
+          </h2>
+          <AskButton
+            label="what is safe to spend today"
+            className="-my-2"
+            context={{ page: 'dashboard', item: { type: 'card', label: 'Safe to spend today' } }}
+          />
+        </div>
         <p className="text-3xl sm:text-4xl font-semibold text-ink tracking-tight money">
           {formatCurrency(budget.safeToSpendToday)}
         </p>

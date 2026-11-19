@@ -24,7 +24,15 @@ import { loadExpensePrefs, rememberExpense } from '@/lib/expensePrefs';
 import type { ExpenseRow } from '@/lib/expenseEvents';
 import { normalizeMerchantName } from '@/lib/merchants';
 import { useMerchantRulePrompt } from '@/components/merchants/MerchantRulePrompt';
+import QuickLine, { type QuickLineChip } from '@/components/quickadd/QuickLine';
+import { DuplicateWarning, useDuplicateGuard } from '@/components/transactions/DuplicateWarning';
+import { notifyReviewChanged } from '@/components/review/reviewCount';
+import { interpretQuickAdd, suggestCategory, type CategorySuggestion, type QuickAddGuess } from '@/app/assist/actions';
+import { needsModel, parseQuickAdd } from '@/lib/ai/quickAddParse';
+import { dayLabel } from '@/lib/transactionList';
 import {
+  Sparkles,
+  X,
   CreditCard,
   ArrowRight,
   Banknote,
@@ -163,7 +171,21 @@ interface ExpenseFormProps {
   formId?: string;
   /** Set by the footer buttons just before submit ("Save" vs "Save & add another"). */
   submitIntentRef?: MutableRefObject<SubmitIntent>;
+  /** Show the one-line entry ("12.50 lunch chipotle discover yesterday") above the form. */
+  quickLine?: boolean;
 }
+
+/** Fields the one-line entry can fill. */
+const LINE_FIELDS = ['amount', 'date', 'accountId', 'categoryId', 'subcategoryId', 'merchantOrSource', 'notes'] as const;
+type LineField = (typeof LINE_FIELDS)[number];
+
+// Answers already fetched this session, by text / merchant: typing the same
+// thing again costs nothing. Failures are not kept, so they are retried.
+const lineGuessCache = new Map<string, QuickAddGuess>();
+const suggestionCache = new Map<string, CategorySuggestion | null>();
+
+const LINE_DEBOUNCE_MS = 700;
+const SUGGEST_DEBOUNCE_MS = 900;
 
 const QUICK_COLORS = [
   '#3dcea6',
@@ -262,6 +284,7 @@ export default function ExpenseForm({
   onSubmittingChange,
   formId = 'expense-form',
   submitIntentRef,
+  quickLine = false,
 }: ExpenseFormProps) {
   const toast = useToast();
   const merchantRule = useMerchantRulePrompt();
@@ -338,6 +361,7 @@ export default function ExpenseForm({
   const selectedDate = useWatch({ control, name: 'date' });
   const amountVal = useWatch({ control, name: 'amount' });
   const merchantVal = useWatch({ control, name: 'merchantOrSource' }) || '';
+  const notesVal = useWatch({ control, name: 'notes' }) || '';
 
   const isDebtPayment = selectedCategoryId === DEBT_PAYMENT_SENTINEL;
   const isPayment = selectedCategoryId === PAYMENT_SENTINEL;
@@ -455,6 +479,239 @@ export default function ExpenseForm({
   };
 
   const merchantField = register('merchantOrSource');
+
+  // ---- One-line entry ---------------------------------------------------------
+  //
+  // The line is parsed in code on every keystroke (lib/ai/quickAddParse.ts).
+  // Words the code cannot place go to the model once typing pauses; if that
+  // is slow or unavailable they simply become the note. Each field remembers
+  // what the line last put there, so a value the user typed by hand is never
+  // overwritten or cleared by the line.
+
+  const [line, setLine] = useState('');
+  const lineFromVoice = useRef(false);
+  const lineApplied = useRef<Partial<Record<LineField, string>>>({});
+  const [lineGuess, setLineGuess] = useState<{ key: string; value: QuickAddGuess | null } | null>(null);
+  const lineKey = line.replace(/\s+/g, ' ').trim().toLowerCase();
+
+  const lineContext = useMemo(
+    () => ({
+      today: todayInAppTimeZone(),
+      accounts,
+      categories: localCategories.filter((c) => c.name !== 'Debt Payment' && c.name !== 'Payment'),
+      merchants: Array.from(merchantIndex.values()),
+    }),
+    [accounts, localCategories, merchantIndex]
+  );
+  const lineParse = useMemo(
+    () => (quickLine && lineKey ? parseQuickAdd(line, lineContext) : null),
+    [quickLine, line, lineKey, lineContext]
+  );
+  const lineMemory = lineParse?.merchantKnown
+    ? merchantIndex.get(normalizeMerchantName(lineParse.merchant) ?? '')
+    : undefined;
+  const lineMemoryCategory = categoryExists(lineMemory?.categoryId) ? lineMemory?.categoryId : undefined;
+  const lineWantsModel = Boolean(lineParse) && needsModel(lineParse!, Boolean(lineMemoryCategory));
+  // undefined: not answered yet. null: asked, nothing came back.
+  const lineAnswer = lineWantsModel && lineGuess?.key === lineKey ? lineGuess.value : undefined;
+  const lineThinking = lineWantsModel && lineAnswer === undefined;
+
+  useEffect(() => {
+    if (!lineWantsModel || !lineKey || lineGuess?.key === lineKey) return;
+    const cached = lineGuessCache.get(lineKey);
+    if (cached) {
+      setLineGuess({ key: lineKey, value: cached });
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      let value: QuickAddGuess | null = null;
+      try {
+        value = await interpretQuickAdd(lineKey);
+      } catch {
+        value = null;
+      }
+      if (cancelled) return;
+      if (value) lineGuessCache.set(lineKey, value);
+      setLineGuess({ key: lineKey, value });
+    }, LINE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [lineWantsModel, lineKey, lineGuess]);
+
+  /** What the line asks each field to hold. A missing key means "nothing to say". */
+  const lineTargets = useMemo(() => {
+    const t: Partial<Record<LineField, string>> = {};
+    if (!lineParse) return t;
+    if (lineParse.amount !== undefined) t.amount = lineParse.amount.toFixed(2);
+    if (lineParse.date) t.date = lineParse.date;
+
+    const guessed = lineAnswer?.confident && categoryExists(lineAnswer.categoryId) ? lineAnswer : null;
+    const categoryId = lineParse.categoryId ?? lineMemoryCategory ?? guessed?.categoryId ?? undefined;
+    if (categoryId) {
+      t.categoryId = categoryId;
+      const sub = lineParse.categoryId
+        ? lineParse.subcategoryId
+        : lineMemoryCategory
+        ? lineMemory?.subcategoryId
+        : guessed?.subcategoryId;
+      const subOk = localCategories.find((c) => c.id === categoryId)?.subcategories?.some((s) => s.id === sub);
+      t.subcategoryId = subOk && sub ? sub : '';
+    }
+    const accountId = lineParse.accountId ?? (accountExists(lineMemory?.accountId) ? lineMemory?.accountId : undefined);
+    if (accountId) t.accountId = accountId;
+
+    const merchant = lineParse.merchant ?? lineAnswer?.merchant ?? undefined;
+    if (merchant) t.merchantOrSource = merchant;
+
+    // Leftover words: the model's note if it answered, else the words as typed.
+    if (lineParse.leftover) {
+      if (!lineWantsModel || lineAnswer === null) t.notes = lineParse.leftover;
+      else if (lineAnswer) t.notes = lineAnswer.notes ?? (lineAnswer.merchant ? '' : lineParse.leftover);
+    }
+    if (t.notes === '') delete t.notes;
+    return t;
+    // categoryExists / accountExists read the lists named in the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineParse, lineAnswer, lineWantsModel, lineMemory, lineMemoryCategory, localCategories, accounts]);
+
+  useEffect(() => {
+    if (!quickLine) return;
+    const blank: Record<LineField, string> = {
+      amount: '',
+      date: todayInAppTimeZone(),
+      accountId: initialAccountId,
+      categoryId: '',
+      subcategoryId: '',
+      merchantOrSource: '',
+      notes: '',
+    };
+    for (const field of LINE_FIELDS) {
+      const want = lineTargets[field];
+      const had = lineApplied.current[field];
+      if (want !== undefined && want !== had) {
+        setValue(field, want, { shouldValidate: Boolean(errors[field]) });
+        lineApplied.current[field] = want;
+        if (field === 'accountId') accountFromMerchant.current = true;
+        if (field === 'notes') setShowDetails(true);
+      } else if (want === undefined && had !== undefined) {
+        // The words that filled this field were deleted: undo, unless the
+        // user has changed the field since.
+        if (getValues(field) === had) setValue(field, blank[field]);
+        delete lineApplied.current[field];
+      }
+    }
+    // Only when what the line says changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickLine, lineTargets]);
+
+  const lineChips: QuickLineChip[] = [];
+  if (lineTargets.amount) lineChips.push({ key: 'amount', label: formatCurrency(Number(lineTargets.amount)) });
+  if (lineTargets.date) lineChips.push({ key: 'date', label: dayLabel(lineTargets.date) });
+  if (lineTargets.merchantOrSource) lineChips.push({ key: 'merchant', label: lineTargets.merchantOrSource });
+  if (lineTargets.categoryId) {
+    const c = localCategories.find((x) => x.id === lineTargets.categoryId);
+    const s = c?.subcategories?.find((x) => x.id === lineTargets.subcategoryId);
+    if (c) lineChips.push({ key: 'category', label: `${c.icon ? `${c.icon} ` : ''}${c.name}${s ? ` › ${s.name}` : ''}` });
+  }
+  if (lineTargets.accountId) {
+    const a = accounts.find((x) => x.id === lineTargets.accountId);
+    if (a) lineChips.push({ key: 'account', label: a.name });
+  }
+  if (lineTargets.notes) lineChips.push({ key: 'notes', label: `note: ${lineTargets.notes}` });
+
+  // ---- Category suggestion ----------------------------------------------------
+  //
+  // Shown as a chip to accept, never applied silently. Merchant memory first
+  // (instant, free); for a merchant or note with no history the server is
+  // asked once typing pauses (history again, then the model), cached per
+  // merchant.
+
+  const [fetchedSuggestion, setFetchedSuggestion] = useState<{ key: string; value: CategorySuggestion | null } | null>(null);
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null);
+  const noteKey = notesVal.replace(/\s+/g, ' ').trim().toLowerCase();
+  const suggestKey = merchantQuery ? `m:${merchantQuery}` : noteKey.length >= 3 ? `n:${noteKey}` : '';
+  const memorySuggestion = merchantQuery ? merchantIndex.get(merchantQuery) : undefined;
+  const canSuggest = !expense && !isTransfer && Boolean(suggestKey);
+
+  useEffect(() => {
+    // The one-line entry asks the model itself; do not ask twice. If it
+    // answered, its verdict stands; if it failed, this is the one retry.
+    if (!canSuggest || selectedCategoryId || lineThinking || lineAnswer) return;
+    if (memorySuggestion?.categoryId || suggestKey.length < 5 || fetchedSuggestion?.key === suggestKey) return;
+    if (suggestionCache.has(suggestKey)) {
+      setFetchedSuggestion({ key: suggestKey, value: suggestionCache.get(suggestKey) ?? null });
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      let value: CategorySuggestion | null = null;
+      let failed = false;
+      try {
+        value = await suggestCategory(merchantQuery ? { merchant: merchantVal } : { notes: notesVal });
+      } catch {
+        failed = true;
+      }
+      if (cancelled) return;
+      if (!failed) suggestionCache.set(suggestKey, value);
+      setFetchedSuggestion({ key: suggestKey, value });
+    }, SUGGEST_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // merchantVal / notesVal are read through suggestKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSuggest, selectedCategoryId, lineThinking, lineAnswer, memorySuggestion, suggestKey, fetchedSuggestion]);
+
+  const suggestion: { categoryId: string; subcategoryId: string | null; accountId: string | null; why: string } | null =
+    (() => {
+      if (!canSuggest) return null;
+      if (memorySuggestion && categoryExists(memorySuggestion.categoryId)) {
+        return {
+          categoryId: memorySuggestion.categoryId,
+          subcategoryId: memorySuggestion.subcategoryId,
+          accountId: memorySuggestion.accountId,
+          why: memorySuggestion.hasDefault ? 'your default for this merchant' : 'used last time',
+        };
+      }
+      const fetched = fetchedSuggestion?.key === suggestKey ? fetchedSuggestion.value : null;
+      if (fetched && categoryExists(fetched.categoryId)) {
+        return { ...fetched, why: fetched.source === 'history' ? 'used last time' : 'suggested' };
+      }
+      // The one-line entry's guess when the model was not sure enough to fill it in.
+      if (lineAnswer && !lineAnswer.confident && categoryExists(lineAnswer.categoryId)) {
+        return { categoryId: lineAnswer.categoryId, subcategoryId: lineAnswer.subcategoryId, accountId: null, why: 'a guess' };
+      }
+      return null;
+    })();
+  const showSuggestion =
+    suggestion !== null && suggestion.categoryId !== selectedCategoryId && dismissedSuggestion !== suggestKey;
+  const suggestionCategory = suggestion ? localCategories.find((c) => c.id === suggestion.categoryId) : undefined;
+  const suggestionSub = suggestionCategory?.subcategories?.find((s) => s.id === suggestion?.subcategoryId);
+  const suggestionAccount =
+    suggestion && accountExists(suggestion.accountId) && !accountTouched.current
+      ? accounts.find((a) => a.id === suggestion.accountId)
+      : undefined;
+
+  const acceptSuggestion = () => {
+    if (!suggestion) return;
+    setValue('categoryId', suggestion.categoryId, { shouldValidate: Boolean(errors.categoryId) });
+    setValue('subcategoryId', suggestionSub ? suggestionSub.id : '');
+    if (suggestionAccount) {
+      setValue('accountId', suggestionAccount.id);
+      accountFromMerchant.current = true;
+    } else {
+      applyAccountForCategory(suggestion.categoryId);
+    }
+  };
+
+  // ---- Duplicate warning ------------------------------------------------------
+
+  const duplicateGuard = useDuplicateGuard();
+  const heldIntent = useRef<SubmitIntent>('save');
 
   // ---- Category creation -----------------------------------------------------
 
@@ -606,6 +863,29 @@ export default function ExpenseForm({
       let result: { success: boolean; error?: string; data?: unknown };
       let mode: ExpenseSaveResult['mode'] = 'expense';
 
+      // A new entry that looks like one already saved: ask before saving twice.
+      if (!expense && data.accountId) {
+        const clear = await duplicateGuard.check({
+          kind: isTransfer ? 'TRANSFER' : 'EXPENSE',
+          accountId: data.accountId,
+          toAccountId: isTransfer ? data.toAccountId : null,
+          amount: Number(isTransfer ? data.payAmount : data.amount),
+          date: data.date,
+          merchant: isTransfer ? null : data.merchantOrSource,
+        });
+        if (!clear) {
+          heldIntent.current = intent;
+          requestAnimationFrame(() =>
+            document
+              .getElementById(formId)
+              ?.querySelector('[data-duplicate-warning]')
+              ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          );
+          return;
+        }
+      }
+      const source = !expense && !isTransfer && lineFromVoice.current && lineKey ? 'voice' : '';
+
       if (isTransfer) {
         mode = isPayment ? 'payment' : 'debt';
         const formData = new FormData();
@@ -627,6 +907,7 @@ export default function ExpenseForm({
         formData.append('merchantOrSource', data.merchantOrSource || '');
         formData.append('notes', data.notes || '');
         formData.append('tags', data.tags || '');
+        formData.append('source', source);
         formData.append(
           'friendSplits',
           JSON.stringify(
@@ -644,6 +925,9 @@ export default function ExpenseForm({
         toast.error(result.error || 'Could not save — please try again');
         return;
       }
+      duplicateGuard.reset();
+      // Spoken entries go to the review inbox.
+      if (source) notifyReviewChanged();
 
       if (mode === 'expense') {
         offerMerchantRule(data, (result.data as { merchantId?: string | null; merchantOrSource?: string | null } | undefined) ?? null);
@@ -672,6 +956,9 @@ export default function ExpenseForm({
           payAmount: '',
         });
         accountTouched.current = true;
+        lineApplied.current = {};
+        lineFromVoice.current = false;
+        setLine('');
         setSplitOpen(false);
         setSplitRows([]);
         setSplitCustom(false);
@@ -710,6 +997,21 @@ export default function ExpenseForm({
       className="space-y-5"
       noValidate
     >
+      {quickLine && !expense && (
+        <QuickLine
+          id={`${formId}-line`}
+          value={line}
+          onChange={(text, viaVoice) => {
+            if (viaVoice) lineFromVoice.current = true;
+            else if (!text.trim()) lineFromVoice.current = false;
+            setLine(text);
+          }}
+          chips={lineChips}
+          thinking={lineThinking}
+          leftover={lineThinking ? lineParse?.leftover : undefined}
+        />
+      )}
+
       {/* Amount hero */}
       <div
         className={`rounded-2xl border bg-gradient-to-b from-danger-dim/40 to-graphite-surface-2/60 px-5 pt-6 pb-5 text-center transition-colors ${
@@ -821,8 +1123,8 @@ export default function ExpenseForm({
               onBlur={(e) => {
                 merchantField.onBlur(e);
                 setMerchantFocused(false);
-                // Typed an exact past merchant: fill blanks from last time.
-                applyMerchantMemory(e.target.value, { overrideCategory: false });
+                // A typed merchant that was used before is offered as a
+                // suggestion chip below; nothing is filled in silently.
               }}
               onKeyDown={(e) => {
                 if (!showSuggestions) return;
@@ -877,6 +1179,37 @@ export default function ExpenseForm({
               })}
             </ul>
           )}
+        </div>
+      )}
+
+      {showSuggestion && suggestion && suggestionCategory && (
+        <div className="flex items-center gap-1.5" aria-live="polite" data-category-suggestion>
+          <button
+            type="button"
+            onClick={acceptSuggestion}
+            className="inline-flex min-h-[40px] min-w-0 items-center gap-2 rounded-full border border-mint/40 bg-mint-dim px-3.5 py-1.5 text-left text-sm text-mint transition-colors hover:bg-mint/20"
+          >
+            <Sparkles size={14} className="shrink-0" aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="sr-only">Use suggested category </span>
+              <span className="block truncate">
+                {suggestionCategory.icon || '📁'} {suggestionCategory.name}
+                {suggestionSub ? ` › ${suggestionSub.name}` : ''}
+                {suggestionAccount ? ` · ${suggestionAccount.name}` : ''}
+              </span>
+              <span className="block truncate text-[11px] leading-tight text-mint/70">
+                {suggestion.why} · tap to use
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDismissedSuggestion(suggestKey)}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-graphite-surface-2 hover:text-ink"
+            aria-label="Dismiss suggestion"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
         </div>
       )}
 
@@ -1349,6 +1682,17 @@ export default function ExpenseForm({
           )}
         </div>
       )}
+
+      <DuplicateWarning
+        match={duplicateGuard.match}
+        busy={isSubmitting}
+        onCancel={duplicateGuard.reset}
+        onSaveAnyway={() => {
+          duplicateGuard.confirm();
+          if (submitIntentRef) submitIntentRef.current = heldIntent.current;
+          void handleSubmit(onSubmit, onInvalid)();
+        }}
+      />
 
       {!hideActions && (
         <div className="flex flex-col sm:flex-row gap-3 pt-1">

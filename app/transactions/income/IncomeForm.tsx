@@ -6,6 +6,7 @@ import Input from '@/components/Input';
 import Textarea from '@/components/Textarea';
 import Select from '@/components/Select';
 import { createIncome, updateIncome } from './actions';
+import { DuplicateWarning, useDuplicateGuard } from '@/components/transactions/DuplicateWarning';
 import { Plus, Trash2 } from 'lucide-react';
 import { toDayString, todayInAppTimeZone } from '@/lib/dates';
 import { useForm, useWatch } from 'react-hook-form';
@@ -57,6 +58,7 @@ export default function IncomeForm({
 }) {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const duplicateGuard = useDuplicateGuard();
   const [splits, setSplits] = useState<AccountSplit[]>(() => {
     if (income?.accounts?.length) {
       return income.accounts.map((a) => ({
@@ -204,6 +206,21 @@ export default function IncomeForm({
       return;
     }
 
+    // A new entry that looks like one already saved: ask before saving twice.
+    if (!income) {
+      const clear = await duplicateGuard.check({
+        kind: 'INCOME',
+        accountId: parsedSplits[0].accountId,
+        amount: total,
+        date: data.date,
+        merchant: data.merchantOrSource,
+      });
+      if (!clear) {
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const formData = new FormData();
     formData.append('date', data.date);
     formData.append('amount', data.amount);
@@ -222,6 +239,7 @@ export default function IncomeForm({
       : await createIncome(formData);
 
     setIsSubmitting(false);
+    duplicateGuard.reset();
 
     if (result.success) {
       onSuccess();
@@ -372,6 +390,16 @@ export default function IncomeForm({
         label="Tags (Optional, comma-separated)"
         {...register('tags')}
         placeholder="e.g., bonus, consulting"
+      />
+
+      <DuplicateWarning
+        match={duplicateGuard.match}
+        busy={isSubmitting}
+        onCancel={duplicateGuard.reset}
+        onSaveAnyway={() => {
+          duplicateGuard.confirm();
+          void handleSubmit(onSubmit)();
+        }}
       />
 
       <div className="flex flex-col sm:flex-row gap-3 pt-2 sm:pt-4">

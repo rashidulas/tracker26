@@ -40,6 +40,7 @@ import { loadAccountBalances } from '@/lib/ledgerBalances';
 import { buildUpcoming } from '@/lib/recurring';
 import { detectRecurring } from '@/lib/recurringDetection';
 import { FREQUENCY_LABELS, type Frequency } from '@/lib/recurringSchedule';
+import type { SearchFilters } from '@/lib/transactionFilters';
 
 // ==================== CONTEXT ====================
 
@@ -141,19 +142,8 @@ function checkIds(ids: string[] | undefined, map: Map<string, unknown>, label: s
 
 // ==================== FILTERS ====================
 
-export type TransactionFilters = {
-  kind?: TransactionKind;
-  start?: DayString;
-  end?: DayString;
-  categoryIds?: string[];
-  accountIds?: string[];
-  /** Case-insensitive substring of the merchant / source. */
-  merchant?: string;
-  /** Case-insensitive substring of merchant, notes or category name, or an exact tag. */
-  text?: string;
-  minAmount?: number;
-  maxAmount?: number;
-};
+/** Shared with the transaction lists' natural-language search (lib/transactionFilters.ts). */
+export type TransactionFilters = SearchFilters;
 
 function buildWhere(f: TransactionFilters, lookups: Lookups): Prisma.TransactionWhereInput {
   if (f.start && !isValidDay(f.start)) bad(`start "${f.start}" is not a real day (YYYY-MM-DD)`);

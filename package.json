@@ -20,7 +20,6 @@
     "@ai-sdk/google": "^4.0.122",
     "@ai-sdk/openai": "^4.0.121",
     "@ai-sdk/react": "^4.0.180",
-    "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^3.9.1",
     "@prisma/client": "^5.22.0",
     "ai": "^7.0.176",

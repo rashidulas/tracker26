@@ -60,6 +60,7 @@ export const TRANSACTION_PAGES = [
   // Lists categories with how many transactions use each.
   '/settings/categories',
   '/chat',
+  '/transactions/review',
 ] as const;
 
 async function resolveDeps(deps?: Partial<TransactionDeps>): Promise<TransactionDeps> {
@@ -142,6 +143,13 @@ const optionalText = (max: number) =>
 
 const tagsSchema = z.array(z.string()).optional();
 
+/**
+ * How a row was entered when it was not typed into a form. A row with a
+ * source starts unreviewed (needsReview) and shows up in the review inbox.
+ */
+export const TRANSACTION_SOURCES = ['voice', 'receipt', 'assistant', 'recurring'] as const;
+export type TransactionSource = (typeof TRANSACTION_SOURCES)[number];
+
 const accountSplitSchema = z.object({
   accountId: objectId('Split account'),
   amount: z.number().finite().positive('Split amount must be positive'),
@@ -164,6 +172,8 @@ const common = {
   merchantOrSource: optionalText(100),
   notes: optionalText(500),
   tags: tagsSchema,
+  /** Only read when the row is created; an edit never changes it. */
+  source: z.enum(TRANSACTION_SOURCES).nullish(),
 };
 
 const expenseInputSchema = z.object({
@@ -677,8 +687,9 @@ export async function createTransactionIn(
       ? await buildTransfer(tx, parsed)
       : await buildIncomeOrExpense(tx, parsed);
   // recurringId: set when posted from a recurring entry (lib/recurring.ts).
+  const source = parsed.source ?? null;
   const created = await tx.transaction.create({
-    data: { ...data, recurringId: extra.recurringId ?? null },
+    data: { ...data, recurringId: extra.recurringId ?? null, source, needsReview: source !== null },
   });
   if (parsed.kind === 'EXPENSE' && (parsed.friendSplits?.length ?? 0) > 0) {
     await syncFriendSplits(tx, created, parsed.friendSplits, null);
@@ -952,8 +963,10 @@ export async function duplicateTransactions(
 export async function duplicateTransactionsIn(
   tx: Tx,
   ids: string[],
-  day: string
+  day: string,
+  extra: { source?: TransactionSource | null } = {}
 ): Promise<Prisma.TransactionGetPayload<{ include: typeof listInclude }>[]> {
+  const source = extra.source ?? null;
   const unique = checkIds(ids);
   if (!isValidDay(day)) fail('Please enter a valid date');
   const sources = await tx.transaction.findMany({ where: { id: { in: unique } } });
@@ -991,7 +1004,12 @@ export async function duplicateTransactionsIn(
       parsed.kind === 'TRANSFER'
         ? await buildTransfer(tx, parsed, src)
         : await buildIncomeOrExpense(tx, parsed, src);
-    created.push(await tx.transaction.create({ data, include: listInclude }));
+    created.push(
+      await tx.transaction.create({
+        data: { ...data, source, needsReview: source !== null },
+        include: listInclude,
+      })
+    );
   }
   return created;
 }
@@ -1137,6 +1155,29 @@ export async function detachSubcategories(tx: Tx, subcategoryIds: string[]) {
     data: { subcategoryId: null },
   });
   return count;
+}
+
+// ==================== REVIEW INBOX ====================
+
+/**
+ * Marks rows as reviewed (the user approved them in the review inbox, or
+ * fixed them there). Changes no amount, date or account.
+ */
+export async function markReviewed(
+  ids: string[],
+  deps?: Partial<TransactionDeps>
+): Promise<TransactionResult<{ reviewed: number }>> {
+  return run(deps, 'mark as reviewed', (tx) => markReviewedIn(tx, ids));
+}
+
+/** markReviewed, inside a transaction the caller already opened. */
+export async function markReviewedIn(tx: Tx, ids: string[]): Promise<{ reviewed: number }> {
+  const unique = checkIds(ids);
+  const { count } = await tx.transaction.updateMany({
+    where: { id: { in: unique }, needsReview: true },
+    data: { needsReview: false },
+  });
+  return { reviewed: count };
 }
 
 // ==================== READ HELPERS ====================

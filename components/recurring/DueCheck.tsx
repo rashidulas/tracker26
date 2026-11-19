@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { runDueCheck } from '@/app/plan/recurring/actions';
 import { useToast } from '@/components/ToastProvider';
+import { notifyReviewChanged } from '@/components/review/reviewCount';
 
 /**
  * Runs the recurring due check once when the app is opened (each full page
@@ -23,6 +24,8 @@ export default function DueCheck() {
           `Posted ${result.posted} recurring ${result.posted === 1 ? 'entry' : 'entries'}`
         );
         router.refresh();
+        // Auto-posted entries wait in the review inbox.
+        notifyReviewChanged();
       }
       if (result.errors.length > 0) {
         const first = result.errors[0];

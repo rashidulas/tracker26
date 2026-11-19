@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ToastProvider';
+import { AskButton } from '@/components/assistant/AskAssistant';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
@@ -395,14 +396,16 @@ export default function FriendsClient({ initialFriends, accounts = [] }: Friends
           {friends.map((friend, index) => {
             const settled = Math.abs(friend.balance) < 0.005;
             return (
+              // The assistant button sits beside the card's own button, not
+              // inside it: a button cannot contain another.
+              <div key={friend.id} className="relative">
               <motion.button
-                key={friend.id}
                 type="button"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.04 }}
                 onClick={() => setDetailFriend(friend)}
-                className="group text-left relative overflow-hidden rounded-2xl border border-graphite-border-subtle bg-graphite-surface p-5 hover:border-graphite-border hover:bg-graphite-surface-hover transition-all duration-200"
+                className="group w-full text-left relative overflow-hidden rounded-2xl border border-graphite-border-subtle bg-graphite-surface p-5 pr-14 hover:border-graphite-border hover:bg-graphite-surface-hover transition-all duration-200"
               >
                 <div
                   className="absolute inset-x-0 top-0 h-1"
@@ -448,6 +451,12 @@ export default function FriendsClient({ initialFriends, accounts = [] }: Friends
                   </p>
                 </div>
               </motion.button>
+              <AskButton
+                label={friend.name}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                context={{ page: 'friends', item: { type: 'friend', id: friend.id, label: friend.name } }}
+              />
+              </div>
             );
           })}
         </div>

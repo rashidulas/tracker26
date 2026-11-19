@@ -122,6 +122,13 @@ model Transaction {
   /// linked FriendEntry rows). Your spending is amount - sharedAmount; the
   /// account balance still moves by the full amount. Kept by lib/transactions.
   sharedAmount     Float?
+  /// How the row was entered when it was not typed into a form: voice |
+  /// receipt | assistant | recurring (auto-posted). Null for manual entries.
+  source           String?
+  /// True until the user approves the row in the review inbox. Set together
+  /// with `source` by lib/transactions. Optional so rows saved before this
+  /// field existed still load (null = nothing to review).
+  needsReview      Boolean?           @default(false)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -145,6 +152,7 @@ model Transaction {
   @@index([toAccountId])
   @@index([splitGroupId])
   @@index([date, kind])
+  @@index([needsReview])
 }
 
 // Merchants / income sources. One row per name after normalising case and
@@ -329,6 +337,9 @@ model Conversation {
   runStartedAt  DateTime?
   /// When the last message was sent; the sidebar sorts and groups by this.
   lastMessageAt DateTime  @default(now())
+  /// JSON of what the user was looking at when the chat was opened with
+  /// "Ask about this" (lib/assistant/context.ts). Null for chats from /chat.
+  context       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

@@ -16,6 +16,8 @@ import {
   recategorizeTransactions,
 } from '@/app/transactions/actions';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { SmartFilterChips, useSmartSearch } from '@/components/transactions/SmartSearch';
+import { matchesFilters } from '@/lib/transactionFilters';
 import {
   buildMonthOptions,
   currentMonthKey,
@@ -76,6 +78,14 @@ export default function IncomeClient({
   const debouncedQuery = useDebouncedValue(query, 200);
   const [filters, setFilters] = useState(linkedFilters);
   const [showFilters, setShowFilters] = useState(hasLinkedFilters);
+  // "paychecks over 2000 this year": Enter turns the query into filter chips.
+  const smart = useSmartSearch('INCOME');
+  const runSmartSearch = async () => {
+    const applied = await smart.run(query);
+    if (!applied) return;
+    setQuery('');
+    if (applied.start || applied.end) setMonth('all');
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<IncomeRow | null>(null);
@@ -96,6 +106,8 @@ export default function IncomeClient({
         if (filters.endDate && key > filters.endDate) return false;
         if (filters.categoryId && item.categoryId !== filters.categoryId) return false;
         if (filters.subcategoryId && item.subcategoryId !== filters.subcategoryId) return false;
+        // An income row lists its accounts; the filter reads them as account splits.
+        if (smart.active && !matchesFilters({ ...item, accountSplits: item.accounts }, smart.filters)) return false;
         return matchesSearch(
           debouncedQuery,
           [
@@ -109,7 +121,7 @@ export default function IncomeClient({
           item.amount
         );
       }),
-    [income, month, filters, debouncedQuery]
+    [income, month, filters, debouncedQuery, smart.active, smart.filters]
   );
 
   const groups = useMemo(() => groupByDay(filtered, (i) => i.date, (i) => i.amount), [filtered]);
@@ -118,7 +130,7 @@ export default function IncomeClient({
   const selectedTotal = selectedRows.reduce((sum, i) => sum + i.amount, 0);
   const totalIncome = filtered.reduce((sum, item) => sum + item.amount, 0);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
-  const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}`;
+  const resetKey = `${month}|${debouncedQuery}|${JSON.stringify(filters)}|${JSON.stringify(smart.filters)}`;
 
   const closeModal = () => {
     setIsModalOpen(false);
@@ -211,6 +223,7 @@ export default function IncomeClient({
   const clearAll = () => {
     setQuery('');
     setFilters(EMPTY_FILTERS);
+    smart.clear();
     setMonth('all');
   };
 
@@ -226,7 +239,9 @@ export default function IncomeClient({
       <ListToolbar
         query={query}
         onQueryChange={setQuery}
-        placeholder="Search source, notes, category, tag or amount"
+        placeholder="Search, or try “over 2000 this year”"
+        onSmartSearch={() => void runSmartSearch()}
+        smartPending={smart.pending}
         month={month}
         monthOptions={monthOptions}
         onMonthChange={setMonth}
@@ -248,6 +263,8 @@ export default function IncomeClient({
           )}
         </button>
       </ListToolbar>
+
+      <SmartFilterChips smart={smart} categories={categories} accounts={accounts} />
 
       {showFilters && (
         <div className="panel shadow-panel p-4 sm:p-6 mb-6">

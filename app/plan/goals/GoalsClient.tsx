@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ToastProvider';
+import { AskButton } from '@/components/assistant/AskAssistant';
 import Modal from '@/components/Modal';
 import Button from '@/components/Button';
 import Input from '@/components/Input';
@@ -413,7 +414,11 @@ export default function GoalsClient({ initialGoals, accounts }: GoalsClientProps
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                <AskButton
+                  label={`${goal.name} goal`}
+                  context={{ page: 'goals', item: { type: 'goal', id: goal.id, label: goal.name } }}
+                />
                 <button
                   onClick={() => {
                     setEditingGoal(goal);

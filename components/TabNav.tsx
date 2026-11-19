@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useReviewCount } from '@/components/review/reviewCount';
 
 interface Tab {
   href: string;
   label: string;
   /** Match only the exact path (for index tabs such as "/"). */
   exact?: boolean;
+  /** Show how many entries wait in the review inbox next to the label. */
+  badge?: 'review';
 }
 
 /**
@@ -16,6 +19,7 @@ interface Tab {
  */
 export default function TabNav({ tabs, label }: { tabs: Tab[]; label: string }) {
   const pathname = usePathname();
+  const reviewCount = useReviewCount();
 
   return (
     <nav aria-label={label} className="mb-6 -mx-1 px-1 overflow-x-auto scrollbar-none">
@@ -29,13 +33,23 @@ export default function TabNav({ tabs, label }: { tabs: Tab[]; label: string }) 
               <Link
                 href={tab.href}
                 aria-current={active ? 'page' : undefined}
-                className={`flex items-center justify-center min-h-[44px] px-4 rounded-xl text-sm font-medium whitespace-nowrap transition-colors duration-200 ${
+                className={`flex items-center justify-center min-h-[44px] px-2 sm:px-4 rounded-xl text-sm font-medium whitespace-nowrap transition-colors duration-200 ${
                   active
                     ? 'bg-mint text-graphite shadow-[0_0_18px_-6px_var(--mint-glow)]'
                     : 'text-ink-secondary hover:text-ink hover:bg-white/[0.03]'
                 }`}
               >
                 {tab.label}
+                {tab.badge === 'review' && reviewCount > 0 && (
+                  <span
+                    className={`ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+                      active ? 'bg-graphite text-mint' : 'bg-mint text-graphite'
+                    }`}
+                  >
+                    {reviewCount > 99 ? '99+' : reviewCount}
+                    <span className="sr-only"> to review</span>
+                  </span>
+                )}
               </Link>
             </li>
           );

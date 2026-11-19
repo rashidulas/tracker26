@@ -14,6 +14,8 @@
  */
 import type { PrismaClient } from '@prisma/client';
 
+import { parseAskContext, type AskContext } from '@/lib/assistant/context';
+
 export type ChatDb = Pick<PrismaClient, 'conversation' | 'message' | '$transaction'>;
 type ChatTx = Pick<PrismaClient, 'conversation' | 'message'>;
 
@@ -36,6 +38,8 @@ export type LoadedConversation = ConversationSummary & {
   /** True while a reply is still being produced (for example after the tab was closed mid-reply). */
   running: boolean;
   messages: StoredMessage[];
+  /** What the user was looking at when the chat was opened with "Ask about this". */
+  context: AskContext | null;
 };
 
 /**
@@ -131,6 +135,7 @@ export async function loadConversation(
     ...summary(conversation),
     titleState: conversation.titleState,
     running: isRunning(conversation, now),
+    context: parseAskContext(conversation.context),
     messages: rows.map(toStored).filter((m): m is StoredMessage => m !== null),
   };
 }
@@ -172,6 +177,8 @@ export async function beginRun(
     messages: StoredMessage[];
     /** Title for a conversation that does not exist yet. */
     title: string;
+    /** Stored when the conversation is created; later turns read it back. */
+    context?: AskContext | null;
     now?: Date;
   }
 ): Promise<void> {
@@ -186,7 +193,13 @@ export async function beginRun(
       await tx.conversation.update({ where: { id: input.id }, data: run });
     } else {
       await tx.conversation.create({
-        data: { id: input.id, title: input.title || 'New chat', titleState: 'placeholder', ...run },
+        data: {
+          id: input.id,
+          title: input.title || 'New chat',
+          titleState: 'placeholder',
+          context: input.context ? JSON.stringify(input.context) : null,
+          ...run,
+        },
       });
     }
     await replaceTail(tx, input.id, input.fromPosition, input.messages);

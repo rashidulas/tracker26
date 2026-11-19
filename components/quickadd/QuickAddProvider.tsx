@@ -145,7 +145,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
         isOpen={isOpen}
         onClose={close}
         title="Add expense"
-        description="Amount, category, save — the rest is optional."
+        description="Type it in one line, or fill in amount and category."
         size="lg"
         footer={
           <div className="flex gap-3">
@@ -199,6 +199,7 @@ export function QuickAddProvider({ children }: { children: ReactNode }) {
             onSubmittingChange={setIsSubmitting}
             formId={FORM_ID}
             submitIntentRef={intentRef}
+            quickLine
           />
         ) : loadError ? (
           <div className="py-10 text-center space-y-4">

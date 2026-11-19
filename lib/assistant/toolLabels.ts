@@ -139,6 +139,8 @@ export function toolActivityLabel(toolName: string, input: Input, today: DayStri
         `${noun}${term ? ` for “${clip(term)}”` : ''}${range ? ` · ${range}` : ''}`
       );
     }
+    case 'readReceipt':
+      return pair('Reading', 'Read', 'the receipt');
     case 'accountBalances':
       return pair('Checking', 'Checked', 'account balances');
     case 'budgetStatus':

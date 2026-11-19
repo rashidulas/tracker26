@@ -42,7 +42,7 @@ const HOLD_MS = 450;
  * Phone photos are several megabytes; the model does not need more than this
  * to read a receipt, and the image is stored with the conversation.
  */
-async function prepareImage(file: File): Promise<{ url: string; mediaType: string }> {
+export async function prepareImage(file: File): Promise<{ url: string; mediaType: string }> {
   try {
     const bitmap = await createImageBitmap(file);
     const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
