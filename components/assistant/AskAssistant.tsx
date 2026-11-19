@@ -117,6 +117,8 @@ export function AskAssistantProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({ open }), [open]);
   const title = session ? contextTitle(session.context) : '';
+  // An insight's title is a statement ("Netflix went up"), not a thing to ask about.
+  const heading = session?.context.insight ? title : `Ask about ${title}`;
   const starters = useMemo(
     () => (session ? contextStarters(session.context).map((label) => ({ label, prompt: label, send: true })) : []),
     [session]
@@ -135,7 +137,7 @@ export function AskAssistantProvider({ children }: { children: ReactNode }) {
           <div
             ref={panelRef}
             role="dialog"
-            aria-label={`Ask about ${title}`}
+            aria-label={heading}
             tabIndex={-1}
             className="pointer-events-auto absolute inset-x-0 bottom-0 flex h-[88dvh] flex-col overflow-hidden rounded-t-3xl border border-graphite-border bg-graphite-surface shadow-panel animate-fade-up focus:outline-none lg:inset-x-auto lg:inset-y-0 lg:right-0 lg:h-auto lg:w-[27rem] lg:rounded-none lg:border-y-0 lg:border-r-0"
           >
@@ -145,7 +147,7 @@ export function AskAssistantProvider({ children }: { children: ReactNode }) {
             <header className="flex shrink-0 items-center gap-2 border-b border-graphite-border-subtle px-4 py-2.5">
               <Sparkles size={16} className="shrink-0 text-mint" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-semibold text-ink font-display">Ask about {title}</h2>
+                <h2 className="truncate text-sm font-semibold text-ink font-display">{heading}</h2>
                 <p className="truncate text-xs text-ink-muted">
                   {ASK_PAGE_NAMES[session.context.page]}
                   {Object.entries(session.context.filters ?? {})
@@ -180,7 +182,7 @@ export function AskAssistantProvider({ children }: { children: ReactNode }) {
                   starters={starters}
                   reference={data.reference}
                   today={data.today}
-                  greeting={`Ask about ${title}`}
+                  greeting={heading}
                   intro="I already know what you are looking at. Ask away."
                   context={session.context}
                   onChanged={(event) => event === 'sent' && setSent(true)}

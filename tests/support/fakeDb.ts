@@ -4,7 +4,9 @@
  *
  * - $transaction(fn) snapshots all data and restores it if fn throws.
  * - Writes made outside $transaction throw, so a test fails if the module
- *   ever writes without a transaction.
+ *   ever writes without a transaction. The insight models (UNGUARDED) are the
+ *   exception: lib/insights writes single rows whose idempotency rests on a
+ *   unique index, not on a transaction.
  */
 type Doc = Record<string, any>;
 type Where = Record<string, any> | undefined;
@@ -26,6 +28,10 @@ const MODELS = [
   'idempotencyKey',
   'conversation',
   'message',
+  'insight',
+  'insightPreference',
+  'insightRun',
+  'recap',
 ] as const;
 
 type ModelName = (typeof MODELS)[number];
@@ -73,7 +79,14 @@ const DEFAULTS: Record<ModelName, Doc> = {
   idempotencyKey: {},
   conversation: { titleState: 'placeholder', activeRunId: null, runStartedAt: null, context: null },
   message: {},
+  insight: { wording: 'template', dismissedAt: null },
+  insightPreference: { enabled: true, mutedUntil: null },
+  insightRun: { finishedAt: null, modelCalls: 0 },
+  recap: { wording: 'template' },
 };
+
+/** Models written without a transaction (see the note at the top). */
+const UNGUARDED = new Set<string>(['insight', 'insightPreference', 'insightRun', 'recap']);
 
 /** Unique indexes the code relies on (field lists). */
 const UNIQUE: Partial<Record<ModelName, string[][]>> = {
@@ -85,6 +98,10 @@ const UNIQUE: Partial<Record<ModelName, string[][]>> = {
   dismissedRecurringSuggestion: [['key']],
   idempotencyKey: [['key']],
   message: [['conversationId', 'messageId']],
+  insight: [['key']],
+  insightPreference: [['type']],
+  insightRun: [['day']],
+  recap: [['key']],
 };
 
 /** Compound unique keys used in where clauses, e.g. name_type. */
@@ -207,13 +224,17 @@ export class FakeDb {
     idempotencyKey: [],
     conversation: [],
     message: [],
+    insight: [],
+    insightPreference: [],
+    insightRun: [],
+    recap: [],
   };
   private inTransaction = false;
   /** Number of $transaction calls that committed. */
   commits = 0;
 
   private guardWrite(model: string, op: string) {
-    if (!this.inTransaction) {
+    if (!this.inTransaction && !UNGUARDED.has(model)) {
       throw new Error(`FakeDb: ${model}.${op} called outside $transaction`);
     }
   }
@@ -334,6 +355,10 @@ export class FakeDb {
   idempotencyKey = this.model('idempotencyKey');
   conversation = this.model('conversation');
   message = this.model('message');
+  insight = this.model('insight');
+  insightPreference = this.model('insightPreference');
+  insightRun = this.model('insightRun');
+  recap = this.model('recap');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) throw new Error('FakeDb: nested $transaction');

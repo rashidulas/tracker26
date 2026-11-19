@@ -1,5 +1,8 @@
 import { getDashboardData } from './actions';
 import DashboardClient from './DashboardClient';
+import InsightStrip from '@/components/insights/InsightStrip';
+import { RecapSummaryCard } from '@/components/insights/RecapView';
+import { loadDashboardRecaps, loadInsightStrip } from '@/lib/insights/store';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -25,8 +28,19 @@ const emptyData = {
   suggestionCount: 0,
 };
 
+/** Stored insights and recaps for the top of the dashboard. Reads only; never fails the page. */
+async function loadProactive() {
+  try {
+    const [strip, recaps] = await Promise.all([loadInsightStrip(), loadDashboardRecaps()]);
+    return { strip, recaps };
+  } catch (error) {
+    console.error('Error loading insights:', error);
+    return { strip: { insights: [], note: null }, recaps: [] };
+  }
+}
+
 export default async function DashboardPage() {
-  const result = await getDashboardData();
+  const [result, proactive] = await Promise.all([getDashboardData(), loadProactive()]);
 
   if (!result.success) {
     return (
@@ -43,5 +57,13 @@ export default async function DashboardPage() {
     );
   }
 
-  return <DashboardClient data={result.data!} />;
+  return (
+    <div className="space-y-6 lg:space-y-8">
+      <InsightStrip insights={proactive.strip.insights} note={proactive.strip.note} />
+      {proactive.recaps.map((recap) => (
+        <RecapSummaryCard key={recap.key} recap={recap} />
+      ))}
+      <DashboardClient data={result.data!} />
+    </div>
+  );
 }

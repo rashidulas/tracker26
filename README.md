@@ -18,6 +18,30 @@ sets the day. The Home page lists what is due in the next 14 days with
   (`lib/recurringDetection.ts`).
 - Dashboard charts can show everyday and recurring spending separately.
 
+## Insights and recaps
+
+The Home page shows up to three insights, and Home → Insights keeps a weekly
+and a monthly recap.
+
+- Detection is plain code (`lib/insights/detect.ts`): budgets on track to go
+  over, a category ahead of its usual pace, an unusually large purchase, a
+  recurring charge that changed or did not arrive, a bill the balance may not
+  cover, card utilisation, old balances with friends, a good week or streak.
+  Comparisons need history and stay silent without it.
+- The model only words what was detected (`lib/insights/wording.ts`). Every
+  number it writes must be one the code computed, or the code's own sentence
+  is used instead; with no API key the code's sentences are always used.
+- The check runs on the first open of each day and from
+  `GET/POST /api/insights/run` with `Authorization: Bearer $CRON_SECRET`.
+  It is idempotent per day (`InsightRun` has a unique day), makes at most one
+  model call, and stores everything; pages only read. A recap is rewritten
+  only with **Regenerate**.
+- Dismissing an insight hides it for good and mutes its kind for 7 days.
+  Settings → Insights turns kinds off.
+
+After pulling this change run `npx prisma db push` (four new collections with
+unique indexes: `Insight`, `InsightPreference`, `InsightRun`, `Recap`).
+
 ## Merchant memory
 
 Settings → Merchants. Income and expenses link to a `Merchant` (one per name,

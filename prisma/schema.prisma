@@ -415,3 +415,80 @@ model FriendEntry {
   @@index([transactionId])
   @@index([accountId])
 }
+
+// Proactive insights and recaps (lib/insights/).
+//
+// Days in these models are calendar days as `YYYY-MM-DD` text (lib/dates.ts
+// DayString): they are keys and labels, never range-queried as dates.
+
+/// One row per detected insight, keyed by a stable key (type, subject and
+/// period), so the same insight is stored once and never shown again after it
+/// was dismissed or has aged out.
+model Insight {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  key         String    @unique
+  type        String
+  /// alert | warning | info | positive
+  severity    String
+  /// JSON of the detected insight (lib/insights/types.ts): title, numbers,
+  /// facts and link, all computed in code.
+  data        String
+  /// The sentence shown. Written by the model from `data`, or by the code
+  /// template when no model is available.
+  text        String
+  /// template | model
+  wording     String    @default("template")
+  /// The day it was first detected, and the last check that still found it.
+  firstDay    String
+  lastSeenDay String
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([lastSeenDay])
+}
+
+/// Per insight type: switched off in Settings, or muted until a day after one
+/// of its insights was dismissed. No row means on and not muted.
+model InsightPreference {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  type       String   @unique
+  enabled    Boolean  @default(true)
+  /// Muted while today is before this day.
+  mutedUntil String?
+  updatedAt  DateTime @updatedAt
+}
+
+/// One row per day the insights check ran. The unique day makes the check
+/// idempotent: two tabs opening at once produce one run and one model call.
+model InsightRun {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  day        String    @unique
+  /// running | done
+  status     String
+  claimedAt  DateTime
+  finishedAt DateTime?
+  /// How many model calls the run made (0 or 1).
+  modelCalls Int       @default(0)
+}
+
+/// A stored weekly or monthly recap. `data` holds the figures (computed in
+/// code); `text` the wording (model or template), both as JSON.
+model Recap {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  /// "<kind>:<periodStart>", e.g. "weekly:2026-11-09".
+  key         String   @unique
+  /// weekly | monthly
+  kind        String
+  periodStart String
+  periodEnd   String
+  data        String
+  text        String
+  /// template | model
+  wording     String   @default("template")
+  generatedAt DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([periodStart])
+}

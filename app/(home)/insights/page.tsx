@@ -1,5 +1,5 @@
-import AnalyticsClient from './AnalyticsClient';
 import InsightsCharts from './InsightsCharts';
+import RecapSection from './RecapSection';
 import { getInsights, type InsightsRange } from './data';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +10,7 @@ const RANGES: InsightsRange[] = ['month', '30d', '90d', 'year', 'all'];
 export default async function InsightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; view?: string }>;
+  searchParams: Promise<{ range?: string; view?: string; recap?: string }>;
 }) {
   const params = await searchParams;
   const range = RANGES.includes(params.range as InsightsRange)
@@ -27,7 +27,7 @@ export default async function InsightsPage({
           Couldn&apos;t load charts: {result.error}
         </div>
       )}
-      <AnalyticsClient />
+      <RecapSection selected={typeof params.recap === 'string' ? params.recap : undefined} />
     </div>
   );
 }
