@@ -15,10 +15,12 @@ import {
   MessageCircle,
   X,
   Plus,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 import { useReviewCount } from '@/components/review/reviewCount';
+import { signOut } from '@/app/login/actions';
 
 type NavItem = {
   href: string;
@@ -297,6 +299,20 @@ export default function Navigation() {
 
         <div className="p-3 border-t border-graphite-border-subtle">
           <SidebarLink item={SETTINGS} pathname={pathname} />
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="group flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] text-ink-secondary hover:text-ink hover:bg-graphite-surface-2 transition-all duration-200"
+            >
+              <LogOut
+                aria-hidden="true"
+                size={17}
+                strokeWidth={1.75}
+                className="text-ink-muted group-hover:text-ink-secondary"
+              />
+              <span>Sign out</span>
+            </button>
+          </form>
         </div>
       </nav>
 
@@ -415,6 +431,15 @@ export default function Navigation() {
                   );
                 })}
               </ul>
+              <form action={signOut} className="px-4 pt-1 pb-2">
+                <button
+                  type="submit"
+                  className="flex w-full items-center justify-center gap-2 min-h-[44px] rounded-2xl border border-graphite-border-subtle bg-graphite-elevated/70 text-sm font-medium text-ink-secondary active:bg-graphite-surface-2"
+                >
+                  <LogOut size={16} aria-hidden="true" />
+                  Sign out
+                </button>
+              </form>
             </div>
           </div>
         </div>

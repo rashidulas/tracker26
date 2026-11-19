@@ -4,6 +4,7 @@ import {
   loadConversation,
   renameConversation,
 } from '@/lib/assistant/conversations';
+import { requireApiSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
@@ -13,6 +14,8 @@ type Context = { params: Promise<{ id: string }> };
 
 /** One conversation with its messages. `running` is true while a reply is still being produced. */
 export async function GET(_request: NextRequest, { params }: Context) {
+  const denied = await requireApiSession();
+  if (denied) return denied;
   try {
     const { id } = await params;
     const conversation = await loadConversation(prisma, id);
@@ -26,6 +29,8 @@ export async function GET(_request: NextRequest, { params }: Context) {
 
 /** Rename. Body: { title }. */
 export async function PATCH(request: NextRequest, { params }: Context) {
+  const denied = await requireApiSession();
+  if (denied) return denied;
   try {
     const { id } = await params;
     const body = (await request.json().catch(() => null)) as { title?: unknown } | null;
@@ -43,6 +48,8 @@ export async function PATCH(request: NextRequest, { params }: Context) {
 
 /** Delete the conversation and its messages. Transactions it recorded are kept. */
 export async function DELETE(_request: NextRequest, { params }: Context) {
+  const denied = await requireApiSession();
+  if (denied) return denied;
   try {
     const { id } = await params;
     const deleted = await deleteConversation(prisma, id);

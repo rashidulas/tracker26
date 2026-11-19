@@ -2,9 +2,11 @@
 
 import { prisma } from '@/lib/prisma';
 import { markReviewed } from '@/lib/transactions';
+import { requireSession } from '@/lib/auth/session';
 
 /** Rows waiting in the review inbox, oldest first, so they are cleared in order. */
 export async function getReviewItems() {
+  await requireSession();
   return prisma.transaction.findMany({
     where: { needsReview: true },
     include: {
@@ -22,6 +24,7 @@ export async function getReviewItems() {
 }
 
 export async function getReviewCount(): Promise<number> {
+  await requireSession();
   try {
     return await prisma.transaction.count({ where: { needsReview: true } });
   } catch (error) {
@@ -32,6 +35,7 @@ export async function getReviewCount(): Promise<number> {
 
 /** Approve the given rows: they are correct as saved. */
 export async function approveReview(ids: string[]) {
+  await requireSession();
   const result = await markReviewed(ids);
   return result.success
     ? { success: true as const, count: result.data.reviewed }

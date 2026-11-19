@@ -5,6 +5,7 @@ import { loadAccountBalances } from '@/lib/ledgerBalances';
 import { accountDeleteBlocker } from '@/lib/references';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { requireSession } from '@/lib/auth/session';
 
 const accountSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -24,6 +25,7 @@ function parseCreditLimit(formData: FormData, type: string): number | null {
 }
 
 export async function getAccounts() {
+  await requireSession();
   try {
     // Includes friend settlements, goal transfers and goal earmarks.
     const accountsWithBalance = await loadAccountBalances(prisma);
@@ -36,6 +38,7 @@ export async function getAccounts() {
 }
 
 export async function createAccount(formData: FormData) {
+  await requireSession();
   try {
     const type = formData.get('type') as
       | 'CHECKING'
@@ -77,6 +80,7 @@ export async function createAccount(formData: FormData) {
 }
 
 export async function updateAccount(id: string, formData: FormData) {
+  await requireSession();
   try {
     const type = formData.get('type') as
       | 'CHECKING'
@@ -112,6 +116,7 @@ export async function updateAccount(id: string, formData: FormData) {
 }
 
 export async function deleteAccount(id: string) {
+  await requireSession();
   try {
     const account = await prisma.account.findUnique({
       where: { id },
@@ -141,6 +146,7 @@ export async function deleteAccount(id: string) {
 
 /** Accounts for pickers (expense, income and transfer forms). */
 export async function getAccountsForSelect() {
+  await requireSession();
   try {
     const accounts = await prisma.account.findMany({
       orderBy: { name: 'asc' },

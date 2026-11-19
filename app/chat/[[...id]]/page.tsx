@@ -4,6 +4,7 @@ import { listConversations, loadConversation } from '@/lib/assistant/conversatio
 import { loadChatReference, loadStarterPrompts } from '@/lib/assistant/starters';
 import { getAppTimeZone, todayInAppTimeZone } from '@/lib/dates';
 import { prisma } from '@/lib/prisma';
+import { requireSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ function greetingFor(now: Date) {
 
 /** /chat is a new chat; /chat/<id> opens a stored one. */
 export default async function ChatPage({ params }: { params: Promise<{ id?: string[] }> }) {
+  await requireSession();
   const { id } = await params;
   const requested = id?.[0];
   const today = todayInAppTimeZone();

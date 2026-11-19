@@ -2,6 +2,7 @@
 // Dates follow lib/dates.ts: calendar days stored as UTC midnight, "today" in APP_TIMEZONE.
 
 import { prisma } from '@/lib/prisma';
+import { requireSession } from '@/lib/auth/session';
 import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/transactions';
 import {
   addDays,
@@ -96,6 +97,7 @@ function totalsBy(
 export async function getInsights(
   range: InsightsRange
 ): Promise<{ success: true; data: InsightsData } | { success: false; error: string }> {
+  await requireSession();
   try {
     const today = todayInAppTimeZone();
     const start = rangeStart(range, today);

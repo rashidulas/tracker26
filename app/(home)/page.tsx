@@ -3,6 +3,7 @@ import DashboardClient from './DashboardClient';
 import InsightStrip from '@/components/insights/InsightStrip';
 import { RecapSummaryCard } from '@/components/insights/RecapView';
 import { loadDashboardRecaps, loadInsightStrip } from '@/lib/insights/store';
+import { requireSession } from '@/lib/auth/session';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -40,6 +41,7 @@ async function loadProactive() {
 }
 
 export default async function DashboardPage() {
+  await requireSession();
   const [result, proactive] = await Promise.all([getDashboardData(), loadProactive()]);
 
   if (!result.success) {

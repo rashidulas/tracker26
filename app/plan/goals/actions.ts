@@ -11,8 +11,10 @@ import {
   type GoalInput,
 } from '@/lib/goalLedger';
 import { goalProgress } from '@/lib/goals';
+import { requireSession } from '@/lib/auth/session';
 
 export async function getGoals() {
+  await requireSession();
   try {
     const goals = await prisma.goal.findMany({
       include: {
@@ -55,18 +57,22 @@ const done = <T extends { success: boolean }>(r: T) =>
   r.success ? { success: true as const } : (r as unknown as { success: false; error: string });
 
 export async function createGoal(formData: FormData) {
+  await requireSession();
   return done(await addGoal(goalFromForm(formData)));
 }
 
 export async function updateGoal(id: string, formData: FormData) {
+  await requireSession();
   return done(await editGoal(id, goalFromForm(formData)));
 }
 
 export async function deleteGoal(id: string) {
+  await requireSession();
   return done(await removeGoal(id));
 }
 
 export async function createContribution(formData: FormData) {
+  await requireSession();
   return done(
     await addContribution({
       goalId: (formData.get('goalId') as string) || '',
@@ -76,14 +82,17 @@ export async function createContribution(formData: FormData) {
 }
 
 export async function updateContribution(id: string, formData: FormData) {
+  await requireSession();
   return done(await editContribution(id, contributionFromForm(formData)));
 }
 
 export async function deleteContribution(id: string) {
+  await requireSession();
   return done(await removeContribution(id));
 }
 
 export async function getAccounts() {
+  await requireSession();
   try {
     const accounts = await prisma.account.findMany({
       select: { id: true, name: true, type: true },

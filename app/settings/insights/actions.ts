@@ -7,8 +7,10 @@ import {
   setInsightTypeEnabled,
   unmuteInsightType,
 } from '@/lib/insights/store';
+import { requireSession } from '@/lib/auth/session';
 
 export async function getInsightSettings() {
+  await requireSession();
   try {
     return { success: true as const, data: await loadInsightPreferences() };
   } catch (error) {
@@ -33,9 +35,11 @@ async function change(run: () => Promise<void>) {
 }
 
 export async function setInsightEnabled(type: string, enabled: boolean) {
+  await requireSession();
   return change(() => setInsightTypeEnabled(type, enabled === true));
 }
 
 export async function unmuteInsight(type: string) {
+  await requireSession();
   return change(() => unmuteInsightType(type));
 }

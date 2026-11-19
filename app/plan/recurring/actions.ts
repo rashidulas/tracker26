@@ -14,8 +14,10 @@ import {
 } from '@/lib/recurring';
 import { loadSuggestions, loadUpcoming } from '@/lib/recurringQueries';
 import { todayInAppTimeZone, toDayString } from '@/lib/dates';
+import { requireSession } from '@/lib/auth/session';
 
 export async function getRecurringPageData() {
+  await requireSession();
   try {
     const today = todayInAppTimeZone();
     const [entries, suggestions, upcoming, categories, accounts] = await Promise.all([
@@ -79,6 +81,7 @@ function plain<T>(result: { success: true; data: T } | { success: false; error: 
 }
 
 export async function saveRecurring(id: string | null, input: RecurringInput) {
+  await requireSession();
   if (id) return plain(await updateRecurring(id, input));
   const result = await createRecurring(input);
   return result.success
@@ -87,22 +90,27 @@ export async function saveRecurring(id: string | null, input: RecurringInput) {
 }
 
 export async function removeRecurring(id: string) {
+  await requireSession();
   return plain(await deleteRecurring(id));
 }
 
 export async function toggleRecurring(id: string, active: boolean) {
+  await requireSession();
   return plain(await setRecurringActive(id, active));
 }
 
 export async function postRecurring(id: string, dueDate: string) {
+  await requireSession();
   return plain(await postRecurringNow(id, dueDate));
 }
 
 export async function skipRecurringOccurrence(id: string, dueDate: string) {
+  await requireSession();
   return plain(await skipRecurring(id, dueDate));
 }
 
 export async function dismissSuggestion(key: string) {
+  await requireSession();
   try {
     if (typeof key !== 'string' || !key || key.length > 300) {
       return { success: false as const, error: 'Invalid suggestion' };
@@ -126,6 +134,7 @@ export async function dismissSuggestion(key: string) {
  * Idempotent: see lib/recurring.ts.
  */
 export async function runDueCheck() {
+  await requireSession();
   try {
     return { success: true as const, ...(await runDueRecurring()) };
   } catch (error) {

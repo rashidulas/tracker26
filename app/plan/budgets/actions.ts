@@ -9,6 +9,7 @@ import { copyPreviousMonthIn, setBudgetIn } from '@/lib/budgetWrites';
 import { TransactionError } from '@/lib/transactions';
 import { loadBudgetHint, loadBudgetMonth } from '@/lib/budgetData';
 import { isValidDay, todayInAppTimeZone } from '@/lib/dates';
+import { requireSession } from '@/lib/auth/session';
 
 /** Pages that show budget figures. */
 function revalidateBudgets() {
@@ -17,6 +18,7 @@ function revalidateBudgets() {
 }
 
 export async function getBudgetMonth(key: string) {
+  await requireSession();
   try {
     if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
     return { success: true as const, data: await loadBudgetMonth(key, todayInAppTimeZone()) };
@@ -31,6 +33,7 @@ export async function getBudgetMonth(key: string) {
  * or 0 removes it. rolloverEnabled left undefined keeps the current setting.
  */
 export async function setBudget(input: z.input<typeof budgetInputSchema>) {
+  await requireSession();
   try {
     // The rules live in lib/budgetWrites.ts, shared with the chat assistant.
     await setBudgetIn(prisma, input);
@@ -45,6 +48,7 @@ export async function setBudget(input: z.input<typeof budgetInputSchema>) {
 
 /** Turn rollover on or off for an existing budget. */
 export async function setBudgetRollover(key: string, categoryId: string, rolloverEnabled: boolean) {
+  await requireSession();
   try {
     if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
     const { count } = await prisma.budget.updateMany({
@@ -62,6 +66,7 @@ export async function setBudgetRollover(key: string, categoryId: string, rollove
 
 /** Copies last month's budgets (amount and rollover) into categories with no budget yet. */
 export async function copyPreviousMonth(key: string) {
+  await requireSession();
   try {
     if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
     const { copied } = await copyPreviousMonthIn(prisma, key);
@@ -75,6 +80,7 @@ export async function copyPreviousMonth(key: string) {
 
 /** For the expense form: what is left in a category's budget in the month of `day`. */
 export async function getBudgetHint(categoryId: string, day: string) {
+  await requireSession();
   try {
     if (!/^[a-f\d]{24}$/i.test(categoryId) || !isValidDay(day)) return null;
     return await loadBudgetHint(categoryId, day);

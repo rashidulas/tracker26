@@ -6,6 +6,7 @@ import { createCategoryIn, uniqueSubcategoryNames } from '@/lib/categories';
 import { detachSubcategories, TransactionError } from '@/lib/transactions';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { requireSession } from '@/lib/auth/session';
 
 const categorySchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -21,6 +22,7 @@ function parseSubcategories(formData: FormData): string[] {
 }
 
 export async function getCategories() {
+  await requireSession();
   try {
     const categories = await prisma.category.findMany({
       orderBy: { name: 'asc' },
@@ -42,6 +44,7 @@ export async function getCategories() {
 }
 
 export async function createCategory(formData: FormData) {
+  await requireSession();
   try {
     const subcategoryNames = parseSubcategories(formData);
     const data = {
@@ -73,6 +76,7 @@ export async function createCategory(formData: FormData) {
 }
 
 export async function updateCategory(id: string, formData: FormData) {
+  await requireSession();
   try {
     const subcategoryNames = parseSubcategories(formData);
     const data = {
@@ -162,6 +166,7 @@ export async function updateCategory(id: string, formData: FormData) {
 }
 
 export async function deleteCategory(id: string) {
+  await requireSession();
   try {
     const category = await prisma.category.findUnique({
       where: { id },
@@ -191,6 +196,7 @@ export async function deleteCategory(id: string) {
 
 /** Categories of one type, with subcategories, for pickers. */
 export async function getCategoriesForSelect(type: 'INCOME' | 'EXPENSE') {
+  await requireSession();
   try {
     const categories = await prisma.category.findMany({
       where: { type },

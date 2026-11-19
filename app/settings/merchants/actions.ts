@@ -10,6 +10,7 @@ import {
   type MerchantMemory,
 } from '@/lib/merchants';
 import { applyMerchantCategory, TRANSACTION_PAGES } from '@/lib/transactions';
+import { requireSession } from '@/lib/auth/session';
 
 const objectId = /^[a-f\d]{24}$/i;
 
@@ -22,6 +23,7 @@ function revalidateAll() {
  * was used last time (newest first).
  */
 export async function getMerchantMemory(kind: 'INCOME' | 'EXPENSE' = 'EXPENSE'): Promise<MerchantMemory[]> {
+  await requireSession();
   const [merchants, recent, categories] = await Promise.all([
     prisma.merchant.findMany({
       where: {
@@ -50,6 +52,7 @@ export async function getMerchantMemory(kind: 'INCOME' | 'EXPENSE' = 'EXPENSE'):
 
 /** Defaults for one merchant name, for AI drafts and the receipt scanner. */
 export async function lookupMerchant(name: string) {
+  await requireSession();
   const key = normalizeMerchantName(name);
   if (!key) return null;
   return prisma.merchant.findUnique({
@@ -65,6 +68,7 @@ export async function lookupMerchant(name: string) {
 }
 
 export async function getMerchantsPageData() {
+  await requireSession();
   try {
     const [merchants, counts, categories, accounts] = await Promise.all([
       prisma.merchant.findMany({
@@ -135,6 +139,7 @@ export async function setMerchantCategoryDefault(input: {
   categoryId: string;
   subcategoryId?: string | null;
 }) {
+  await requireSession();
   try {
     // The rules live in lib/merchants.ts, shared with the chat assistant.
     const saved = await prisma.$transaction((tx) => setMerchantCategoryDefaultIn(tx, input));
@@ -155,6 +160,7 @@ export async function setMerchantCategoryDefault(input: {
 }
 
 export async function applyCategoryToPast(merchantId: string, categoryId: string, subcategoryId: string | null) {
+  await requireSession();
   const result = await applyMerchantCategory(merchantId, categoryId, subcategoryId);
   return result.success
     ? { success: true as const, updated: result.data.updated }
@@ -166,6 +172,7 @@ export async function updateMerchantDefaults(
   merchantId: string,
   input: { categoryId: string | null; subcategoryId: string | null; accountId: string | null }
 ) {
+  await requireSession();
   try {
     if (!objectId.test(merchantId)) return { success: false as const, error: 'Merchant not found' };
     const categoryId = input.categoryId && objectId.test(input.categoryId) ? input.categoryId : null;

@@ -14,6 +14,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { todayInAppTimeZone } from '@/lib/dates';
 import type { FriendEntryType } from '@prisma/client';
+import { requireSession } from '@/lib/auth/session';
 
 const friendSchema = z.object({
   name: z.string().min(1, 'Name is required').max(60),
@@ -22,6 +23,7 @@ const friendSchema = z.object({
 });
 
 export async function getFriends() {
+  await requireSession();
   try {
     const friends = await prisma.friend.findMany({
       include: {
@@ -70,6 +72,7 @@ export async function getFriends() {
 }
 
 export async function createFriend(formData: FormData) {
+  await requireSession();
   try {
     const validated = friendSchema.parse({
       name: formData.get('name') as string,
@@ -109,6 +112,7 @@ export async function createFriend(formData: FormData) {
 }
 
 export async function updateFriend(id: string, formData: FormData) {
+  await requireSession();
   try {
     const validated = friendSchema.parse({
       name: formData.get('name') as string,
@@ -137,6 +141,7 @@ export async function updateFriend(id: string, formData: FormData) {
 }
 
 export async function deleteFriend(id: string) {
+  await requireSession();
   const result = await removeFriend(id);
   return result.success ? { success: true as const } : result;
 }
@@ -154,22 +159,26 @@ function entryFromForm(formData: FormData): FriendEntryInput {
 }
 
 export async function createFriendEntry(formData: FormData) {
+  await requireSession();
   const result = await createEntry(entryFromForm(formData));
   return result.success ? { success: true as const } : result;
 }
 
 export async function updateFriendEntry(id: string, formData: FormData) {
+  await requireSession();
   const result = await updateEntry(id, entryFromForm(formData));
   return result.success ? { success: true as const } : result;
 }
 
 export async function deleteFriendEntry(id: string) {
+  await requireSession();
   const result = await removeEntry(id);
   return result.success ? { success: true as const } : result;
 }
 
 /** Friends for the expense form's "Split with friends" picker. */
 export async function getFriendsForSelect() {
+  await requireSession();
   try {
     const friends = await prisma.friend.findMany({
       select: { id: true, name: true, color: true },

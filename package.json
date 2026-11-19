@@ -13,7 +13,8 @@
     "postinstall": "prisma generate",
     "seed": "tsx prisma/seed.ts",
     "migrate:merchants": "tsx --env-file=.env.local prisma/migrate-merchants.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "auth:hash": "node scripts/hash-password.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.106",
@@ -23,8 +24,10 @@
     "@hookform/resolvers": "^3.9.1",
     "@prisma/client": "^5.22.0",
     "ai": "^7.0.176",
+    "bcryptjs": "^3.0.3",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
+    "iron-session": "^9.1.0",
     "lucide-react": "^0.468.0",
     "next": "^15.1.0",
     "openai": "^7.30.0",

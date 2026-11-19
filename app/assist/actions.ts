@@ -18,6 +18,8 @@ import { findDuplicate, type DuplicateMatch, type DuplicateProbe } from '@/lib/d
 import { isValidDay, todayInAppTimeZone } from '@/lib/dates';
 import { normalizeMerchantName } from '@/lib/merchants';
 import { loadChatReference } from '@/lib/assistant/starters';
+import { rateLimit } from '@/lib/rateLimit';
+import { requireSession } from '@/lib/auth/session';
 
 const MODEL_TIMEOUT_MS = 6000;
 const CACHE_LIMIT = 500;
@@ -60,6 +62,7 @@ export type QuickAddGuess = {
  * place. `text` is the whole line, for context.
  */
 export async function interpretQuickAdd(text: string): Promise<QuickAddGuess | null> {
+  await requireSession();
   try {
     const line = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
     if (line.length < 3) return null;
@@ -69,6 +72,7 @@ export async function interpretQuickAdd(text: string): Promise<QuickAddGuess | n
     if (categories.length === 0) return null;
     const key = `quick|${listKey(categories)}|${line.toLowerCase()}`;
     if (cache.has(key)) return cache.get(key) as QuickAddGuess;
+    if (!rateLimit('aiHelper').ok) return null;
     const guess = await classifyEntry({
       model: config.model,
       text: line,
@@ -99,6 +103,7 @@ export async function suggestCategory(input: {
   merchant?: string | null;
   notes?: string | null;
 }): Promise<CategorySuggestion | null> {
+  await requireSession();
   try {
     const merchant = String(input?.merchant ?? '').replace(/\s+/g, ' ').trim().slice(0, 100);
     const notes = String(input?.notes ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -137,6 +142,7 @@ export async function suggestCategory(input: {
     if (categories.length === 0) return null;
     const key = `suggest|${listKey(categories)}|${merchantKey ?? ''}|${merchantKey ? '' : notes.toLowerCase()}`;
     if (cache.has(key)) return cache.get(key) as CategorySuggestion | null;
+    if (!rateLimit('aiHelper').ok) return null;
     const guess = await classifyEntry({
       model: config.model,
       text: [merchant && `Merchant: ${merchant}`, notes && `Note: ${notes}`].filter(Boolean).join('\n'),
@@ -163,6 +169,7 @@ export async function smartSearch(
   text: string,
   kind: 'EXPENSE' | 'INCOME' | 'TRANSFER'
 ): Promise<SearchResult | null> {
+  await requireSession();
   try {
     const query = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!query) return null;
@@ -179,7 +186,8 @@ export async function smartSearch(
     const result = await interpretSearch({
       text: query,
       ctx: { today, categories, accounts },
-      model: config.ok ? config.model : null,
+      // Over the limit: the code-side parser alone, without the model.
+      model: config.ok && rateLimit('aiHelper').ok ? config.model : null,
       abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
     return remember(key, result);
@@ -191,6 +199,7 @@ export async function smartSearch(
 
 /** Duplicate warning (lib/duplicates.ts). Null means "nothing found" or "could not check". */
 export async function checkDuplicate(probe: DuplicateProbe): Promise<DuplicateMatch | null> {
+  await requireSession();
   try {
     if (!probe || !['EXPENSE', 'INCOME', 'TRANSFER'].includes(probe.kind)) return null;
     if (!OBJECT_ID.test(String(probe.accountId ?? '')) || !isValidDay(probe.date)) return null;
@@ -213,5 +222,6 @@ export async function checkDuplicate(probe: DuplicateProbe): Promise<DuplicateMa
 
 /** What the "Ask about this" panel needs to show a chat: the lists for editing a proposal, and today. */
 export async function getAskPanelData() {
+  await requireSession();
   return { reference: await loadChatReference(prisma), today: todayInAppTimeZone() };
 }

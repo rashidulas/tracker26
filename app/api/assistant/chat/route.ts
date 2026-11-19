@@ -2,7 +2,9 @@ import { after, NextRequest, NextResponse } from 'next/server';
 import { runChatTurn } from '@/lib/assistant/chat';
 import { approvalSecret } from '@/lib/assistant/engine';
 import { getAssistantModel } from '@/lib/assistant/model';
+import { requireApiSession } from '@/lib/auth/session';
 import { getAppTimeZone, todayInAppTimeZone } from '@/lib/dates';
+import { MAX_CHAT_BODY_BYTES, readLimitedBody, tooManyRequests } from '@/lib/http';
 import { prisma } from '@/lib/prisma';
 import { APP_CURRENCY } from '@/lib/utils';
 
@@ -22,6 +24,11 @@ export const maxDuration = 60;
  *                  the first message of a conversation only
  */
 export async function POST(request: NextRequest) {
+  const denied = await requireApiSession();
+  if (denied) return denied;
+  const limited = tooManyRequests('chat');
+  if (limited) return limited;
+
   const config = getAssistantModel();
   if (!config.ok) {
     console.error('Assistant config:', config.error);
@@ -29,8 +36,17 @@ export async function POST(request: NextRequest) {
   }
 
   let body: { id?: unknown; message?: unknown; proposalEdits?: unknown; context?: unknown };
+  const raw = await readLimitedBody(request, MAX_CHAT_BODY_BYTES);
+  if (!raw.ok && raw.reason === 'too-large') {
+    return NextResponse.json(
+      { error: 'That message is too large to send. Remove an image and try again.' },
+      { status: 413 }
+    );
+  }
   try {
-    body = await request.json();
+    if (!raw.ok) throw new Error('unreadable');
+    body = JSON.parse(new TextDecoder().decode(raw.bytes));
+    if (typeof body !== 'object' || body === null) throw new Error('not an object');
   } catch {
     return NextResponse.json({ error: 'Request body must be JSON' }, { status: 400 });
   }

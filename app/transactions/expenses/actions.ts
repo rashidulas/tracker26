@@ -11,6 +11,7 @@ import {
 } from '@/lib/transactions';
 import { dayFilter } from '@/lib/dates';
 import { getMerchantMemory } from '@/app/settings/merchants/actions';
+import { requireSession } from '@/lib/auth/session';
 
 export async function getExpenses(filters?: {
   startDate?: string;
@@ -21,6 +22,7 @@ export async function getExpenses(filters?: {
   maxAmount?: number;
   search?: string;
 }) {
+  await requireSession();
   try {
     // Only real spending. Card payments and debt payments are transfers
     // (lib/budgets.ts explains why) and are listed under Transfers.
@@ -153,15 +155,18 @@ async function withRow(
 }
 
 export async function createExpense(formData: FormData) {
+  await requireSession();
   return withRow(await createTransaction(expenseFromForm(formData)));
 }
 
 export async function updateExpense(id: string, formData: FormData) {
+  await requireSession();
   // A card payment opened from the Expenses list stays a transfer (see lib/transactions).
   return withRow(await updateTransaction(id, expenseFromForm(formData)));
 }
 
 export async function deleteExpense(id: string) {
+  await requireSession();
   const result = await deleteTransaction(id);
   return result.success ? { success: true as const } : { success: false as const, error: result.error };
 }
@@ -195,11 +200,13 @@ async function createPurposeTransfer(formData: FormData, purpose: TransferPurpos
 
 /** Card payment: one TRANSFER from `fromAccountId` to `toAccountId`, tagged "payment". */
 export async function createPaymentTransfer(formData: FormData) {
+  await requireSession();
   return createPurposeTransfer(formData, 'payment');
 }
 
 /** Debt payment: one TRANSFER into a credit card / loan account, tagged "debt-payment". */
 export async function createDebtPaymentTransfer(formData: FormData) {
+  await requireSession();
   return createPurposeTransfer(formData, 'debt-payment');
 }
 
@@ -209,6 +216,7 @@ export async function createDebtPaymentTransfer(formData: FormData) {
  * each, plus the account last used per category.
  */
 export async function getQuickAddData() {
+  await requireSession();
   try {
     const [categories, accounts, recent, friends, merchants] = await Promise.all([
       prisma.category.findMany({

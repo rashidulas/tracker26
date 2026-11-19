@@ -8,6 +8,7 @@ import {
   type IncomeInput,
 } from '@/lib/transactions';
 import { dayFilter } from '@/lib/dates';
+import { requireSession } from '@/lib/auth/session';
 
 export async function getIncome(filters?: {
   startDate?: string;
@@ -16,6 +17,7 @@ export async function getIncome(filters?: {
   subcategoryId?: string;
   search?: string;
 }) {
+  await requireSession();
   try {
     const where: any = { kind: 'INCOME' };
 
@@ -107,6 +109,7 @@ function parseMemberIds(formData: FormData): string[] {
 }
 
 export async function createIncome(formData: FormData): Promise<FormResult> {
+  await requireSession();
   const form = incomeFromForm(formData);
   if (!form.ok) return { success: false, error: form.error };
   const result = await createTransaction(form.input);
@@ -114,6 +117,7 @@ export async function createIncome(formData: FormData): Promise<FormResult> {
 }
 
 export async function updateIncome(id: string, formData: FormData): Promise<FormResult> {
+  await requireSession();
   const form = incomeFromForm(formData);
   if (!form.ok) return { success: false, error: form.error };
   const result = await updateTransaction(id, form.input, {
@@ -123,6 +127,7 @@ export async function updateIncome(id: string, formData: FormData): Promise<Form
 }
 
 export async function deleteIncome(id: string, memberIds?: string[]): Promise<FormResult> {
+  await requireSession();
   const result = await deleteTransaction(id, { legacyMemberIds: memberIds });
   return result.success ? { success: true } : { success: false, error: result.error };
 }

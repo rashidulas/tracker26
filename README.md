@@ -1,6 +1,75 @@
 # Tracker26 - Production-Ready Personal Finance Manager
 
 A comprehensive personal finance management application built 
+## Login
+
+The app has one user and one password. Every page, server action and API
+route needs a signed-in session, except the login page, static assets,
+`/api/health` (status only) and the two cron routes (which need
+`CRON_SECRET` instead).
+
+Set it up once:
+
+1. Run `npm run auth:hash`. It asks for the password twice (nothing is shown
+   while you type) and prints two lines:
+   - `AUTH_PASSWORD_HASH`: a bcrypt hash of the password, base64-encoded.
+     The password itself is stored nowhere.
+   - `AUTH_SECRET`: a random secret that signs and encrypts the session
+     cookie.
+2. Paste both lines into `.env.local`, and add the same two variables to the
+   host (on Vercel: Project Settings, Environment Variables, for Production
+   and Preview), then redeploy.
+3. Open the app and sign in.
+
+To change the password, run `npm run auth:hash` again and replace only
+`AUTH_PASSWORD_HASH`. Replacing `AUTH_SECRET` as well signs every device
+out, which is also how to end all sessions if a device is lost.
+
+Why the hash is base64: a bcrypt hash looks like `$2b$12$...`, and Next.js
+expands `$...` inside `.env` files, which silently corrupts it. The encoded
+form has no `$`. (A plain bcrypt hash is accepted too where the host stores
+values as typed.)
+
+How it behaves:
+
+- "Stay signed in" (ticked by default) keeps the session for 30 days and
+  renews it whenever the app is used, so daily use never asks again. Unticked,
+  the session ends with the browser, or after 12 hours.
+- The cookie is `httpOnly`, `SameSite=Lax` and, in production, `Secure`.
+- Five wrong passwords from one address lock sign-in from that address for up
+  to 15 minutes, and each wrong attempt is delayed. Sign out is at the bottom
+  of the sidebar and of the More sheet on a phone.
+- If either variable is missing (or `AUTH_SECRET` is shorter than 32
+  characters): a production build serves nothing and answers every protected
+  request with a "Login is not configured" page (HTTP 503) that names the
+  missing variables. In development (`npm run dev`) the app stays open and
+  shows a warning banner instead.
+
+Where it lives: `middleware.ts` (the gate, Edge runtime) and
+`lib/auth/`. The middleware is not the only check: every server action
+starts with `await requireSession()` and every API route handler with
+`requireApiSession()` (`lib/auth/session.ts`), and
+`tests/authCoverage.test.ts` fails if a new action or route is added without
+it. Sessions use `iron-session`, hashing uses `bcryptjs`.
+
+### Rate limits and upload limits
+
+`lib/rateLimit.ts` limits the routes that call a model (chat 30 a minute,
+transcription 20, receipt scans 12, the small form helpers 60, recap
+regeneration 6) and sign-in attempts. It counts in the server process's
+memory. That is exact on a single long-running server (`next start`, a VPS,
+a container). On serverless hosting such as Vercel each warm instance has
+its own counters and a cold start resets them, so there it slows abuse down
+rather than capping it; the login is the real protection. For hard limits,
+back the same interface with a shared store (for example `@upstash/ratelimit`
+on Upstash Redis) and set a spending cap at the model provider.
+
+Request bodies are capped on the server (`lib/http.ts`): 4.5 MB for a chat
+message, a receipt scan or a voice recording, with a receipt image at most
+3 MB and audio at most 4 MB. Images are downscaled in the browser before
+upload (chat and receipt scanner share `prepareImage`), so normal use stays
+far below these.
+
 ## Recurring entries
 
 Plan → Recurring holds templates (rent, subscriptions, pay day) with a schedule:

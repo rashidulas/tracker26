@@ -8,6 +8,7 @@ import { goalProgress } from '@/lib/goals';
 import { todayInAppTimeZone, monthRange, toDayString, eachDay, formatDay } from '@/lib/dates';
 import { loadSuggestions, loadUpcoming } from '@/lib/recurringQueries';
 import { loadBudgetOverview } from '@/lib/budgetData';
+import { requireSession } from '@/lib/auth/session';
 
 /** Spending from an aggregate: your share, not what friends owe you back. */
 function spentFrom(agg: { _sum: { amount: number | null; sharedAmount: number | null } }) {
@@ -15,6 +16,7 @@ function spentFrom(agg: { _sum: { amount: number | null; sharedAmount: number | 
 }
 
 export async function getDashboardData() {
+  await requireSession();
   try {
     const today = todayInAppTimeZone();
     const thisMonth = monthRange(today);

@@ -10,12 +10,12 @@ export async function GET() {
     await prisma.$connect();
     
     // Try a simple query
-    const count = await prisma.category.count();
-    
+    await prisma.category.count();
+
+    // Public (no login), so it reports status only: no counts, no error text.
     return NextResponse.json({ 
       status: 'ok', 
       database: 'connected',
-      categories: count,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -23,7 +23,6 @@ export async function GET() {
     return NextResponse.json({ 
       status: 'error', 
       database: 'disconnected',
-      error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   } finally {

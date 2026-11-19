@@ -12,9 +12,11 @@ import {
   type TransactionInput,
 } from '@/lib/transactions';
 import { dayFilter, toDayString } from '@/lib/dates';
+import { requireSession } from '@/lib/auth/session';
 
 // ==================== GET TRANSACTIONS ====================
 export async function getTransactions(filter?: TransactionFilter) {
+  await requireSession();
   try {
     const where: any = {};
 
@@ -74,24 +76,29 @@ export async function getTransactions(filter?: TransactionFilter) {
 
 // ==================== WRITES (all via lib/transactions) ====================
 export async function createTransaction(data: TransactionInput) {
+  await requireSession();
   return createTx(data);
 }
 
 export async function updateTransaction(id: string, data: TransactionInput) {
+  await requireSession();
   return updateTx(id, data);
 }
 
 export async function deleteTransaction(id: string) {
+  await requireSession();
   return deleteTx(id);
 }
 
 // ==================== BULK / LIST ACTIONS ====================
 /** Copies transactions onto `day` (YYYY-MM-DD) and returns the copies. */
 export async function duplicateTransactions(ids: string[], day: string) {
+  await requireSession();
   return duplicateTx(ids, day);
 }
 
 export async function deleteTransactions(ids: string[]) {
+  await requireSession();
   const result = await deleteManyTx(ids);
   return result.success
     ? { success: true as const, count: result.data.deleted }
@@ -99,6 +106,7 @@ export async function deleteTransactions(ids: string[]) {
 }
 
 export async function recategorizeTransactions(ids: string[], categoryId: string) {
+  await requireSession();
   const result = await recategorizeTx(ids, categoryId);
   return result.success
     ? { success: true as const, count: result.data.updated }
@@ -107,6 +115,7 @@ export async function recategorizeTransactions(ids: string[], categoryId: string
 
 // ==================== EXPORT TO CSV ====================
 export async function exportTransactionsToCSV(filter?: TransactionFilter) {
+  await requireSession();
   try {
     const transactions = await getTransactions(filter);
 
