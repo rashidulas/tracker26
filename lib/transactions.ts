@@ -57,6 +57,8 @@ export const TRANSACTION_PAGES = [
   '/friends',
   '/plan/recurring',
   '/settings/merchants',
+  // Lists categories with how many transactions use each.
+  '/settings/categories',
   '/chat',
 ] as const;
 
@@ -712,7 +714,9 @@ export async function createTransactionOnce(
   const findPrior = async (tx: Tx) => {
     const prior = await tx.idempotencyKey.findUnique({ where: { key } });
     if (!prior) return null;
-    const transaction = await tx.transaction.findUnique({ where: { id: prior.transactionId } });
+    const transaction = prior.transactionId
+      ? await tx.transaction.findUnique({ where: { id: prior.transactionId } })
+      : null;
     if (!transaction) fail('This was already saved once and has since been deleted');
     return transaction;
   };
@@ -730,6 +734,47 @@ export async function createTransactionOnce(
   const winner = await run(deps, 'save transaction', findPrior);
   if (winner.success && winner.data) {
     return { success: true, data: { transaction: winner.data, replayed: true } };
+  }
+  return result;
+}
+
+/**
+ * runLedgerWrite that runs at most once per `key`, for writes that are more
+ * than one transaction row (a batch, a budget change, a friend entry ...).
+ *
+ * `work` and the IdempotencyKey row are written in one database transaction,
+ * with what `work` returned stored as JSON. Calling again with the same key
+ * returns that stored value (`replayed: true`) without running `work`. The
+ * value must therefore survive JSON: plain objects, strings, numbers.
+ */
+export async function runLedgerWriteOnce<T>(
+  key: string,
+  deps: Partial<TransactionDeps> | undefined,
+  label: string,
+  work: (tx: Tx) => Promise<T>
+): Promise<TransactionResult<{ value: T; replayed: boolean }>> {
+  if (!key.trim()) return { success: false, error: 'Missing idempotency key' };
+
+  const findPrior = async (tx: Tx) => {
+    const prior = await tx.idempotencyKey.findUnique({ where: { key } });
+    if (!prior) return null;
+    if (prior.result == null) fail('This was already saved once');
+    return { value: JSON.parse(prior.result) as T };
+  };
+
+  const result = await run(deps, label, async (tx) => {
+    const prior = await findPrior(tx);
+    if (prior) return { value: prior.value, replayed: true };
+    const value = await work(tx);
+    await tx.idempotencyKey.create({ data: { key, result: JSON.stringify(value) } });
+    return { value, replayed: false };
+  });
+  if (result.success) return result;
+
+  // Lost a race with a concurrent call using the same key?
+  const winner = await run(deps, label, findPrior);
+  if (winner.success && winner.data) {
+    return { success: true, data: { value: winner.data.value, replayed: true } };
   }
   return result;
 }
@@ -900,48 +945,55 @@ export async function duplicateTransactions(
   day: string,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<Prisma.TransactionGetPayload<{ include: typeof listInclude }>[]>> {
-  return run(deps, 'duplicate transactions', async (tx) => {
-    const unique = checkIds(ids);
-    if (!isValidDay(day)) fail('Please enter a valid date');
-    const sources = await tx.transaction.findMany({ where: { id: { in: unique } } });
-    if (sources.length !== unique.length) fail('Transaction not found');
+  return run(deps, 'duplicate transactions', (tx) => duplicateTransactionsIn(tx, ids, day));
+}
 
-    const created = [];
-    for (const src of sources) {
-      const base = {
-        date: day,
-        amount: src.amount,
-        merchantOrSource: src.merchantOrSource,
-        notes: src.notes,
-        tags: src.tags,
-      };
-      const parsed =
-        src.kind === 'TRANSFER'
-          ? parseInput({
-              ...base,
-              kind: 'TRANSFER',
-              accountId: src.accountId ?? '',
-              toAccountId: src.toAccountId ?? '',
-            })
-          : parseInput({
-              ...base,
-              kind: src.kind,
-              categoryId: src.categoryId,
-              subcategoryId: src.subcategoryId,
-              accountId: src.accountId,
-              accountSplits: src.accountSplits.length > 1 ? src.accountSplits : undefined,
-              ...(src.kind === 'EXPENSE' && src.splitItems.length > 0
-                ? { splitItems: src.splitItems }
-                : {}),
-            });
-      const data =
-        parsed.kind === 'TRANSFER'
-          ? await buildTransfer(tx, parsed, src)
-          : await buildIncomeOrExpense(tx, parsed, src);
-      created.push(await tx.transaction.create({ data, include: listInclude }));
-    }
-    return created;
-  });
+/** duplicateTransactions, inside a transaction the caller already opened. */
+export async function duplicateTransactionsIn(
+  tx: Tx,
+  ids: string[],
+  day: string
+): Promise<Prisma.TransactionGetPayload<{ include: typeof listInclude }>[]> {
+  const unique = checkIds(ids);
+  if (!isValidDay(day)) fail('Please enter a valid date');
+  const sources = await tx.transaction.findMany({ where: { id: { in: unique } } });
+  if (sources.length !== unique.length) fail('Transaction not found');
+
+  const created = [];
+  for (const src of sources) {
+    const base = {
+      date: day,
+      amount: src.amount,
+      merchantOrSource: src.merchantOrSource,
+      notes: src.notes,
+      tags: src.tags,
+    };
+    const parsed =
+      src.kind === 'TRANSFER'
+        ? parseInput({
+            ...base,
+            kind: 'TRANSFER',
+            accountId: src.accountId ?? '',
+            toAccountId: src.toAccountId ?? '',
+          })
+        : parseInput({
+            ...base,
+            kind: src.kind,
+            categoryId: src.categoryId,
+            subcategoryId: src.subcategoryId,
+            accountId: src.accountId,
+            accountSplits: src.accountSplits.length > 1 ? src.accountSplits : undefined,
+            ...(src.kind === 'EXPENSE' && src.splitItems.length > 0
+              ? { splitItems: src.splitItems }
+              : {}),
+          });
+    const data =
+      parsed.kind === 'TRANSFER'
+        ? await buildTransfer(tx, parsed, src)
+        : await buildIncomeOrExpense(tx, parsed, src);
+    created.push(await tx.transaction.create({ data, include: listInclude }));
+  }
+  return created;
 }
 
 /** Deletes the given transactions plus any legacy split-group siblings. */
@@ -949,24 +1001,27 @@ export async function deleteTransactions(
   ids: string[],
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<{ deleted: number }>> {
-  return run(deps, 'delete transactions', async (tx) => {
-    const unique = checkIds(ids);
-    const rows = await tx.transaction.findMany({
-      where: { id: { in: unique } },
-      select: { splitGroupId: true },
-    });
-    if (rows.length === 0) fail('Transaction not found');
-    const groups = [...new Set(rows.map((r) => r.splitGroupId).filter((g): g is string => !!g))];
-    const or: Prisma.TransactionWhereInput[] = [{ id: { in: unique } }];
-    if (groups.length > 0) or.push({ splitGroupId: { in: groups } });
-    const doomed = await tx.transaction.findMany({ where: { OR: or }, select: { id: true } });
-    await deleteLinkedRecords(
-      tx,
-      doomed.map((d) => d.id)
-    );
-    const { count } = await tx.transaction.deleteMany({ where: { OR: or } });
-    return { deleted: count };
+  return run(deps, 'delete transactions', (tx) => deleteTransactionsIn(tx, ids));
+}
+
+/** deleteTransactions, inside a transaction the caller already opened. */
+export async function deleteTransactionsIn(tx: Tx, ids: string[]): Promise<{ deleted: number }> {
+  const unique = checkIds(ids);
+  const rows = await tx.transaction.findMany({
+    where: { id: { in: unique } },
+    select: { splitGroupId: true },
   });
+  if (rows.length === 0) fail('Transaction not found');
+  const groups = [...new Set(rows.map((r) => r.splitGroupId).filter((g): g is string => !!g))];
+  const or: Prisma.TransactionWhereInput[] = [{ id: { in: unique } }];
+  if (groups.length > 0) or.push({ splitGroupId: { in: groups } });
+  const doomed = await tx.transaction.findMany({ where: { OR: or }, select: { id: true } });
+  await deleteLinkedRecords(
+    tx,
+    doomed.map((d) => d.id)
+  );
+  const { count } = await tx.transaction.deleteMany({ where: { OR: or } });
+  return { deleted: count };
 }
 
 /**
@@ -979,20 +1034,29 @@ export async function recategorizeTransactions(
   categoryId: string,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<{ updated: number }>> {
-  return run(deps, 're-categorise transactions', async (tx) => {
-    const unique = checkIds(ids);
-    if (!/^[a-f\d]{24}$/i.test(categoryId)) fail('Category not found');
-    const category = await tx.category.findUnique({
-      where: { id: categoryId },
-      select: { id: true, type: true },
-    });
-    if (!category) fail('Category not found');
-    const { count } = await tx.transaction.updateMany({
-      where: { id: { in: unique }, kind: category.type, splitItems: { isEmpty: true } },
-      data: { categoryId: category.id, subcategoryId: null },
-    });
-    return { updated: count };
+  return run(deps, 're-categorise transactions', (tx) =>
+    recategorizeTransactionsIn(tx, ids, categoryId)
+  );
+}
+
+/** recategorizeTransactions, inside a transaction the caller already opened. */
+export async function recategorizeTransactionsIn(
+  tx: Tx,
+  ids: string[],
+  categoryId: string
+): Promise<{ updated: number }> {
+  const unique = checkIds(ids);
+  if (!/^[a-f\d]{24}$/i.test(categoryId)) fail('Category not found');
+  const category = await tx.category.findUnique({
+    where: { id: categoryId },
+    select: { id: true, type: true },
   });
+  if (!category) fail('Category not found');
+  const { count } = await tx.transaction.updateMany({
+    where: { id: { in: unique }, kind: category.type, splitItems: { isEmpty: true } },
+    data: { categoryId: category.id, subcategoryId: null },
+  });
+  return { updated: count };
 }
 
 /**
@@ -1007,39 +1071,49 @@ export async function applyMerchantCategory(
   subcategoryId: string | null,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<{ updated: number }>> {
-  return run(deps, 'update past transactions', async (tx) => {
-    if (!/^[a-f\d]{24}$/i.test(merchantId)) fail('Merchant not found');
-    if (!/^[a-f\d]{24}$/i.test(categoryId)) fail('Category not found');
-    const category = await tx.category.findUnique({
-      where: { id: categoryId },
-      select: { id: true, type: true },
-    });
-    if (!category) fail('Category not found');
-    if (subcategoryId) {
-      const sub = await tx.subcategory.findFirst({
-        where: { id: subcategoryId, categoryId },
-        select: { id: true },
-      });
-      if (!sub) fail('Subcategory does not belong to the selected category');
-    }
-    // Split expenses are filtered here, not with `splitItems: { isEmpty: true }`:
-    // older documents have no splitItems field at all, and MongoDB's isEmpty
-    // does not match a missing field.
-    const rows = await tx.transaction.findMany({
-      where: { merchantId, kind: category.type },
-      select: { id: true, categoryId: true, subcategoryId: true, splitItems: true },
-    });
-    const ids = rows
-      .filter((r) => (r.splitItems ?? []).length === 0)
-      .filter((r) => r.categoryId !== categoryId || (r.subcategoryId ?? null) !== subcategoryId)
-      .map((r) => r.id);
-    if (ids.length === 0) return { updated: 0 };
-    const { count } = await tx.transaction.updateMany({
-      where: { id: { in: ids } },
-      data: { categoryId, subcategoryId },
-    });
-    return { updated: count };
+  return run(deps, 'update past transactions', (tx) =>
+    applyMerchantCategoryIn(tx, merchantId, categoryId, subcategoryId)
+  );
+}
+
+/** applyMerchantCategory, inside a transaction the caller already opened. */
+export async function applyMerchantCategoryIn(
+  tx: Tx,
+  merchantId: string,
+  categoryId: string,
+  subcategoryId: string | null
+): Promise<{ updated: number }> {
+  if (!/^[a-f\d]{24}$/i.test(merchantId)) fail('Merchant not found');
+  if (!/^[a-f\d]{24}$/i.test(categoryId)) fail('Category not found');
+  const category = await tx.category.findUnique({
+    where: { id: categoryId },
+    select: { id: true, type: true },
   });
+  if (!category) fail('Category not found');
+  if (subcategoryId) {
+    const sub = await tx.subcategory.findFirst({
+      where: { id: subcategoryId, categoryId },
+      select: { id: true },
+    });
+    if (!sub) fail('Subcategory does not belong to the selected category');
+  }
+  // Split expenses are filtered here, not with `splitItems: { isEmpty: true }`:
+  // older documents have no splitItems field at all, and MongoDB's isEmpty
+  // does not match a missing field.
+  const rows = await tx.transaction.findMany({
+    where: { merchantId, kind: category.type },
+    select: { id: true, categoryId: true, subcategoryId: true, splitItems: true },
+  });
+  const ids = rows
+    .filter((r) => (r.splitItems ?? []).length === 0)
+    .filter((r) => r.categoryId !== categoryId || (r.subcategoryId ?? null) !== subcategoryId)
+    .map((r) => r.id);
+  if (ids.length === 0) return { updated: 0 };
+  const { count } = await tx.transaction.updateMany({
+    where: { id: { in: ids } },
+    data: { categoryId, subcategoryId },
+  });
+  return { updated: count };
 }
 
 /**

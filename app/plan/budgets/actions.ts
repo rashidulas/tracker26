@@ -4,7 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { budgetInputSchema } from '@/lib/validations';
-import { budgetMonthDate, isValidMonthKey, shiftMonthKey } from '@/lib/budgets';
+import { budgetMonthDate, isValidMonthKey } from '@/lib/budgets';
+import { copyPreviousMonthIn, setBudgetIn } from '@/lib/budgetWrites';
+import { TransactionError } from '@/lib/transactions';
 import { loadBudgetHint, loadBudgetMonth } from '@/lib/budgetData';
 import { isValidDay, todayInAppTimeZone } from '@/lib/dates';
 
@@ -29,29 +31,13 @@ export async function getBudgetMonth(key: string) {
  * or 0 removes it. rolloverEnabled left undefined keeps the current setting.
  */
 export async function setBudget(input: z.input<typeof budgetInputSchema>) {
-  const parsed = budgetInputSchema.safeParse(input);
-  if (!parsed.success) {
-    return { success: false as const, error: parsed.error.issues[0]?.message ?? 'Invalid budget' };
-  }
-  const { month: key, categoryId, amount, rolloverEnabled } = parsed.data;
   try {
-    const month = budgetMonthDate(key);
-    if (!amount) {
-      await prisma.budget.deleteMany({ where: { month, categoryId } });
-    } else {
-      const category = await prisma.category.findUnique({ where: { id: categoryId } });
-      if (!category || category.type !== 'EXPENSE') {
-        return { success: false as const, error: 'Budgets need an expense category' };
-      }
-      await prisma.budget.upsert({
-        where: { month_categoryId: { month, categoryId } },
-        create: { month, categoryId, amount, rolloverEnabled: rolloverEnabled ?? false },
-        update: { amount, ...(rolloverEnabled === undefined ? {} : { rolloverEnabled }) },
-      });
-    }
+    // The rules live in lib/budgetWrites.ts, shared with the chat assistant.
+    await setBudgetIn(prisma, input);
     revalidateBudgets();
     return { success: true as const };
   } catch (error) {
+    if (error instanceof TransactionError) return { success: false as const, error: error.message };
     console.error('Error saving budget:', error);
     return { success: false as const, error: 'Failed to save budget' };
   }
@@ -78,25 +64,9 @@ export async function setBudgetRollover(key: string, categoryId: string, rollove
 export async function copyPreviousMonth(key: string) {
   try {
     if (!isValidMonthKey(key)) throw new Error(`Invalid month ${key}`);
-    const month = budgetMonthDate(key);
-    const [previous, existing] = await Promise.all([
-      prisma.budget.findMany({ where: { month: budgetMonthDate(shiftMonthKey(key, -1)) } }),
-      prisma.budget.findMany({ where: { month }, select: { categoryId: true } }),
-    ]);
-    const taken = new Set(existing.map((b) => b.categoryId));
-    const toCopy = previous.filter((b) => !taken.has(b.categoryId));
-    if (toCopy.length > 0) {
-      await prisma.budget.createMany({
-        data: toCopy.map((b) => ({
-          month,
-          categoryId: b.categoryId,
-          amount: b.amount,
-          rolloverEnabled: b.rolloverEnabled ?? false,
-        })),
-      });
-    }
+    const { copied } = await copyPreviousMonthIn(prisma, key);
     revalidateBudgets();
-    return { success: true as const, copied: toCopy.length };
+    return { success: true as const, copied };
   } catch (error) {
     console.error('Error copying budgets:', error);
     return { success: false as const, error: 'Failed to copy last month' };

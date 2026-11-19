@@ -6,6 +6,7 @@
  * assistant cannot do.
  */
 import { LOG_EXPENSE_STARTER, type StarterPrompt } from '@/lib/assistant/starters';
+import { WRITE_TOOL_PARTS } from '@/lib/assistant/toolLabels';
 
 type Part = {
   type: string;
@@ -24,7 +25,9 @@ export function followUpsFor(message: { role: string; parts: unknown[] } | undef
   if (!message || message.role !== 'assistant') return [];
   const parts = message.parts as Part[];
   const tools = parts.filter((p) => p.type.startsWith('tool-'));
-  const isWrite = (p: Part) => p.type === 'tool-createExpense' || p.type === 'tool-createIncome';
+  const isWrite = (p: Part) => WRITE_TOOL_PARTS.has(p.type);
+  const isLog = (p: Part) =>
+    p.type === 'tool-createExpense' || p.type === 'tool-createIncome' || p.type === 'tool-logTransactions';
 
   // A card is waiting for a decision: nothing should compete with it.
   if (tools.some((p) => isWrite(p) && (p.state === 'approval-requested' || p.state === 'approval-responded'))) {
@@ -39,12 +42,35 @@ export function followUpsFor(message: { role: string; parts: unknown[] } | undef
     for (const item of items) if (!out.some((o) => o.label === item.label)) out.push(item);
   };
 
-  if (tools.some((p) => isWrite(p) && p.state === 'output-available')) {
+  if (tools.some((p) => isLog(p) && p.state === 'output-available')) {
     add(
       { ...LOG_EXPENSE_STARTER, label: 'Log another' },
       ask('What have I spent today?'),
       ask('How am I doing against my budgets?')
     );
+  }
+  // After any other saved change, look at what it changed.
+  for (const part of tools.filter((p) => isWrite(p) && !isLog(p) && p.state === 'output-available')) {
+    switch (part.type.slice(5)) {
+      case 'changeTransactions':
+        add(ask('What have I spent this month?'), ask('How am I doing against my budgets?'));
+        break;
+      case 'moveMoney':
+        add(ask('What are my account balances?'), ask('What do I owe on my credit cards?'));
+        break;
+      case 'updateFriends':
+        add(ask('Who owes me money?'), ask('What are my account balances?'));
+        break;
+      case 'updateGoals':
+        add(ask('How are my goals going?'), ask('What are my account balances?'));
+        break;
+      case 'updateBudgets':
+        add(ask('How am I doing against my budgets?'));
+        break;
+      case 'updateRecurring':
+        add(ask('What bills are coming up?'));
+        break;
+    }
   }
 
   // The answer's last read tool says most about where to go next.
@@ -83,6 +109,9 @@ export function followUpsFor(message: { role: string; parts: unknown[] } | undef
         break;
       case 'upcomingRecurring':
         add(ask('What are my account balances?'), ask('How am I doing against my budgets?'));
+        break;
+      case 'linkToPage':
+        // A link is not an answer worth following up on by itself.
         break;
     }
   }

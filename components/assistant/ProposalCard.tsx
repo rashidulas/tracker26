@@ -1,7 +1,12 @@
 'use client';
 
 /**
- * The card for an expense or income the assistant proposes.
+ * The card for a change the assistant proposes.
+ *
+ * One expense or one income (createExpense / createIncome) is drawn here.
+ * Every other write tool (edits, deletes, batches, transfers, friends, goals,
+ * budgets, recurring entries, categories) is drawn by ActionCard from the
+ * preview the server sends with the proposal.
  *
  * While it waits for a decision every field can be changed in place. Save
  * sends the approval together with whatever was changed; the server applies
@@ -17,14 +22,20 @@ import Input from '@/components/Input';
 import Select from '@/components/Select';
 import type { AssistantUIMessage } from '@/lib/assistant/engine';
 import type { ChatReference } from '@/lib/assistant/starters';
+import { WRITE_TOOL_PARTS } from '@/lib/assistant/toolLabels';
 import type { ProposalEdit } from '@/lib/assistant/write';
+import ActionCard, { type ActionPart } from './ActionCard';
 import { formatDay, isValidDay } from '@/lib/dates';
 import { formatCurrency } from '@/lib/utils';
 
 type Part = AssistantUIMessage['parts'][number];
-export type WritePart = Extract<Part, { type: 'tool-createExpense' | 'tool-createIncome' }>;
+type EntryPart = Extract<Part, { type: 'tool-createExpense' | 'tool-createIncome' }>;
+/** A part of any tool that writes: each shows an approval card. */
+export type WritePart = EntryPart | ActionPart;
 
-export const isWritePart = (part: Part): part is WritePart =>
+export const isWritePart = (part: Part): part is WritePart => WRITE_TOOL_PARTS.has(part.type);
+
+const isEntryPart = (part: WritePart): part is EntryPart =>
   part.type === 'tool-createExpense' || part.type === 'tool-createIncome';
 
 type Props = {
@@ -67,7 +78,7 @@ function Details({ rows }: { rows: [string, string | null | undefined][] }) {
 }
 
 /** "$18.00 at Uber. " for a proposal that was not saved, from whatever of it is known. */
-function proposedLine(input: Partial<WritePart['input']> | undefined, isIncome: boolean) {
+function proposedLine(input: Partial<EntryPart['input']> | undefined, isIncome: boolean) {
   if (typeof input?.amount !== 'number') return '';
   const merchant = input.merchant?.trim();
   return `${formatCurrency(input.amount)}${merchant ? ` ${isIncome ? 'from' : 'at'} ${merchant}` : ''}. `;
@@ -76,7 +87,12 @@ function proposedLine(input: Partial<WritePart['input']> | undefined, isIncome: 
 const longDay = (day: string) =>
   isValidDay(day) ? formatDay(day, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : day;
 
-export default function ProposalCard({ part, reference, superseded, busy, onApprove, onDismiss }: Props) {
+export default function ProposalCard(props: Props) {
+  const { part, ...rest } = props;
+  return isEntryPart(part) ? <EntryCard part={part} {...rest} /> : <ActionCard part={part} {...rest} />;
+}
+
+function EntryCard({ part, reference, superseded, busy, onApprove, onDismiss }: Omit<Props, 'part'> & { part: EntryPart }) {
   const isIncome = part.type === 'tool-createIncome';
   const kind = isIncome ? 'Income' : 'Expense';
 
@@ -209,7 +225,7 @@ function EditableProposal({
   onApprove,
   onDismiss,
 }: {
-  part: Extract<WritePart, { state: 'approval-requested' }>;
+  part: Extract<EntryPart, { state: 'approval-requested' }>;
   kind: string;
   isIncome: boolean;
   reference: ChatReference;

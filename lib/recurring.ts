@@ -214,16 +214,22 @@ export async function createRecurring(
   input: RecurringInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<RecurringTransaction & { linked: number }>> {
-  return runLedgerWrite(deps, 'save recurring entry', async (tx) => {
-    const p = parse(input);
-    const data = await templateData(tx, p);
-    const start = parseDay(p.startDate);
-    const created = await tx.recurringTransaction.create({
-      data: { ...data, startDate: start, nextDueDate: start, active: true },
-    });
-    const linked = await linkHistory(tx, created.id, p);
-    return { ...created, linked };
+  return runLedgerWrite(deps, 'save recurring entry', (tx) => createRecurringIn(tx, input));
+}
+
+/** createRecurring, inside a transaction the caller already opened. */
+export async function createRecurringIn(
+  tx: Tx,
+  input: RecurringInput
+): Promise<RecurringTransaction & { linked: number }> {
+  const p = parse(input);
+  const data = await templateData(tx, p);
+  const start = parseDay(p.startDate);
+  const created = await tx.recurringTransaction.create({
+    data: { ...data, startDate: start, nextDueDate: start, active: true },
   });
+  const linked = await linkHistory(tx, created.id, p);
+  return { ...created, linked };
 }
 
 /**
@@ -260,14 +266,23 @@ export async function setRecurringActive(
   active: boolean,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<RecurringTransaction>> {
-  return runLedgerWrite(deps, active ? 'resume recurring entry' : 'pause recurring entry', async (tx) => {
-    const existing = await tx.recurringTransaction.findUnique({ where: { id } });
-    if (!existing) fail('Recurring entry not found');
-    if (active && existing.endDate && existing.nextDueDate > existing.endDate) {
-      fail('This entry has ended. Change its end date to resume it.');
-    }
-    return tx.recurringTransaction.update({ where: { id }, data: { active } });
-  });
+  return runLedgerWrite(deps, active ? 'resume recurring entry' : 'pause recurring entry', (tx) =>
+    setRecurringActiveIn(tx, id, active)
+  );
+}
+
+/** setRecurringActive, inside a transaction the caller already opened. */
+export async function setRecurringActiveIn(
+  tx: Tx,
+  id: string,
+  active: boolean
+): Promise<RecurringTransaction> {
+  const existing = await tx.recurringTransaction.findUnique({ where: { id } });
+  if (!existing) fail('Recurring entry not found');
+  if (active && existing.endDate && existing.nextDueDate > existing.endDate) {
+    fail('This entry has ended. Change its end date to resume it.');
+  }
+  return tx.recurringTransaction.update({ where: { id }, data: { active } });
 }
 
 /**
@@ -360,10 +375,13 @@ export async function postRecurringNow(
 }
 
 export async function skipRecurring(id: string, dueDay: DayString, deps?: Partial<TransactionDeps>) {
-  return runLedgerWrite(deps, 'skip recurring entry', async (tx) => {
-    if (!isValidDay(dueDay)) fail('Invalid due date');
-    return handleOccurrence(tx, id, dueDay, 'SKIP', dueDay);
-  });
+  return runLedgerWrite(deps, 'skip recurring entry', (tx) => skipRecurringIn(tx, id, dueDay));
+}
+
+/** skipRecurring, inside a transaction the caller already opened. */
+export async function skipRecurringIn(tx: Tx, id: string, dueDay: DayString) {
+  if (!isValidDay(dueDay)) fail('Invalid due date');
+  return handleOccurrence(tx, id, dueDay, 'SKIP', dueDay);
 }
 
 export type DueRunResult = {

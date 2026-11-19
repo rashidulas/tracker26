@@ -116,17 +116,20 @@ export async function createGoal(
   input: GoalInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<Goal>> {
-  return runLedgerWrite(deps, 'create goal', async (tx) => {
-    const data = parse(goalInputSchema, input);
-    await assertAccount(tx, data.accountId);
-    return tx.goal.create({
-      data: {
-        name: data.name,
-        targetAmount: data.targetAmount,
-        dueDate: data.dueDate ? parseDay(data.dueDate) : null,
-        accountId: data.accountId,
-      },
-    });
+  return runLedgerWrite(deps, 'create goal', (tx) => createGoalIn(tx, input));
+}
+
+/** createGoal, inside a transaction the caller already opened. */
+export async function createGoalIn(tx: LedgerTx, input: GoalInput): Promise<Goal> {
+  const data = parse(goalInputSchema, input);
+  await assertAccount(tx, data.accountId);
+  return tx.goal.create({
+    data: {
+      name: data.name,
+      targetAmount: data.targetAmount,
+      dueDate: data.dueDate ? parseDay(data.dueDate) : null,
+      accountId: data.accountId,
+    },
   });
 }
 
@@ -193,28 +196,34 @@ export async function createContribution(
   input: ContributionInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<GoalContribution>> {
-  return runLedgerWrite(deps, 'add contribution', async (tx) => {
-    const data = parse(contributionInputSchema, input);
-    const goal = await tx.goal.findUnique({ where: { id: data.goalId } });
-    if (!goal) fail('Goal not found');
+  return runLedgerWrite(deps, 'add contribution', (tx) => createContributionIn(tx, input));
+}
 
-    let transactionId: string | null = null;
-    if (contributionNeedsTransfer(goal, data.fromAccountId)) {
-      transactionId = (await createTransactionIn(tx, transferFor(goal, data))).id;
-    } else {
-      await assertAccount(tx, data.fromAccountId);
-    }
+/** createContribution, inside a transaction the caller already opened. */
+export async function createContributionIn(
+  tx: LedgerTx,
+  input: ContributionInput
+): Promise<GoalContribution> {
+  const data = parse(contributionInputSchema, input);
+  const goal = await tx.goal.findUnique({ where: { id: data.goalId } });
+  if (!goal) fail('Goal not found');
 
-    return tx.goalContribution.create({
-      data: {
-        goalId: goal.id,
-        date: parseDay(data.date),
-        amount: data.amount,
-        fromAccountId: data.fromAccountId,
-        notes: data.notes,
-        transactionId,
-      },
-    });
+  let transactionId: string | null = null;
+  if (contributionNeedsTransfer(goal, data.fromAccountId)) {
+    transactionId = (await createTransactionIn(tx, transferFor(goal, data))).id;
+  } else {
+    await assertAccount(tx, data.fromAccountId);
+  }
+
+  return tx.goalContribution.create({
+    data: {
+      goalId: goal.id,
+      date: parseDay(data.date),
+      amount: data.amount,
+      fromAccountId: data.fromAccountId,
+      notes: data.notes,
+      transactionId,
+    },
   });
 }
 

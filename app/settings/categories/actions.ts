@@ -2,7 +2,8 @@
 
 import { prisma } from '@/lib/prisma';
 import { categoryDeleteBlocker } from '@/lib/references';
-import { detachSubcategories } from '@/lib/transactions';
+import { createCategoryIn, uniqueSubcategoryNames } from '@/lib/categories';
+import { detachSubcategories, TransactionError } from '@/lib/transactions';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -15,21 +16,8 @@ const categorySchema = z.object({
 });
 
 function parseSubcategories(formData: FormData): string[] {
-  const raw = formData.getAll('subcategories') as string[];
-  const names = raw
-    .map((name) => name.trim())
-    .filter(Boolean);
-
-  // Deduplicate case-insensitively while preserving first casing
-  const seen = new Set<string>();
-  const unique: string[] = [];
-  for (const name of names) {
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(name);
-  }
-  return unique;
+  // Deduplicated case-insensitively, keeping the first spelling.
+  return uniqueSubcategoryNames(formData.getAll('subcategories') as string[]);
 }
 
 export async function getCategories() {
@@ -64,26 +52,8 @@ export async function createCategory(formData: FormData) {
       subcategories: subcategoryNames,
     };
 
-    const validated = categorySchema.parse(data);
-
-    const category = await prisma.category.create({
-      data: {
-        name: validated.name,
-        type: validated.type,
-        color: validated.color || '#6B7280',
-        icon: validated.icon,
-        subcategories: validated.subcategories?.length
-          ? {
-              create: validated.subcategories.map((name) => ({ name })),
-            }
-          : undefined,
-      },
-      include: {
-        subcategories: {
-          orderBy: { name: 'asc' },
-        },
-      },
-    });
+    // The rules live in lib/categories.ts, shared with the chat assistant.
+    const category = await prisma.$transaction((tx) => createCategoryIn(tx, data));
 
     revalidatePath('/settings/categories');
     revalidatePath('/transactions/expenses');
@@ -93,6 +63,7 @@ export async function createCategory(formData: FormData) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
     }
+    if (error instanceof TransactionError) return { success: false, error: error.message };
     if ((error as { code?: string })?.code === 'P2002') {
       return { success: false, error: 'A category with this name and type already exists' };
     }

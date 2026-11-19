@@ -45,6 +45,20 @@ figure on the server with the same modules as the app's pages. Expenses and
 income it records are proposals: nothing is saved until you approve the card,
 and each approval saves at most once (`IdempotencyKey`).
 
+It can also change things, always as a proposal you approve
+(`lib/assistant/actions.ts`): add several transactions at once or split one
+across categories, accounts or friends (`logTransactions`); edit, delete,
+duplicate or re-categorise existing ones (`changeTransactions`); transfers,
+card and loan payments (`moveMoney`); friends (`updateFriends`), goals
+(`updateGoals`), budgets (`updateBudgets`), recurring entries
+(`updateRecurring`), categories and merchant defaults (`updateCategories`).
+The card for each is built by running the change in a database transaction
+that is rolled back, so it lists exactly which records change, with old and new
+values and a count; approving runs it again in one transaction together with
+the idempotency record, so a card with several writes is all or nothing.
+`linkToPage` gives the assistant links to the app's pages with the filters each
+page supports (`lib/assistant/links.ts`).
+
 Configure it in `.env.local` (see `.env.example`): `ASSISTANT_PROVIDER`
 (openai, anthropic or google), `ASSISTANT_MODEL` (optional), the provider's API
 key, and `ASSISTANT_APPROVAL_SECRET` (any long random string; it signs approval

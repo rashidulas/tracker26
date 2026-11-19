@@ -300,11 +300,15 @@ model Budget {
 // Records that a write keyed by an idempotency key (for example the chat
 // assistant's tool call id) already happened, so a retry or a double tap on
 // "approve" returns the first result instead of saving twice. Written in the
-// same database transaction as the row it points to.
+// same database transaction as the rows it stands for.
 model IdempotencyKey {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   key           String   @unique
-  transactionId String   @db.ObjectId
+  /// The transaction a createTransactionOnce call saved. Null for writes that
+  /// are not one transaction (runLedgerWriteOnce), which keep `result` instead.
+  transactionId String?  @db.ObjectId
+  /// JSON of what the first run returned, replayed to later calls.
+  result        String?
   createdAt     DateTime @default(now())
 }
 

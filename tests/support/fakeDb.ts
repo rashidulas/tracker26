@@ -75,6 +75,9 @@ const DEFAULTS: Record<ModelName, Doc> = {
 
 /** Unique indexes the code relies on (field lists). */
 const UNIQUE: Partial<Record<ModelName, string[][]>> = {
+  category: [['name', 'type']],
+  subcategory: [['categoryId', 'name']],
+  budget: [['month', 'categoryId']],
   merchant: [['normalizedName']],
   recurringPosting: [['recurringId', 'dueDate']],
   dismissedRecurringSuggestion: [['key']],
@@ -83,7 +86,7 @@ const UNIQUE: Partial<Record<ModelName, string[][]>> = {
 };
 
 /** Compound unique keys used in where clauses, e.g. name_type. */
-const COMPOUND_KEYS = new Set(['name_type', 'recurringId_dueDate']);
+const COMPOUND_KEYS = new Set(['name_type', 'recurringId_dueDate', 'month_categoryId']);
 
 /** Thrown like Prisma's P2002 when a unique index would be violated. */
 export class UniqueConstraintError extends Error {
@@ -262,6 +265,16 @@ export class FakeDb {
         self.checkUnique(name, doc);
         rows().push(doc);
         return project(doc, select);
+      },
+      createMany: async ({ data }: { data: Doc[] }) => {
+        self.guardWrite(name, 'createMany');
+        const now = new Date();
+        for (const row of data) {
+          const doc = { ...clone(DEFAULTS[name]), id: newId(), createdAt: now, updatedAt: now, ...clone(row) };
+          self.checkUnique(name, doc);
+          rows().push(doc);
+        }
+        return { count: data.length };
       },
       update: async ({ where, data, select }: { where: Where; data: Doc; select?: any }) => {
         self.guardWrite(name, 'update');

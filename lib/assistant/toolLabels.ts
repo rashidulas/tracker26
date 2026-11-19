@@ -9,6 +9,65 @@ import { addDays, daysInMonth, formatDay, isValidDay, startOfMonthDay, type DayS
 
 type Input = Record<string, unknown> | undefined | null;
 
+/**
+ * The write tools, as message part types. Each shows an approval card
+ * (components/assistant/ProposalCard.tsx) instead of a status chip.
+ * Kept in step with WRITE_TOOL_NAMES in lib/assistant/tools.ts by a test.
+ */
+export const WRITE_TOOL_PARTS: ReadonlySet<string> = new Set([
+  'tool-createExpense',
+  'tool-createIncome',
+  'tool-logTransactions',
+  'tool-changeTransactions',
+  'tool-moveMoney',
+  'tool-updateFriends',
+  'tool-updateGoals',
+  'tool-updateBudgets',
+  'tool-updateRecurring',
+  'tool-updateCategories',
+]);
+
+/**
+ * "Preparing 3 transactions…": what a write tool is working on while its
+ * proposal is still being written or checked, before the card appears.
+ */
+export function proposalNoun(toolName: string, input: Input): string {
+  const i = input ?? {};
+  const count = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+  switch (toolName) {
+    case 'createExpense':
+      return 'expense';
+    case 'createIncome':
+      return 'income';
+    case 'logTransactions': {
+      const n = count(i.items);
+      return n > 1 ? `${n} transactions` : 'transaction';
+    }
+    case 'changeTransactions': {
+      const n = count(i.transactionIds);
+      const what = n > 1 ? `${n} transactions` : 'transaction';
+      if (i.action === 'delete') return `delete of ${what}`;
+      if (i.action === 'duplicate') return `copy of ${what}`;
+      if (i.action === 'recategorize') return `category change for ${what}`;
+      return 'edit';
+    }
+    case 'moveMoney':
+      return i.action === 'cardPayment' ? 'card payment' : i.action === 'loanPayment' ? 'loan payment' : 'transfer';
+    case 'updateFriends':
+      return i.action === 'addFriend' ? 'new friend' : i.action === 'settleUp' ? 'settle-up' : i.action === 'splitExpense' ? 'split' : 'friend entry';
+    case 'updateGoals':
+      return i.action === 'contribute' ? 'goal contribution' : 'goal';
+    case 'updateBudgets':
+      return i.action === 'copyLastMonth' ? 'budget copy' : 'budget change';
+    case 'updateRecurring':
+      return i.action === 'create' ? 'recurring entry' : 'recurring change';
+    case 'updateCategories':
+      return i.action === 'setMerchantDefault' ? 'merchant default' : i.action === 'createSubcategory' ? 'subcategory' : 'category';
+    default:
+      return 'change';
+  }
+}
+
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 
 /** "March", "March 2025", "Mar 3 – Mar 9", "2026" … for an inclusive day range. */
@@ -91,6 +150,10 @@ export function toolActivityLabel(toolName: string, input: Input, today: DayStri
     case 'upcomingRecurring': {
       const days = typeof i.days === 'number' ? i.days : 30;
       return pair('Looking for', 'Looked for', `bills in the next ${days} days`);
+    }
+    case 'linkToPage': {
+      const page = str(i.page);
+      return pair('Finding', 'Found', `the ${page ?? 'right'} page`);
     }
     default:
       return pair('Looking', 'Looked', 'that up');

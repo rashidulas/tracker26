@@ -4,9 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import {
   buildMerchantMemory,
-  cleanMerchantName,
-  ensureMerchant,
+  MerchantDefaultError,
   normalizeMerchantName,
+  setMerchantCategoryDefaultIn,
   type MerchantMemory,
 } from '@/lib/merchants';
 import { applyMerchantCategory, TRANSACTION_PAGES } from '@/lib/transactions';
@@ -124,18 +124,6 @@ export type MerchantsPageData = Extract<
   { success: true }
 >['data'];
 
-async function resolveMerchant(ref: { merchantId?: string | null; name?: string | null }) {
-  if (ref.merchantId && objectId.test(ref.merchantId)) {
-    const found = await prisma.merchant.findUnique({
-      where: { id: ref.merchantId },
-      select: { id: true, name: true },
-    });
-    if (found) return found;
-  }
-  if (!cleanMerchantName(ref.name)) return null;
-  return prisma.$transaction((tx) => ensureMerchant(tx, ref.name));
-}
-
 /**
  * "Always use this category for <merchant>?" accepted. Saves the default and
  * says how many past transactions of that merchant would change, so the UI
@@ -148,48 +136,19 @@ export async function setMerchantCategoryDefault(input: {
   subcategoryId?: string | null;
 }) {
   try {
-    if (!objectId.test(input.categoryId)) return { success: false as const, error: 'Category not found' };
-    const merchant = await resolveMerchant(input);
-    if (!merchant) return { success: false as const, error: 'Merchant not found' };
-    const category = await prisma.category.findUnique({
-      where: { id: input.categoryId },
-      select: { id: true, type: true, name: true },
-    });
-    if (!category) return { success: false as const, error: 'Category not found' };
-    let subcategoryId: string | null = null;
-    if (input.subcategoryId) {
-      const sub = await prisma.subcategory.findFirst({
-        where: { id: input.subcategoryId, categoryId: category.id },
-        select: { id: true },
-      });
-      subcategoryId = sub?.id ?? null;
-    }
-    await prisma.merchant.update({
-      where: { id: merchant.id },
-      data: { defaultCategoryId: category.id, defaultSubcategoryId: subcategoryId },
-    });
-
-    const rows = await prisma.transaction.findMany({
-      // Not `splitItems: { isEmpty: true }`: older documents lack the field.
-      where: { merchantId: merchant.id, kind: category.type },
-      select: { categoryId: true, subcategoryId: true, splitItems: true },
-    });
-    const pastToUpdate = rows.filter(
-      (r) =>
-        (r.splitItems ?? []).length === 0 &&
-        (r.categoryId !== category.id || (r.subcategoryId ?? null) !== subcategoryId)
-    ).length;
-
+    // The rules live in lib/merchants.ts, shared with the chat assistant.
+    const saved = await prisma.$transaction((tx) => setMerchantCategoryDefaultIn(tx, input));
     revalidatePath('/settings/merchants');
     return {
       success: true as const,
-      merchantId: merchant.id,
-      merchantName: merchant.name,
-      categoryName: category.name,
-      subcategoryId,
-      pastToUpdate,
+      merchantId: saved.merchantId,
+      merchantName: saved.merchantName,
+      categoryName: saved.categoryName,
+      subcategoryId: saved.subcategoryId,
+      pastToUpdate: saved.pastToUpdate,
     };
   } catch (error) {
+    if (error instanceof MerchantDefaultError) return { success: false as const, error: error.message };
     console.error('Error saving merchant default:', error);
     return { success: false as const, error: 'Failed to save merchant default' };
   }

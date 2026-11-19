@@ -26,6 +26,7 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import { runAssistant, type AssistantUIMessage, type RunAssistantInput } from '@/lib/assistant/engine';
+import { WRITE_TOOL_NAMES } from '@/lib/assistant/tools';
 import {
   OUT_OF_SYNC,
   beginRun,
@@ -157,7 +158,7 @@ export function storableReply(message: AssistantUIMessage): StoredMessage | null
   return { id: message.id, role: 'assistant', parts };
 }
 
-const WRITE_TOOLS = new Set(['tool-createExpense', 'tool-createIncome']);
+const WRITE_TOOLS = new Set(WRITE_TOOL_NAMES.map((name) => `tool-${name}`));
 
 /** A proposal the user answered: saved, dismissed, or failed to save. */
 function isSettledWrite(part: unknown) {

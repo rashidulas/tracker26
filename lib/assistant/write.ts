@@ -20,6 +20,8 @@ import { isValidDay, toDayString } from '@/lib/dates';
 import { cleanMerchantName, normalizeMerchantName } from '@/lib/merchants';
 import { createTransactionOnce, type TransactionDeps } from '@/lib/transactions';
 import { formatCurrency } from '@/lib/utils';
+import type { Effect } from '@/lib/assistant/effects';
+import type { FieldEdits } from '@/lib/assistant/preview';
 
 export type ProposalKind = 'EXPENSE' | 'INCOME';
 
@@ -45,6 +47,11 @@ export type ProposalEdit = {
   subcategoryId?: string | null;
   accountId?: string;
   merchant?: string | null;
+  /**
+   * Changes to a card of one of the other write tools (lib/assistant/actions.ts),
+   * by field key. Not used by createExpense / createIncome.
+   */
+  fields?: FieldEdits;
 };
 
 /** The proposal with the user's changes applied. */
@@ -181,6 +188,8 @@ export type SaveResult = {
   details: ProposalDetails;
   /** Present when the user changed the proposal on the card before approving. */
   editedByUser?: true;
+  /** Where the budget this touched stands now (lib/assistant/effects.ts). */
+  effects?: Effect[];
 };
 
 /** Thrown when an approved proposal could not be saved. The message is readable. */

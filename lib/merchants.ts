@@ -75,6 +75,78 @@ export function defaultCategoryForKind(
   };
 }
 
+// ==================== DEFAULTS ====================
+
+/** A problem with a merchant default the user can fix. The message is shown as-is. */
+export class MerchantDefaultError extends Error {}
+
+type DefaultsTx = Pick<Prisma.TransactionClient, 'merchant' | 'category' | 'subcategory' | 'transaction'>;
+
+/**
+ * "Always use this category for <merchant>". Finds the merchant by id, or by
+ * name (creating it if new), saves the default, and counts the merchant's past
+ * transactions that have a different category, so the caller can offer to
+ * update them too. A subcategory that does not belong to the category is
+ * dropped.
+ */
+export async function setMerchantCategoryDefaultIn(
+  tx: DefaultsTx,
+  input: {
+    merchantId?: string | null;
+    name?: string | null;
+    categoryId: string;
+    subcategoryId?: string | null;
+  }
+) {
+  const isId = (v: string | null | undefined): v is string => !!v && /^[a-f0-9]{24}$/i.test(v);
+  if (!isId(input.categoryId)) throw new MerchantDefaultError('Category not found');
+
+  let merchant = isId(input.merchantId)
+    ? await tx.merchant.findUnique({ where: { id: input.merchantId }, select: { id: true, name: true } })
+    : null;
+  if (!merchant) merchant = await ensureMerchant(tx, input.name);
+  if (!merchant) throw new MerchantDefaultError('Merchant not found');
+
+  const category = await tx.category.findUnique({
+    where: { id: input.categoryId },
+    select: { id: true, type: true, name: true },
+  });
+  if (!category) throw new MerchantDefaultError('Category not found');
+
+  let subcategoryId: string | null = null;
+  if (isId(input.subcategoryId)) {
+    const sub = await tx.subcategory.findFirst({
+      where: { id: input.subcategoryId, categoryId: category.id },
+      select: { id: true },
+    });
+    subcategoryId = sub?.id ?? null;
+  }
+  await tx.merchant.update({
+    where: { id: merchant.id },
+    data: { defaultCategoryId: category.id, defaultSubcategoryId: subcategoryId },
+  });
+
+  const rows = await tx.transaction.findMany({
+    // Not `splitItems: { isEmpty: true }`: older documents lack the field.
+    where: { merchantId: merchant.id, kind: category.type },
+    select: { categoryId: true, subcategoryId: true, splitItems: true },
+  });
+  const pastToUpdate = rows.filter(
+    (r) =>
+      (r.splitItems ?? []).length === 0 &&
+      (r.categoryId !== category.id || (r.subcategoryId ?? null) !== subcategoryId)
+  ).length;
+
+  return {
+    merchantId: merchant.id,
+    merchantName: merchant.name,
+    categoryName: category.name,
+    categoryType: category.type,
+    subcategoryId,
+    pastToUpdate,
+  };
+}
+
 // ==================== FORM MEMORY ====================
 
 /** What the expense form fills in when a merchant is typed or picked. */

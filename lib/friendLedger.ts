@@ -14,7 +14,7 @@
  *
  * Server-only. Not a 'use server' file: callers are server actions.
  */
-import type { FriendEntry } from '@prisma/client';
+import type { Friend, FriendEntry } from '@prisma/client';
 import { z } from 'zod';
 import { isValidDay, parseDay } from '@/lib/dates';
 import {
@@ -66,27 +66,105 @@ async function assertAccount(tx: LedgerTx, accountId: string | null) {
   if (!account) fail('Account not found');
 }
 
+// ==================== FRIENDS ====================
+
+/** Colours given to new friends in turn. */
+export const FRIEND_COLORS = [
+  '#7aa2f7',
+  '#3dcea6',
+  '#bb9af7',
+  '#f07178',
+  '#e8a05a',
+  '#e8c468',
+  '#7dcfff',
+  '#c0caf5',
+];
+
+const friendInputSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(60),
+  notes: text(300),
+  color: z
+    .string()
+    .nullish()
+    .transform((v) => v?.trim() || null),
+  /** Optional opening balance, written as the friend's first entry. */
+  opening: z
+    .object({
+      amount: z.number().finite().positive('Amount must be positive'),
+      type: z.enum(['THEY_OWE_ME', 'I_OWE_THEM']),
+      date: z.string().refine(isValidDay, 'Please enter a valid date'),
+    })
+    .nullish(),
+});
+
+export type FriendInput = z.input<typeof friendInputSchema>;
+
+/**
+ * Adds a friend, inside a transaction the caller already opened. With
+ * `opening`, the friend and their "Opening balance" entry are written together.
+ */
+export async function createFriendIn(tx: LedgerTx, input: FriendInput): Promise<Friend> {
+  const parsed = friendInputSchema.safeParse(input);
+  if (!parsed.success) fail(parsed.error.errors[0]?.message || 'Invalid friend');
+  const data = parsed.data;
+  const existingCount = await tx.friend.count();
+  const friend = await tx.friend.create({
+    data: {
+      name: data.name,
+      notes: data.notes,
+      color: data.color || FRIEND_COLORS[existingCount % FRIEND_COLORS.length],
+    },
+  });
+  if (data.opening) {
+    await tx.friendEntry.create({
+      data: {
+        friendId: friend.id,
+        date: parseDay(data.opening.date),
+        amount: data.opening.amount,
+        type: data.opening.type,
+        description: 'Opening balance',
+      },
+    });
+  }
+  return friend;
+}
+
+export async function createFriend(
+  input: FriendInput,
+  deps?: Partial<TransactionDeps>
+): Promise<TransactionResult<Friend>> {
+  return runLedgerWrite(deps, 'create friend', (tx) => createFriendIn(tx, input));
+}
+
+// ==================== ENTRIES ====================
+
 export async function createFriendEntry(
   input: FriendEntryInput,
   deps?: Partial<TransactionDeps>
 ): Promise<TransactionResult<FriendEntry>> {
-  return runLedgerWrite(deps, 'add entry', async (tx) => {
-    const data = parseEntry(input);
-    const friend = await tx.friend.findUnique({ where: { id: data.friendId }, select: { id: true } });
-    if (!friend) fail('Friend not found');
-    await assertAccount(tx, data.accountId);
-    return tx.friendEntry.create({
-      data: {
-        friendId: data.friendId,
-        date: parseDay(data.date),
-        amount: data.amount,
-        type: data.type,
-        description: data.description,
-        notes: data.notes,
-        accountId: data.accountId,
-        transactionId: null,
-      },
-    });
+  return runLedgerWrite(deps, 'add entry', (tx) => createFriendEntryIn(tx, input));
+}
+
+/** createFriendEntry, inside a transaction the caller already opened. */
+export async function createFriendEntryIn(
+  tx: LedgerTx,
+  input: FriendEntryInput
+): Promise<FriendEntry> {
+  const data = parseEntry(input);
+  const friend = await tx.friend.findUnique({ where: { id: data.friendId }, select: { id: true } });
+  if (!friend) fail('Friend not found');
+  await assertAccount(tx, data.accountId);
+  return tx.friendEntry.create({
+    data: {
+      friendId: data.friendId,
+      date: parseDay(data.date),
+      amount: data.amount,
+      type: data.type,
+      description: data.description,
+      notes: data.notes,
+      accountId: data.accountId,
+      transactionId: null,
+    },
   });
 }
 

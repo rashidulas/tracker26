@@ -892,6 +892,17 @@ export async function upcomingRecurring(
     dismissed: dismissed.map((d) => d.key),
   }).filter((s) => (!input.kind || s.kind === input.kind) && s.nextDueDate <= horizon);
 
+  const paused = (
+    await ctx.db.recurringTransaction.findMany({
+      where: { active: false },
+      select: { id: true, name: true, kind: true, amount: true, endDate: true, nextDueDate: true },
+      orderBy: { name: 'asc' },
+    })
+  )
+    // An entry past its end date is finished, not paused.
+    .filter((p) => (!p.endDate || p.nextDueDate <= p.endDate) && (!input.kind || p.kind === input.kind))
+    .slice(0, 20);
+
   const expenses = new Total();
   const income = new Total();
   for (const i of upcoming) {
@@ -904,6 +915,8 @@ export async function upcomingRecurring(
     to: horizon,
     /** From the user's recurring entries (Plan › Recurring). */
     scheduled: upcoming.map((i) => ({
+      /** The recurring entry's id, for updateRecurring. */
+      recurringId: i.recurringId,
       name: clip(i.name, 80),
       kind: i.kind,
       amount: round2(i.amount),
@@ -914,6 +927,10 @@ export async function upcomingRecurring(
       account: i.accountName,
     })),
     totals: { scheduledExpenses: expenses.value, scheduledIncome: income.value },
+    /** Entries the user paused: nothing comes due until they are resumed. */
+    ...(paused.length > 0
+      ? { paused: paused.map((p) => ({ recurringId: p.id, name: clip(p.name, 80), kind: p.kind, amount: round2(p.amount) })) }
+      : {}),
     /** Repeating patterns found in past transactions that are not set up as recurring entries. */
     notSetUpYet: suggestions.slice(0, 10).map((s) => ({
       merchant: clip(s.merchantName, 80),

@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { signedFriendAmount } from '@/lib/friends';
 import {
+  createFriend as addFriend,
   createFriendEntry as createEntry,
   deleteFriend as removeFriend,
   deleteFriendEntry as removeEntry,
@@ -11,19 +12,8 @@ import {
 } from '@/lib/friendLedger';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { todayAsStoredDate } from '@/lib/dates';
+import { todayInAppTimeZone } from '@/lib/dates';
 import type { FriendEntryType } from '@prisma/client';
-
-const FRIEND_COLORS = [
-  '#7aa2f7',
-  '#3dcea6',
-  '#bb9af7',
-  '#f07178',
-  '#e8a05a',
-  '#e8c468',
-  '#7dcfff',
-  '#c0caf5',
-];
 
 const friendSchema = z.object({
   name: z.string().min(1, 'Name is required').max(60),
@@ -87,10 +77,6 @@ export async function createFriend(formData: FormData) {
       color: (formData.get('color') as string) || undefined,
     });
 
-    const existingCount = await prisma.friend.count();
-    const color =
-      validated.color || FRIEND_COLORS[existingCount % FRIEND_COLORS.length];
-
     // Optional opening balance when creating a friend
     const openingAmount = parseFloat((formData.get('openingAmount') as string) || '');
     const openingType = formData.get('openingType') as string;
@@ -98,31 +84,21 @@ export async function createFriend(formData: FormData) {
       openingAmount > 0 &&
       (openingType === 'THEY_OWE_ME' || openingType === 'I_OWE_THEM');
 
-    // Friend and opening entry are written together or not at all.
-    const friend = await prisma.$transaction(async (tx) => {
-      const created = await tx.friend.create({
-        data: {
-          name: validated.name.trim(),
-          notes: validated.notes?.trim() || null,
-          color,
-        },
-      });
-      if (hasOpening) {
-        await tx.friendEntry.create({
-          data: {
-            friendId: created.id,
-            date: todayAsStoredDate(),
+    // Friend and opening entry are written together or not at all (lib/friendLedger).
+    const result = await addFriend({
+      name: validated.name,
+      notes: validated.notes,
+      color: validated.color,
+      opening: hasOpening
+        ? {
             amount: openingAmount,
             type: openingType as 'THEY_OWE_ME' | 'I_OWE_THEM',
-            description: 'Opening balance',
-          },
-        });
-      }
-      return created;
+            date: todayInAppTimeZone(),
+          }
+        : null,
     });
-
-    revalidatePath('/friends');
-    return { success: true, data: friend };
+    if (!result.success) return result;
+    return { success: true, data: result.data };
   } catch (error) {
     if (error instanceof z.ZodError) {
       return { success: false, error: error.errors[0].message };
