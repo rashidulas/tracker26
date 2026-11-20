@@ -340,14 +340,31 @@ const newTransaction = z.object({
     .max(10)
     .nullish()
     .describe('Expenses only: what each friend owes the user for it. The user paid the full amount; their own share is amount minus these.'),
+  paysBackFriendId: id
+    .nullish()
+    .describe('Expenses only: the friend (id from friendBalances) this money pays back. Saving it also lowers what the user owes that friend by the amount. Use it whenever the user says they paid a friend back with an expense.'),
 });
+
+/** The friend an expense paid back, if any. */
+async function paidBackFriend(tx: Tx, transactionId: string): Promise<string | null> {
+  const entry = await tx.friendEntry.findFirst({
+    where: { paymentTransactionId: transactionId },
+    select: { friendId: true },
+  });
+  if (!entry) return null;
+  const friend = await tx.friend.findUnique({ where: { id: entry.friendId }, select: { name: true } });
+  return friend?.name ?? null;
+}
 
 function newTransactionInput(item: z.output<typeof newTransaction>, names: Names, label: string): TransactionInput {
   checkAmount(item.amount, `${label}amount`);
   const splitByCategory = (item.categorySplits?.length ?? 0) > 0;
   const splitByAccount = (item.accountSplits?.length ?? 0) > 0;
-  if (item.kind === 'INCOME' && (splitByCategory || item.friendShares?.length)) {
-    bad(`${label}only an expense can have categorySplits or friendShares`);
+  if (item.kind === 'INCOME' && (splitByCategory || item.friendShares?.length || item.paysBackFriendId)) {
+    bad(`${label}only an expense can have categorySplits, friendShares or paysBackFriendId`);
+  }
+  if (item.paysBackFriendId && item.friendShares?.length) {
+    bad(`${label}an expense is either split with friends (friendShares) or pays one back (paysBackFriendId), not both`);
   }
   if (splitByCategory) {
     for (const s of item.categorySplits!) {
@@ -386,6 +403,7 @@ function newTransactionInput(item: z.output<typeof newTransaction>, names: Names
     ...base,
     splitItems: splitByCategory ? item.categorySplits! : undefined,
     friendSplits: item.friendShares?.length ? item.friendShares : undefined,
+    paidFriendId: item.paysBackFriendId || undefined,
   };
 }
 
@@ -455,6 +473,8 @@ const logTransactions = define({
         }
         fields.push({ label: 'Your share', value: money(myShareOfExpense(saved)) });
       }
+      const paidBack = saved.kind === 'EXPENSE' ? await paidBackFriend(tx, saved.id) : null;
+      if (paidBack) fields.push({ label: 'Pays back', value: clip(paidBack, 30) });
       items.push({ title: transactionTitle(saved), tone: 'add', fields });
     }
 
@@ -490,6 +510,7 @@ const transactionChanges = z.object({
   notes: z.string().max(500).nullish().describe('New notes. null clears them.'),
   categorySplits: z.array(categorySplit).min(2).max(10).optional().describe('Expenses only: split the total across categories. Must add up to the total.'),
   accountSplits: z.array(accountSplit).min(2).max(6).optional().describe('Income and expenses: split the total across accounts. Must add up to the total.'),
+  paysBackFriendId: id.nullish().describe('Expenses only: mark this expense as paying back this friend (id from friendBalances), which lowers what the user owes them by its amount. null removes that link.'),
 });
 
 /** The complete input updateTransactionIn needs: the stored row with the changes laid over it. */
@@ -564,6 +585,8 @@ function editedInput(
     splitItems: splitItems.length > 0 ? splitItems : undefined,
     // undefined keeps the friends the expense is already split with.
     friendSplits,
+    // undefined keeps the friend it pays back; null removes the link.
+    paidFriendId: changes.paysBackFriendId,
   };
 }
 
@@ -609,8 +632,22 @@ const changeTransactions = define({
       const before = rows[0];
       const changes = input.changes ?? {};
       if (Object.values(changes).every((v) => v === undefined)) bad('"edit" needs `changes` with at least one field.');
+      if (changes.paysBackFriendId && before.kind !== 'EXPENSE') bad('Only an expense can pay back a friend.');
+      if (changes.paysBackFriendId) await friendOf(tx, changes.paysBackFriendId);
+      const paidBefore = await paidBackFriend(tx, before.id);
       const after = await updateTransactionIn(tx, before.id, editedInput(before, changes, names));
-      const { fields, changed } = changedFields(before, after, names);
+      const diff = changedFields(before, after, names);
+      const fields = diff.fields;
+      let changed = diff.changed;
+      const paidAfter = await paidBackFriend(tx, after.id);
+      if (paidBefore || paidAfter) {
+        fields.push({
+          label: 'Pays back',
+          value: paidAfter ?? 'No one',
+          ...(paidBefore !== paidAfter ? { was: paidBefore ?? 'No one' } : {}),
+        });
+        if (paidBefore !== paidAfter) changed += 1;
+      }
       if (changed === 0) bad('Nothing would change: the transaction already has these values.');
 
       // Let the user adjust the main values on the card before approving.

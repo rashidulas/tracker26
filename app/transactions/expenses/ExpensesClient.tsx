@@ -69,6 +69,8 @@ interface Expense {
   toAccount: { id: string; name: string } | null;
   sharedAmount?: number | null;
   friendEntries?: ExpenseFriendShare[];
+  /** The friend this expense paid back, if any. */
+  friendPayments?: { friend: { id: string; name: string } }[];
 }
 
 /** Your spending on a row: a split expense counts only your share. */
@@ -556,6 +558,15 @@ export default function ExpensesClient({
                       ) : (
                         <span className="truncate">{expense.account?.name}</span>
                       )}
+                    </>
+                  )}
+                  {(expense.friendPayments?.length ?? 0) > 0 && (
+                    <>
+                      <span className="text-graphite-border">·</span>
+                      <span className="inline-flex items-center gap-1 truncate text-info">
+                        <Users size={11} className="shrink-0" aria-hidden="true" />
+                        Paid back {expense.friendPayments![0].friend.name}
+                      </span>
                     </>
                   )}
                   {(expense.friendEntries?.length ?? 0) > 0 && (

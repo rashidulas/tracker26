@@ -415,3 +415,74 @@ describe('reminder notifications', () => {
     assert.match(list[0].key, /:2026-12-05:today$/);
   });
 });
+
+describe('an expense that pays a friend back', () => {
+  const payment = (over: Record<string, unknown> = {}) => ({
+    kind: 'EXPENSE' as const,
+    date: '2026-11-06',
+    amount: 350,
+    categoryId: ids.housing,
+    accountId: ids.checking,
+    merchantOrSource: 'Fuad',
+    ...over,
+  });
+
+  beforeEach(() => {
+    db.seed('friendEntry', {
+      friendId: ids.fuad,
+      date: new Date('2026-10-11T00:00:00.000Z'),
+      amount: 350,
+      type: 'I_OWE_THEM',
+      description: 'Opening balance',
+    });
+  });
+
+  test('saving it lowers what is owed and moves the account once', async () => {
+    assert.equal(owedByFuad(), -350);
+    const { createTransaction } = await import('../lib/transactions');
+    const saved = ok(await createTransaction(payment({ paidFriendId: ids.fuad }), deps));
+    assert.equal(owedByFuad(), 0);
+    assert.equal(checking(), 4650);
+    const entry = db.data.friendEntry.find((e) => e.paymentTransactionId === saved.id)!;
+    assert.deepEqual([entry.type, entry.amount, entry.accountId, entry.description], ['I_PAID_THEM', 350, null, 'Paid back']);
+  });
+
+  test('a plain expense named after the friend changes nothing until it is linked', async () => {
+    const { createTransaction } = await import('../lib/transactions');
+    const saved = ok(await createTransaction(payment(), deps));
+    assert.equal(owedByFuad(), -350);
+
+    // Linking it later (edit the expense, pick the friend).
+    ok(await updateTransaction(saved.id, payment({ paidFriendId: ids.fuad }), {}, deps));
+    assert.equal(owedByFuad(), 0);
+    // An edit that does not mention the friend keeps the link and follows the amount.
+    ok(await updateTransaction(saved.id, payment({ amount: 300 }), {}, deps));
+    assert.equal(owedByFuad(), -50);
+    assert.equal(db.data.friendEntry.filter((e) => e.paymentTransactionId === saved.id).length, 1);
+    // Moving it to another friend, then unlinking it.
+    const talha = db.seed('friend', { name: 'Talha' }).id;
+    ok(await updateTransaction(saved.id, payment({ amount: 300, paidFriendId: talha }), {}, deps));
+    assert.equal(owedByFuad(), -350);
+    assert.equal(db.data.friendEntry.find((e) => e.paymentTransactionId === saved.id)!.friendId, talha);
+    ok(await updateTransaction(saved.id, payment({ amount: 300, paidFriendId: null }), {}, deps));
+    assert.equal(db.data.friendEntry.filter((e) => e.paymentTransactionId === saved.id).length, 0);
+    assert.equal(checking(), 4700);
+  });
+
+  test('deleting the expense puts the debt back; a split expense cannot also pay back', async () => {
+    const { createTransaction } = await import('../lib/transactions');
+    const saved = ok(await createTransaction(payment({ paidFriendId: ids.fuad }), deps));
+    ok(await deleteTransaction(saved.id, {}, deps));
+    assert.equal(owedByFuad(), -350);
+
+    err(
+      await createTransaction(
+        payment({ paidFriendId: ids.fuad, friendSplits: [{ friendId: ids.fuad, amount: 100 }] }),
+        deps
+      ),
+      /cannot also pay a friend back/
+    );
+    err(await createTransaction(payment({ paidFriendId: '0'.repeat(24) }), deps), /Friend not found/);
+    assert.equal(db.data.transaction.length, 0);
+  });
+});

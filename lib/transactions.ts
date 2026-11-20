@@ -190,6 +190,18 @@ const expenseInputSchema = z.object({
    * split on update; [] = not split.
    */
   friendSplits: z.array(friendSplitSchema).optional(),
+  /**
+   * This expense pays back a friend: it also lowers what you owe them (an
+   * I_PAID_THEM entry linked by paymentTransactionId, with no account, since
+   * the expense moved the money). undefined = keep as is on update; null or
+   * '' = it pays no one back.
+   */
+  paidFriendId: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((v) => (v === undefined ? undefined : v || null))
+    .refine((v) => v == null || /^[a-f\d]{24}$/i.test(v), 'Friend is invalid'),
 });
 
 const incomeInputSchema = z.object({
@@ -635,6 +647,75 @@ export async function refreshSharedAmount(tx: Tx, transactionId: string): Promis
   }
 }
 
+// ==================== PAYING A FRIEND BACK ====================
+
+/**
+ * Makes the expense's "I paid them" entry match `paidFriendId`: created,
+ * moved to another friend, or removed. With undefined the current entry is
+ * kept and only follows the expense's amount and date.
+ */
+async function syncFriendPayment(
+  tx: Tx,
+  transaction: Transaction,
+  paidFriendId: string | null | undefined
+): Promise<void> {
+  const existing = await tx.friendEntry.findMany({
+    where: { paymentTransactionId: transaction.id },
+  });
+  if (paidFriendId === undefined) {
+    if (existing.length === 0) return;
+    await tx.friendEntry.updateMany({
+      where: { paymentTransactionId: transaction.id },
+      data: { amount: transaction.amount, date: transaction.date },
+    });
+    return;
+  }
+  if (paidFriendId === null) {
+    if (existing.length > 0) {
+      await tx.friendEntry.deleteMany({ where: { paymentTransactionId: transaction.id } });
+    }
+    return;
+  }
+
+  if (transaction.kind !== 'EXPENSE') fail('Only an expense can pay back a friend');
+  if ((transaction.sharedAmount ?? 0) > 0) {
+    fail('An expense split with friends cannot also pay a friend back');
+  }
+  const friend = await tx.friend.findUnique({
+    where: { id: paidFriendId },
+    select: { id: true, name: true },
+  });
+  if (!friend) fail('Friend not found');
+
+  const [current, ...extra] = existing;
+  if (extra.length > 0) {
+    await tx.friendEntry.deleteMany({ where: { id: { in: extra.map((e) => e.id) } } });
+  }
+  if (current) {
+    await tx.friendEntry.update({
+      where: { id: current.id },
+      data: { friendId: friend.id, amount: transaction.amount, date: transaction.date },
+    });
+    return;
+  }
+  // "Fuad" as the merchant says nothing on Fuad's own page.
+  const label = await sharedExpenseDescription(tx, transaction);
+  const description =
+    label.trim().toLowerCase() === friend.name.trim().toLowerCase() ? 'Paid back' : label;
+  await tx.friendEntry.create({
+    data: {
+      friendId: friend.id,
+      type: 'I_PAID_THEM',
+      amount: transaction.amount,
+      date: transaction.date,
+      description,
+      accountId: null,
+      transactionId: null,
+      paymentTransactionId: transaction.id,
+    },
+  });
+}
+
 // ==================== LINKED GOAL CONTRIBUTIONS ====================
 
 /**
@@ -696,6 +777,9 @@ export async function createTransactionIn(
   });
   if (parsed.kind === 'EXPENSE' && (parsed.friendSplits?.length ?? 0) > 0) {
     await syncFriendSplits(tx, created, parsed.friendSplits, null);
+  }
+  if (parsed.kind === 'EXPENSE' && parsed.paidFriendId) {
+    await syncFriendPayment(tx, created, parsed.paidFriendId);
   }
   return created;
 }
@@ -868,11 +952,6 @@ export async function updateTransactionIn(
   }
 
   const updated = await tx.transaction.update({ where: { id }, data });
-  // A payment to a friend: what it paid back follows the expense.
-  await tx.friendEntry.updateMany({
-    where: { paymentTransactionId: id },
-    data: { amount: updated.amount, date: updated.date },
-  });
   if (updated.kind === 'TRANSFER') {
     await syncGoalContributions(tx, updated);
   } else {
@@ -883,6 +962,8 @@ export async function updateTransactionIn(
       previousDescription
     );
   }
+  // A payment to a friend: what it paid back follows the expense.
+  await syncFriendPayment(tx, updated, parsed.kind === 'EXPENSE' ? parsed.paidFriendId : undefined);
   return updated;
 }
 

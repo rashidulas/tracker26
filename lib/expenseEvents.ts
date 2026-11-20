@@ -29,6 +29,8 @@ export type ExpenseRow = {
   /** What friends owe you for this expense; your share is amount - sharedAmount. */
   sharedAmount?: number | null;
   friendEntries?: ExpenseFriendShare[];
+  /** The friend this expense paid back, if any. */
+  friendPayments?: { friend: { id: string; name: string } }[];
 };
 
 export type ExpenseEvent =

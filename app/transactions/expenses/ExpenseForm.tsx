@@ -48,6 +48,8 @@ export interface FriendOption {
   id: string;
   name: string;
   color?: string | null;
+  /** Positive = they owe you, negative = you owe them. */
+  balance?: number;
 }
 
 type SplitRow = { friendId: string; amount: string };
@@ -149,6 +151,8 @@ interface ExpenseFormProps {
     notes?: string | null;
     tags: string[];
     friendEntries?: Array<{ amount: number; friend: { id: string } }>;
+    /** The friend this expense paid back. */
+    friendPayments?: Array<{ friend: { id: string } }>;
   };
   /** Friends you can split this expense with. */
   friends?: FriendOption[];
@@ -308,6 +312,11 @@ export default function ExpenseForm({
   // The merchant's account beats "the account last used with this category".
   const accountFromMerchant = useRef(false);
   const amountRef = useRef<HTMLInputElement | null>(null);
+
+  // ---- Paying a friend back ---------------------------------------------------
+  const [paidFriendId, setPaidFriendId] = useState(expense?.friendPayments?.[0]?.friend.id ?? '');
+  // "No" to the suggestion below: don't offer the same friend again.
+  const [declinedFriendId, setDeclinedFriendId] = useState('');
 
   // ---- Split with friends ----------------------------------------------------
   const initialSplit: SplitRow[] = (expense?.friendEntries ?? []).map((e) => ({
@@ -786,6 +795,18 @@ export default function ExpenseForm({
     ? "Friends' shares are more than the amount"
     : '';
 
+  const paidFriend = friends.find((f) => f.id === paidFriendId) ?? null;
+  // The merchant is a friend you owe ("Fuad"): this is probably paying them back.
+  const suggestedFriend =
+    !paidFriendId && !splitActive
+      ? friends.find(
+          (f) =>
+            f.id !== declinedFriendId &&
+            (f.balance ?? 0) < -0.005 &&
+            f.name.trim().toLowerCase() === merchantVal.trim().toLowerCase()
+        ) ?? null
+      : null;
+
   const toggleSplitFriend = (friendId: string) => {
     // Changing who is in the split goes back to equal shares.
     setSplitCustom(false);
@@ -917,6 +938,7 @@ export default function ExpenseForm({
               : []
           )
         );
+        formData.append('paidFriendId', splitActive ? '' : paidFriendId);
         result = expense
           ? await updateExpense(expense.id, formData)
           : await createExpense(formData);
@@ -1557,7 +1579,66 @@ export default function ExpenseForm({
             </p>
           )}
 
-          {friends.length > 0 && (
+          {suggestedFriend && (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-info/25 bg-info-dim/40 p-3.5"
+            >
+              <p className="text-sm text-ink flex-1 min-w-[12rem]">
+                You owe {suggestedFriend.name}{' '}
+                <span className="money">${Math.abs(suggestedFriend.balance ?? 0).toFixed(2)}</span>. Is
+                this paying them back?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaidFriendId(suggestedFriend.id)}
+                  className="rounded-lg bg-mint px-3 py-1.5 text-sm font-semibold text-graphite"
+                >
+                  Yes, lower what I owe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeclinedFriendId(suggestedFriend.id)}
+                  className="rounded-lg px-3 py-1.5 text-sm text-ink-secondary hover:text-ink"
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          )}
+
+          {friends.length > 0 && !splitActive && (
+            <div>
+              <label
+                htmlFor={`${formId}-paid-friend`}
+                className="block text-sm font-medium text-ink-secondary mb-1.5"
+              >
+                Pays back a friend (optional)
+              </label>
+              <select
+                id={`${formId}-paid-friend`}
+                value={paidFriendId}
+                onChange={(e) => setPaidFriendId(e.target.value)}
+                className="w-full px-3.5 py-2.5 border border-graphite-border rounded-xl text-sm sm:text-base text-ink bg-[var(--surface-2)] focus:ring-2 focus:ring-mint/30 focus:border-mint/50 focus:outline-none [color-scheme:dark]"
+              >
+                <option value="">No one</option>
+                {friends.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                    {(f.balance ?? 0) < -0.005 ? ` (you owe $${Math.abs(f.balance ?? 0).toFixed(2)})` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-ink-muted">
+                {paidFriend
+                  ? `Saving this also lowers what you owe ${paidFriend.name} on the Friends page by the amount.`
+                  : 'Pick the friend when this money is paying back something you owe them.'}
+              </p>
+            </div>
+          )}
+
+          {friends.length > 0 && !paidFriendId && (
             <div className="rounded-2xl border border-graphite-border-subtle bg-graphite-surface-2/40 p-3.5">
               <button
                 type="button"

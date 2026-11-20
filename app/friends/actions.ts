@@ -2,6 +2,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { signedFriendAmount } from '@/lib/friends';
+import { loadFriendOptions } from '@/lib/friendOptions';
 import {
   createFriend as addFriend,
   createFriendEntry as createEntry,
@@ -180,11 +181,7 @@ export async function deleteFriendEntry(id: string) {
 export async function getFriendsForSelect() {
   await requireSession();
   try {
-    const friends = await prisma.friend.findMany({
-      select: { id: true, name: true, color: true },
-      orderBy: { name: 'asc' },
-    });
-    return { success: true as const, data: friends };
+    return { success: true as const, data: await loadFriendOptions() };
   } catch (error) {
     console.error('Error fetching friends:', error);
     return { success: false as const, error: 'Failed to fetch friends' };

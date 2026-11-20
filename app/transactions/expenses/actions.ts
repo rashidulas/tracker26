@@ -12,6 +12,7 @@ import {
 import { dayFilter } from '@/lib/dates';
 import { getMerchantMemory } from '@/app/settings/merchants/actions';
 import { requireSession } from '@/lib/auth/session';
+import { loadFriendOptions } from '@/lib/friendOptions';
 
 export async function getExpenses(filters?: {
   startDate?: string;
@@ -111,7 +112,10 @@ function expenseFromForm(formData: FormData): ExpenseInput {
   const tags = (formData.get('tags') as string) || '';
   // How it was entered, when not typed into the form (lib/transactions).
   const source = formData.get('source');
+  // Absent = leave it alone (forms that don't show it); '' = pays no one back.
+  const paidFriendId = formData.get('paidFriendId');
   return {
+    paidFriendId: typeof paidFriendId === 'string' ? paidFriendId : undefined,
     friendSplits: friendSplitsFromForm(formData),
     splitItems: splitItemsFromForm(formData),
     source: source === 'voice' || source === 'receipt' ? source : undefined,
@@ -140,6 +144,8 @@ const rowInclude = {
       friend: { select: { id: true, name: true, color: true } },
     },
   },
+  // The friend this expense paid back, if any.
+  friendPayments: { select: { friend: { select: { id: true, name: true } } } },
 } as const;
 
 /** Return the saved row with relations so the UI can update without a reload. */
@@ -243,10 +249,7 @@ export async function getQuickAddData() {
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         take: 500,
       }),
-      prisma.friend.findMany({
-        select: { id: true, name: true, color: true },
-        orderBy: { name: 'asc' },
-      }),
+      loadFriendOptions(),
       // Defaults the user set, else what was used last time (lib/merchants.ts).
       getMerchantMemory('EXPENSE'),
     ]);

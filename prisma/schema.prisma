@@ -139,7 +139,9 @@ model Transaction {
   merchant    Merchant?             @relation(fields: [merchantId], references: [id], onDelete: SetNull)
   recurring   RecurringTransaction? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
 
-  friendEntries     FriendEntry[]
+  friendEntries     FriendEntry[]      @relation("FriendShare")
+  /// I_PAID_THEM entries: this expense paid a friend back.
+  friendPayments    FriendEntry[]      @relation("FriendPayment")
   goalContributions GoalContribution[]
 
   @@index([merchantId])
@@ -422,9 +424,10 @@ model FriendEntry {
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
-  friend      Friend       @relation(fields: [friendId], references: [id], onDelete: Cascade)
-  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  account     Account?     @relation(fields: [accountId], references: [id])
+  friend             Friend       @relation(fields: [friendId], references: [id], onDelete: Cascade)
+  transaction        Transaction? @relation("FriendShare", fields: [transactionId], references: [id], onDelete: Cascade)
+  paymentTransaction Transaction? @relation("FriendPayment", fields: [paymentTransactionId], references: [id], onDelete: Cascade)
+  account            Account?     @relation(fields: [accountId], references: [id])
 
   @@index([friendId])
   @@index([date])
