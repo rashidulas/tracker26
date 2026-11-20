@@ -136,6 +136,40 @@ export default function RecurringForm({
   const today = todayInAppTimeZone();
   const validStart = isValidDay(v.startDate);
   const friend = friends.find((f) => f.id === v.friendId) ?? null;
+  // Plans pay a friend, a loan / card account of yours, or someone untracked.
+  const debtAccounts = accounts.filter((a) => a.type === 'LOAN' || a.type === 'CREDIT_CARD');
+  const payee =
+    v.kind === 'TRANSFER' && v.toAccountId
+      ? `account:${v.toAccountId}`
+      : v.friendId
+      ? `friend:${v.friendId}`
+      : '';
+  const payeeAccount = v.kind === 'TRANSFER' ? accounts.find((a) => a.id === v.toAccountId) ?? null : null;
+  const setPayee = (value: string) => {
+    const [type, payeeId] = value.split(':');
+    setV((prev) => {
+      if (type !== 'account') {
+        return { ...prev, kind: 'EXPENSE', toAccountId: '', friendId: type === 'friend' ? payeeId : '' };
+      }
+      const account = accounts.find((a) => a.id === payeeId);
+      const next = {
+        ...prev,
+        kind: 'TRANSFER' as const,
+        toAccountId: payeeId,
+        friendId: '',
+        categoryId: '',
+        subcategoryId: '',
+        name: prev.name || (account ? account.name : ''),
+        // What is still owed on the account is the total to pay off.
+        totalAmount: !prev.totalAmount && account && account.owed > 0 ? account.owed.toFixed(2) : prev.totalAmount,
+      };
+      // A known payment sets how many are left; otherwise the count sets the payment.
+      if (Number(next.amount) > 0) next.payments = countFor(next.totalAmount, next.amount) ?? next.payments;
+      else next.amount = paymentFor(next.totalAmount, next.payments) ?? next.amount;
+      return next;
+    });
+    setErrors({});
+  };
   const planCount = Math.round(Number(v.payments));
   const lastPayment =
     v.plan && validStart && Number.isFinite(planCount) && planCount >= 1 && planCount <= 1200
@@ -270,21 +304,29 @@ export default function RecurringForm({
           />
           <Select
             label="Who do you pay?"
-            value={v.friendId}
-            onChange={(e) => set('friendId', e.target.value)}
+            value={payee}
+            onChange={(e) => setPayee(e.target.value)}
             hint={
-              friends.length === 0
-                ? 'Add the person on the Friends page first to track what you owe them.'
-                : 'Pick a friend to keep what you owe them up to date, or leave it for a shop or lender.'
+              payeeAccount
+                ? `Each payment moves money into ${payeeAccount.name} and lowers what you owe on it.`
+                : friend
+                ? `Each payment is an expense and lowers what you owe ${friend.name}.`
+                : 'Pick a friend or one of your loan or card accounts to keep what you owe up to date.'
             }
             options={[
-              { value: '', label: 'Not a friend (a shop, a lender…)' },
-              ...friends.map((f) => ({ value: f.id, label: f.name })),
+              { value: '', label: 'Someone else (a shop, a lender…)' },
+              ...friends.map((f) => ({ value: `friend:${f.id}`, label: f.name })),
+              ...debtAccounts.map((a) => ({
+                value: `account:${a.id}`,
+                label: `${a.name} (${a.type === 'LOAN' ? 'loan' : 'card'}${
+                  a.owed > 0 ? `, ${formatCurrency(a.owed)} owed` : ''
+                })`,
+              })),
             ]}
           />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Input
-              label={id ? 'Total' : 'Total to pay back'}
+              label={id ? 'Total' : payeeAccount ? 'Still to pay' : 'Total to pay back'}
               type="number"
               step="0.01"
               min="0"
@@ -386,7 +428,7 @@ export default function RecurringForm({
           error={errors.accountId}
           options={accountOptions}
         />
-        {v.kind === 'TRANSFER' && (
+        {v.kind === 'TRANSFER' && !v.plan && (
           <Select
             label="To account"
             value={v.toAccountId}

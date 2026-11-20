@@ -217,7 +217,11 @@ async function templateData(tx: Tx, p: ParsedRecurring) {
   const merchantSource =
     p.merchantOrSource?.trim() || (p.totalAmount !== null ? p.name?.trim() : '') || null;
   const merchant = p.kind === 'TRANSFER' ? null : await ensureMerchant(tx, merchantSource);
-  const merchantText = p.kind === 'TRANSFER' ? cleanMerchantName(p.merchantOrSource) : merchant?.name ?? null;
+  // A plan that pays into a loan or card labels its payments with its name.
+  const merchantText =
+    p.kind === 'TRANSFER'
+      ? cleanMerchantName(p.merchantOrSource) ?? (p.totalAmount !== null ? cleanMerchantName(p.name) : null)
+      : merchant?.name ?? null;
   const name =
     cleanMerchantName(p.name) ?? merchantText ?? (p.kind === 'TRANSFER' ? 'Transfer' : 'Recurring entry');
   return {
@@ -487,10 +491,18 @@ async function handleOccurrence(
       data: { recurringId: id, dueDate: due, status: action === 'POST' ? 'POSTED' : 'SKIPPED' },
     });
     if (action === 'POST') {
+      // A plan paying into a loan or a card is a debt / card payment, like the
+      // ones entered by hand: same category, tag and place in the lists.
+      let purpose: 'payment' | 'debt-payment' | undefined;
+      if (rec.kind === 'TRANSFER' && rec.totalAmount != null && rec.toAccountId) {
+        const to = await tx.account.findUnique({ where: { id: rec.toAccountId }, select: { type: true } });
+        purpose = to?.type === 'LOAN' ? 'debt-payment' : to?.type === 'CREDIT_CARD' ? 'payment' : undefined;
+      }
       const created = await createTransactionIn(
         tx,
         {
           ...templateToInput(rec, postDate),
+          ...(purpose ? { purpose } : {}),
           amount,
           ...(options.auto ? { source: 'recurring' as const } : {}),
         },

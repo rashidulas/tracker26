@@ -17,6 +17,7 @@ import {
 import { loadSuggestions, loadUpcoming } from '@/lib/recurringQueries';
 import { todayInAppTimeZone, toDayString } from '@/lib/dates';
 import { requireSession } from '@/lib/auth/session';
+import { loadAccountBalances } from '@/lib/ledgerBalances';
 
 export async function getRecurringPageData() {
   await requireSession();
@@ -46,10 +47,7 @@ export async function getRecurringPageData() {
         },
         orderBy: { name: 'asc' },
       }),
-      prisma.account.findMany({
-        select: { id: true, name: true, type: true },
-        orderBy: { name: 'asc' },
-      }),
+      loadAccountBalances(prisma),
       prisma.friend.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     ]);
     const paid = await paidByRecurring(
@@ -75,7 +73,16 @@ export async function getRecurringPageData() {
         suggestions,
         upcoming,
         categories,
-        accounts,
+        accounts: accounts.map((a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          /** Loans and cards: what is still owed on the account. */
+          owed:
+            (a.type === 'LOAN' || a.type === 'CREDIT_CARD') && a.currentBalance < 0
+              ? Math.round(-a.currentBalance * 100) / 100
+              : 0,
+        })),
         friends,
       },
     };

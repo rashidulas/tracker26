@@ -84,7 +84,7 @@ export default function UpcomingList({
         const isBusy = busy === key;
         const income = item.kind === 'INCOME';
         // Paying someone back reads better as "Pay" than "Post now".
-        const paying = item.kind === 'EXPENSE' && Boolean(item.friendName || item.plan);
+        const paying = item.kind !== 'INCOME' && Boolean(item.friendName || item.plan);
         const plan = planLine(item);
         const editing = custom?.key === key;
         const customAmount = editing ? Number(custom.value) : NaN;

@@ -486,3 +486,38 @@ describe('an expense that pays a friend back', () => {
     assert.equal(db.data.transaction.length, 0);
   });
 });
+
+describe('a plan that pays off a loan account', () => {
+  test('29 transfers clear the balance; the last is the remainder; each is a debt payment', async () => {
+    const loan = db.seed('account', { name: 'Upstart', type: 'LOAN', startingBalance: -8397.24 }).id;
+    db.data.account.find((a) => a.id === ids.checking)!.startingBalance = 10000;
+    const plan = ok(
+      await createRecurring(
+        {
+          name: 'Upstart loan',
+          kind: 'TRANSFER',
+          amount: 290.84,
+          accountId: ids.checking,
+          toAccountId: loan,
+          frequency: 'MONTHLY',
+          startDate: '2026-12-10',
+          totalAmount: 8397.24,
+          autoPost: true,
+        },
+        deps
+      )
+    );
+    const run = await runDueRecurring({ today: '2030-01-01' }, deps);
+    assert.deepEqual([run.posted, run.errors], [29, []]);
+    const payments = db.data.transaction.filter((t) => t.recurringId === plan.id);
+    assert.equal(payments[0].kind, 'TRANSFER');
+    assert.deepEqual(payments[0].tags, ['debt-payment']);
+    assert.equal(payments[0].merchantOrSource, 'Upstart loan');
+    assert.equal(payments[28].amount, 253.72);
+    assert.equal(toDayString(payments[28].date), '2029-04-10');
+    const balances = computeBalancesForAccounts(db.data.account as never, db.data.transaction as never, []);
+    assert.equal(round(balances.get(loan)!.balance), 0);
+    assert.equal(round(balances.get(ids.checking)!.balance), 1602.76);
+    assert.equal(db.data.recurringTransaction[0].active, false);
+  });
+});
