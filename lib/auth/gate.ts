@@ -7,6 +7,10 @@
  *   /api/health            uptime check; returns no data
  *   /api/recurring/run     cron; requires Authorization: Bearer <CRON_SECRET>
  *   /api/insights/run      cron; same
+ *   /api/reminders/run     cron; same
+ *   /sw.js, /manifest.webmanifest, /icon, /apple-icon
+ *                          what a browser fetches without cookies to install
+ *                          the app and show notifications; they hold no data
  * Everything else needs a session. Static assets never reach the middleware
  * (see the matcher in middleware.ts).
  *
@@ -16,8 +20,10 @@
 import type { AuthConfig } from '@/lib/auth/config';
 
 export const LOGIN_PATH = '/login';
-export const CRON_PATHS = ['/api/recurring/run', '/api/insights/run'];
-const OPEN_PATHS = ['/api/health', ...CRON_PATHS];
+export const CRON_PATHS = ['/api/recurring/run', '/api/insights/run', '/api/reminders/run'];
+/** Static files of the installable app. No data, and fetched without cookies. */
+export const APP_SHELL_PATHS = ['/sw.js', '/manifest.webmanifest', '/icon', '/apple-icon'];
+const OPEN_PATHS = ['/api/health', ...CRON_PATHS, ...APP_SHELL_PATHS];
 
 export type GateInput = {
   pathname: string;

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useForm, useWatch, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -1546,6 +1547,15 @@ export default function ExpenseForm({
               ...accounts.map((a) => ({ value: a.id, label: a.name })),
             ]}
           />
+          {!expense && (
+            <p className="-mt-2 text-xs text-ink-muted">
+              On a friend’s card, or paying it off over time?{' '}
+              <Link href="/plan/recurring?plan=1" className="text-mint hover:text-mint-bright">
+                Set up an installment plan
+              </Link>{' '}
+              instead: each payment becomes the expense.
+            </p>
+          )}
 
           {friends.length > 0 && (
             <div className="rounded-2xl border border-graphite-border-subtle bg-graphite-surface-2/40 p-3.5">

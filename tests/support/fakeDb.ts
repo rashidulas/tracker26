@@ -32,6 +32,8 @@ const MODELS = [
   'insightPreference',
   'insightRun',
   'recap',
+  'pushSubscription',
+  'reminderLog',
 ] as const;
 
 type ModelName = (typeof MODELS)[number];
@@ -61,7 +63,13 @@ const DEFAULTS: Record<ModelName, Doc> = {
   budget: {},
   goal: { dueDate: null, accountId: null },
   friend: { notes: null, color: '#7aa2f7' },
-  friendEntry: { description: null, notes: null, transactionId: null, accountId: null },
+  friendEntry: {
+    description: null,
+    notes: null,
+    transactionId: null,
+    accountId: null,
+    paymentTransactionId: null,
+  },
   merchant: { defaultCategoryId: null, defaultSubcategoryId: null, defaultAccountId: null },
   recurringTransaction: {
     categoryId: null,
@@ -73,6 +81,9 @@ const DEFAULTS: Record<ModelName, Doc> = {
     endDate: null,
     autoPost: false,
     active: true,
+    friendId: null,
+    totalAmount: null,
+    remindDaysBefore: null,
   },
   recurringPosting: { transactionId: null },
   dismissedRecurringSuggestion: {},
@@ -83,10 +94,19 @@ const DEFAULTS: Record<ModelName, Doc> = {
   insightPreference: { enabled: true, mutedUntil: null },
   insightRun: { finishedAt: null, modelCalls: 0 },
   recap: { wording: 'template' },
+  pushSubscription: { label: null, lastSentAt: null },
+  reminderLog: {},
 };
 
 /** Models written without a transaction (see the note at the top). */
-const UNGUARDED = new Set<string>(['insight', 'insightPreference', 'insightRun', 'recap']);
+const UNGUARDED = new Set<string>([
+  'insight',
+  'insightPreference',
+  'insightRun',
+  'recap',
+  'pushSubscription',
+  'reminderLog',
+]);
 
 /** Unique indexes the code relies on (field lists). */
 const UNIQUE: Partial<Record<ModelName, string[][]>> = {
@@ -102,6 +122,8 @@ const UNIQUE: Partial<Record<ModelName, string[][]>> = {
   insightPreference: [['type']],
   insightRun: [['day']],
   recap: [['key']],
+  pushSubscription: [['endpoint']],
+  reminderLog: [['key']],
 };
 
 /** Compound unique keys used in where clauses, e.g. name_type. */
@@ -228,6 +250,8 @@ export class FakeDb {
     insightPreference: [],
     insightRun: [],
     recap: [],
+    pushSubscription: [],
+    reminderLog: [],
   };
   private inTransaction = false;
   /** Number of $transaction calls that committed. */
@@ -359,6 +383,8 @@ export class FakeDb {
   insightPreference = this.model('insightPreference');
   insightRun = this.model('insightRun');
   recap = this.model('recap');
+  pushSubscription = this.model('pushSubscription');
+  reminderLog = this.model('reminderLog');
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     if (this.inTransaction) throw new Error('FakeDb: nested $transaction');

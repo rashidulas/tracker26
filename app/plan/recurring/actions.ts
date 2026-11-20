@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import {
   createRecurring,
   deleteRecurring,
+  paidByRecurring,
+  planProgress,
   postRecurringNow,
   runDueRecurring,
   setRecurringActive,
@@ -20,13 +22,14 @@ export async function getRecurringPageData() {
   await requireSession();
   try {
     const today = todayInAppTimeZone();
-    const [entries, suggestions, upcoming, categories, accounts] = await Promise.all([
+    const [entries, suggestions, upcoming, categories, accounts, friends] = await Promise.all([
       prisma.recurringTransaction.findMany({
         include: {
           category: { select: { id: true, name: true, color: true, icon: true } },
           subcategory: { select: { id: true, name: true } },
           account: { select: { id: true, name: true } },
           toAccount: { select: { id: true, name: true } },
+          friend: { select: { id: true, name: true, color: true } },
         },
         orderBy: [{ active: 'desc' }, { nextDueDate: 'asc' }],
       }),
@@ -47,7 +50,12 @@ export async function getRecurringPageData() {
         select: { id: true, name: true, type: true },
         orderBy: { name: 'asc' },
       }),
+      prisma.friend.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     ]);
+    const paid = await paidByRecurring(
+      prisma,
+      entries.filter((e) => e.totalAmount != null).map((e) => e.id)
+    );
 
     return {
       success: true as const,
@@ -58,11 +66,17 @@ export async function getRecurringPageData() {
           startDate: toDayString(e.startDate),
           nextDueDate: toDayString(e.nextDueDate),
           endDate: e.endDate ? toDayString(e.endDate) : null,
+          /** Installment plans: paid so far, what is left and how many payments. */
+          plan:
+            e.totalAmount != null
+              ? planProgress(e.totalAmount, paid.get(e.id) ?? 0, e.amount)
+              : null,
         })),
         suggestions,
         upcoming,
         categories,
         accounts,
+        friends,
       },
     };
   } catch (error) {
@@ -99,9 +113,17 @@ export async function toggleRecurring(id: string, active: boolean) {
   return plain(await setRecurringActive(id, active));
 }
 
-export async function postRecurring(id: string, dueDate: string) {
+/** Post an occurrence; `amount` pays a different amount this one time. */
+export async function postRecurring(id: string, dueDate: string, amount?: number) {
   await requireSession();
-  return plain(await postRecurringNow(id, dueDate));
+  const result = await postRecurringNow(
+    id,
+    dueDate,
+    typeof amount === 'number' ? { amount } : {}
+  );
+  return result.success
+    ? { success: true as const, completed: result.data.completed, amount: result.data.amount }
+    : { success: false as const, error: result.error };
 }
 
 export async function skipRecurringOccurrence(id: string, dueDate: string) {

@@ -15,6 +15,16 @@
  * If any step fails the whole transaction rolls back. Opening the app twice,
  * two tabs, or the cron route racing the app can never post D twice.
  *
+ * PAYING A FRIEND BACK, AND INSTALLMENT PLANS
+ * -------------------------------------------
+ * An expense entry with friendId pays that friend: posting an occurrence
+ * writes the expense (which moves the account) and an I_PAID_THEM friend
+ * entry linked to it by paymentTransactionId (which lowers what you owe).
+ * An entry with totalAmount is an installment plan. What is paid is the sum
+ * of the transactions posted from it, so editing or deleting a payment
+ * changes what is left; the last payment is the remainder and the plan
+ * switches itself off when nothing is left.
+ *
  * Server-only.
  */
 import type { Prisma, RecurringTransaction } from '@prisma/client';
@@ -79,10 +89,45 @@ export const recurringInputSchema = z
       .transform((v) => v || null)
       .refine((v) => v === null || isValidDay(v), 'End date must be a valid date'),
     autoPost: z.boolean().default(false),
+    /** Expenses only: each payment also pays back this friend. */
+    friendId: optionalId,
+    /** Installment plan: the total to pay off. Null = repeats until ended. */
+    totalAmount: z
+      .number({ invalid_type_error: 'Total must be a number' })
+      .finite('Total must be a number')
+      .positive('Total must be positive')
+      .nullish()
+      .transform((v) => v ?? null),
+    /**
+     * Create only, with a friend and a total: also add the total to what you
+     * owe the friend, dated `debtDate` (default: the first due date).
+     */
+    recordDebt: z.boolean().optional(),
+    debtDate: z
+      .string()
+      .trim()
+      .nullish()
+      .transform((v) => v || null)
+      .refine((v) => v === null || isValidDay(v), 'Purchase date must be a valid date'),
+    /** Days before the due day to remind; negative = never; null = default. */
+    remindDaysBefore: z.number().int().min(-1).max(60).nullish().transform((v) => v ?? null),
     /** Past transactions to link to this entry (from a detection suggestion). */
     linkTransactionIds: z.array(z.string().regex(objectId)).max(500).optional(),
   })
   .superRefine((d, ctx) => {
+    if (d.friendId && d.kind !== 'EXPENSE') {
+      ctx.addIssue({ code: 'custom', path: ['friendId'], message: 'Only an expense can pay back a friend' });
+    }
+    if (d.totalAmount !== null && Math.round(d.totalAmount * 100) < Math.round(d.amount * 100)) {
+      ctx.addIssue({ code: 'custom', path: ['totalAmount'], message: 'The total is less than one payment' });
+    }
+    if (d.totalAmount !== null && d.endDate) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endDate'],
+        message: 'An installment plan ends when the total is paid, so it has no end date',
+      });
+    }
     if (d.endDate && d.endDate < d.startDate) {
       ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'End date is before the first due date' });
     }
@@ -143,6 +188,10 @@ async function validateTemplate(tx: Tx, p: ParsedRecurring) {
   if (p.kind === 'TRANSFER' && p.accountId === p.toAccountId) fail('From and To accounts cannot be the same');
   const accounts = await tx.account.findMany({ where: { id: { in: accountIds } }, select: { id: true } });
   if (accounts.length !== new Set(accountIds).size) fail('Account not found');
+  if (p.friendId) {
+    const friend = await tx.friend.findUnique({ where: { id: p.friendId }, select: { id: true } });
+    if (!friend) fail('Friend not found');
+  }
   if (p.kind === 'TRANSFER') return;
   const category = await tx.category.findUnique({
     where: { id: p.categoryId! },
@@ -163,7 +212,11 @@ async function validateTemplate(tx: Tx, p: ParsedRecurring) {
 
 async function templateData(tx: Tx, p: ParsedRecurring) {
   await validateTemplate(tx, p);
-  const merchant = p.kind === 'TRANSFER' ? null : await ensureMerchant(tx, p.merchantOrSource);
+  // A plan's payments are listed under what was bought ("Camera") when no
+  // merchant was given, instead of as nameless expenses.
+  const merchantSource =
+    p.merchantOrSource?.trim() || (p.totalAmount !== null ? p.name?.trim() : '') || null;
+  const merchant = p.kind === 'TRANSFER' ? null : await ensureMerchant(tx, merchantSource);
   const merchantText = p.kind === 'TRANSFER' ? cleanMerchantName(p.merchantOrSource) : merchant?.name ?? null;
   const name =
     cleanMerchantName(p.name) ?? merchantText ?? (p.kind === 'TRANSFER' ? 'Transfer' : 'Recurring entry');
@@ -181,7 +234,61 @@ async function templateData(tx: Tx, p: ParsedRecurring) {
     frequency: p.frequency,
     endDate: p.endDate ? parseDay(p.endDate) : null,
     autoPost: p.autoPost,
+    friendId: p.kind === 'EXPENSE' ? p.friendId : null,
+    totalAmount: p.totalAmount === null ? null : toCents(p.totalAmount) / 100,
+    remindDaysBefore: p.remindDaysBefore,
   };
+}
+
+// ==================== INSTALLMENT PLANS ====================
+
+const toCents = (n: number) => Math.round(n * 100);
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+export type PlanProgress = {
+  total: number;
+  paid: number;
+  remaining: number;
+  /** Payments still to make at the regular amount (the last may be smaller). */
+  paymentsLeft: number;
+  /** The next payment: the regular amount, or what is left if that is less. */
+  nextAmount: number;
+};
+
+export function planProgress(total: number, paid: number, amount: number): PlanProgress {
+  const remaining = Math.max(0, toCents(total) - toCents(paid));
+  const each = toCents(amount);
+  return {
+    total: toCents(total) / 100,
+    paid: toCents(paid) / 100,
+    remaining: remaining / 100,
+    paymentsLeft: each > 0 ? Math.ceil(remaining / each) : 0,
+    nextAmount: Math.min(each, remaining) / 100,
+  };
+}
+
+type PaidDb = { transaction: Pick<Tx['transaction'], 'findMany'> };
+
+/** What has been posted from each of these entries so far. */
+export async function paidByRecurring(db: PaidDb, ids: string[]): Promise<Map<string, number>> {
+  const paid = new Map<string, number>();
+  if (ids.length === 0) return paid;
+  const rows = await db.transaction.findMany({
+    where: { recurringId: { in: ids } },
+    select: { recurringId: true, amount: true },
+  });
+  for (const row of rows) {
+    if (!row.recurringId) continue;
+    paid.set(row.recurringId, (paid.get(row.recurringId) ?? 0) + toCents(row.amount));
+  }
+  for (const [id, value] of paid) paid.set(id, value / 100);
+  return paid;
+}
+
+async function isPaidOff(tx: Tx, id: string, totalAmount: number | null) {
+  if (totalAmount === null) return false;
+  const paid = (await paidByRecurring(tx, [id])).get(id) ?? 0;
+  return toCents(paid) >= toCents(totalAmount);
 }
 
 /**
@@ -229,6 +336,22 @@ export async function createRecurringIn(
     data: { ...data, startDate: start, nextDueDate: start, active: true },
   });
   const linked = await linkHistory(tx, created.id, p);
+  // "I owe Fuad 15,000 for the camera": the debt the plan then pays down.
+  if (p.recordDebt && created.friendId && created.totalAmount !== null) {
+    await tx.friendEntry.create({
+      data: {
+        friendId: created.friendId,
+        date: parseDay(p.debtDate ?? p.startDate),
+        amount: created.totalAmount,
+        type: 'I_OWE_THEM',
+        description: created.name,
+        notes: 'Paid back in installments',
+        accountId: null,
+        transactionId: null,
+        paymentTransactionId: null,
+      },
+    });
+  }
   return { ...created, linked };
 }
 
@@ -249,7 +372,8 @@ export async function updateRecurring(
     const scheduleChanged =
       p.frequency !== existing.frequency || p.startDate !== toDayString(existing.nextDueDate);
     const next = scheduleChanged ? parseDay(p.startDate) : existing.nextDueDate;
-    const ended = Boolean(data.endDate && next > data.endDate);
+    const ended =
+      Boolean(data.endDate && next > data.endDate) || (await isPaidOff(tx, id, data.totalAmount));
     return tx.recurringTransaction.update({
       where: { id },
       data: {
@@ -281,6 +405,9 @@ export async function setRecurringActiveIn(
   if (!existing) fail('Recurring entry not found');
   if (active && existing.endDate && existing.nextDueDate > existing.endDate) {
     fail('This entry has ended. Change its end date to resume it.');
+  }
+  if (active && (await isPaidOff(tx, id, existing.totalAmount ?? null))) {
+    fail('This plan is paid off. Raise its total to keep paying.');
   }
   return tx.recurringTransaction.update({ where: { id }, data: { active } });
 }
@@ -323,8 +450,12 @@ async function handleOccurrence(
   dueDay: DayString,
   action: 'POST' | 'SKIP',
   postDate: DayString,
-  /** Posted by the due check, not by the user: goes to the review inbox. */
-  auto = false
+  options: {
+    /** Posted by the due check, not by the user: goes to the review inbox. */
+    auto?: boolean;
+    /** Pay a different amount this time (more, less, or the rest of a plan). */
+    amount?: number;
+  } = {}
 ) {
   const rec = await tx.recurringTransaction.findUnique({ where: { id } });
   if (!rec) fail('Recurring entry not found');
@@ -333,6 +464,24 @@ async function handleOccurrence(
 
   const due = parseDay(dueDay);
   let transactionId: string | null = null;
+  let amount = rec.amount;
+  let completed = false;
+  if (action === 'POST') {
+    if (options.amount !== undefined) {
+      if (!Number.isFinite(options.amount) || options.amount <= 0) fail('Amount must be positive');
+      amount = toCents(options.amount) / 100;
+    }
+    if (rec.totalAmount != null) {
+      const paid = (await paidByRecurring(tx, [id])).get(id) ?? 0;
+      const remaining = toCents(rec.totalAmount) - toCents(paid);
+      if (remaining <= 0) fail(`${rec.name} is already paid off`);
+      if (options.amount === undefined) amount = Math.min(toCents(amount), remaining) / 100;
+      else if (toCents(amount) > remaining) {
+        fail(`Only ${money(remaining / 100)} is left to pay on ${rec.name}`);
+      }
+      completed = toCents(amount) >= remaining;
+    }
+  }
   try {
     const posting = await tx.recurringPosting.create({
       data: { recurringId: id, dueDate: due, status: action === 'POST' ? 'POSTED' : 'SKIPPED' },
@@ -340,10 +489,31 @@ async function handleOccurrence(
     if (action === 'POST') {
       const created = await createTransactionIn(
         tx,
-        { ...templateToInput(rec, postDate), ...(auto ? { source: 'recurring' as const } : {}) },
+        {
+          ...templateToInput(rec, postDate),
+          amount,
+          ...(options.auto ? { source: 'recurring' as const } : {}),
+        },
         { recurringId: id }
       );
       transactionId = created.id;
+      if (rec.friendId && rec.kind === 'EXPENSE') {
+        const friend = await tx.friend.findUnique({ where: { id: rec.friendId }, select: { id: true } });
+        if (friend) {
+          await tx.friendEntry.create({
+            data: {
+              friendId: friend.id,
+              date: parseDay(postDate),
+              amount,
+              type: 'I_PAID_THEM',
+              description: rec.name,
+              accountId: null,
+              transactionId: null,
+              paymentTransactionId: created.id,
+            },
+          });
+        }
+      }
       await tx.recurringPosting.update({ where: { id: posting.id }, data: { transactionId } });
     }
   } catch (error) {
@@ -352,13 +522,20 @@ async function handleOccurrence(
   }
 
   const next = nextAfter(toDayString(rec.startDate), rec.frequency as Frequency, dueDay);
-  const ended = Boolean(rec.endDate && parseDay(next) > rec.endDate);
+  const ended = completed || Boolean(rec.endDate && parseDay(next) > rec.endDate);
   const { count } = await tx.recurringTransaction.updateMany({
     where: { id, nextDueDate: due },
     data: { nextDueDate: parseDay(next), ...(ended ? { active: false } : {}) },
   });
   if (count !== 1) fail(ALREADY_HANDLED);
-  return { transactionId, nextDueDate: next, ended };
+  return {
+    transactionId,
+    nextDueDate: next,
+    ended,
+    /** An installment plan that this payment finished. */
+    completed,
+    amount: action === 'POST' ? amount : 0,
+  };
 }
 
 /**
@@ -368,13 +545,25 @@ async function handleOccurrence(
 export async function postRecurringNow(
   id: string,
   dueDay: DayString,
-  options: { today?: DayString } = {},
+  options: { today?: DayString; amount?: number } = {},
   deps?: Partial<TransactionDeps>
 ) {
+  return runLedgerWrite(deps, 'post recurring entry', (tx) =>
+    postRecurringNowIn(tx, id, dueDay, options)
+  );
+}
+
+/** postRecurringNow, inside a transaction the caller already opened. */
+export async function postRecurringNowIn(
+  tx: Tx,
+  id: string,
+  dueDay: DayString,
+  options: { today?: DayString; amount?: number } = {}
+) {
   const today = options.today ?? todayInAppTimeZone();
-  return runLedgerWrite(deps, 'post recurring entry', async (tx) => {
-    if (!isValidDay(dueDay)) fail('Invalid due date');
-    return handleOccurrence(tx, id, dueDay, 'POST', dueDay <= today ? dueDay : today);
+  if (!isValidDay(dueDay)) fail('Invalid due date');
+  return handleOccurrence(tx, id, dueDay, 'POST', dueDay <= today ? dueDay : today, {
+    amount: options.amount,
   });
 }
 
@@ -420,7 +609,7 @@ export async function runDueRecurring(
         if (!rec || !rec.active || !rec.autoPost) return null;
         const dueDay = toDayString(rec.nextDueDate);
         if (dueDay > today) return null;
-        return handleOccurrence(tx, entry.id, dueDay, 'POST', dueDay, true);
+        return handleOccurrence(tx, entry.id, dueDay, 'POST', dueDay, { auto: true });
       });
       if (!outcome.success) {
         // Another run got there first: nothing to report.
@@ -453,21 +642,35 @@ export type UpcomingItem = {
   categoryColor: string | null;
   categoryIcon: string | null;
   accountName: string | null;
+  /** The friend this payment pays back. */
+  friendName: string | null;
+  /** Installment plans: where the plan stands before this payment. */
+  plan: PlanProgress | null;
+  /** The entry's own reminder lead time (null = app default). */
+  remindDaysBefore: number | null;
 };
 
 type UpcomingSource = Pick<
   RecurringTransaction,
   'id' | 'name' | 'kind' | 'amount' | 'frequency' | 'startDate' | 'nextDueDate' | 'endDate' | 'autoPost'
 > & {
+  totalAmount?: number | null;
+  remindDaysBefore?: number | null;
   category?: { name: string; color: string; icon: string | null } | null;
   account?: { name: string } | null;
+  friend?: { name: string } | null;
 };
 
-/** Occurrences from each entry's next due day through `today + days`. */
+/**
+ * Occurrences from each entry's next due day through `today + days`. `paid`
+ * (paidByRecurring) is needed for installment plans: they stop when the total
+ * is reached and their last payment is the remainder.
+ */
 export function buildUpcoming(
   entries: UpcomingSource[],
   today: DayString,
-  days = UPCOMING_DAYS
+  days = UPCOMING_DAYS,
+  paid: Map<string, number> = new Map()
 ): UpcomingItem[] {
   const horizon = addDays(today, days);
   const items: UpcomingItem[] = [];
@@ -475,13 +678,27 @@ export function buildUpcoming(
     const next = toDayString(e.nextDueDate);
     if (next > horizon) continue;
     const end = e.endDate ? toDayString(e.endDate) : null;
-    const dates = occurrencesBetween(toDayString(e.startDate), e.frequency as Frequency, next, horizon, end, 10);
+    const plan =
+      e.totalAmount != null ? planProgress(e.totalAmount, paid.get(e.id) ?? 0, e.amount) : null;
+    if (plan && plan.paymentsLeft === 0) continue;
+    const dates = occurrencesBetween(
+      toDayString(e.startDate),
+      e.frequency as Frequency,
+      next,
+      horizon,
+      end,
+      Math.min(10, plan?.paymentsLeft ?? 10)
+    );
     dates.forEach((dueDate, i) => {
+      // Later payments of a plan assume the ones before them were made in full.
+      const planAt = plan
+        ? planProgress(plan.total, plan.paid + e.amount * i, e.amount)
+        : null;
       items.push({
         recurringId: e.id,
         name: e.name,
         kind: e.kind,
-        amount: e.amount,
+        amount: planAt ? planAt.nextAmount : e.amount,
         dueDate,
         overdue: dueDate < today,
         actionable: i === 0,
@@ -490,6 +707,9 @@ export function buildUpcoming(
         categoryColor: e.category?.color ?? null,
         categoryIcon: e.category?.icon ?? null,
         accountName: e.account?.name ?? null,
+        friendName: e.friend?.name ?? null,
+        plan: planAt,
+        remindDaysBefore: e.remindDaysBefore ?? null,
       });
     });
   }

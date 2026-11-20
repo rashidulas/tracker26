@@ -87,6 +87,46 @@ sets the day. The Home page lists what is due in the next 14 days with
   (`lib/recurringDetection.ts`).
 - Dashboard charts can show everyday and recurring spending separately.
 
+## Installment plans and paying a friend back
+
+Something bought now and paid off over time (on a friend's card, on credit) is
+an installment plan: Plan → Recurring → **Installment plan**. It is a
+recurring expense with a total (`lib/recurring.ts`).
+
+- Give it the total, the number of payments (or the payment) and who you pay.
+  With a friend, starting the plan adds the total to what you owe them
+  (untick that if the debt is already on the Friends page).
+- Nothing is spent on the day of the purchase. Each payment is an expense in
+  the plan's category from the account you pay with, and lowers what you owe
+  the friend. The two are linked: editing or deleting the expense changes the
+  friend's balance and what is left on the plan.
+- What is paid is the sum of the payments posted from the plan, so paying a
+  different amount once (**Other amount**) just changes what is left. The last
+  payment is the remainder and the plan then ends itself.
+- A recurring expense without a total can also pay back a friend (rent to a
+  flatmate).
+- The assistant can do both: "I bought a camera for 15000 on Fuad's card, I'll
+  pay him monthly for 3 years" and "I paid Fuad this month's camera payment".
+
+## Reminders
+
+Plan → Reminders lists what is due today or overdue, what is coming up, and the
+next 60 days. An entry starts reminding 2 days before its due date (set per
+entry: on the day, 1 to 7 days before, or never; `lib/reminders.ts`). Entries
+that post automatically do not remind unless asked to.
+
+- The first time the app is opened on a day with something to remind about, a
+  pop-up lists it with **Mark paid**, **Other amount** and **Skip**. It shows
+  again when "coming up" turns into "due today". The Plan item carries a badge
+  until everything due is paid or skipped.
+- Notifications use Web Push (`lib/push.ts`, `public/sw.js`). Set
+  `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`, then turn them on per device
+  under Plan → Reminders. On iPhone the app has to be added to the Home Screen
+  first. Each stage (coming up, due today, overdue) is sent once.
+- They are sent by `GET/POST /api/reminders/run` with
+  `Authorization: Bearer $CRON_SECRET`, scheduled daily at 12:00 UTC in
+  `vercel.json`. The route also runs the recurring due check first.
+
 ## Insights and recaps
 
 The Home page shows up to three insights, and Home → Insights keeps a weekly

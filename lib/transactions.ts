@@ -56,6 +56,7 @@ export const TRANSACTION_PAGES = [
   '/plan/goals',
   '/friends',
   '/plan/recurring',
+  '/plan/reminders',
   '/settings/merchants',
   // Lists categories with how many transactions use each.
   '/settings/categories',
@@ -670,6 +671,8 @@ async function syncGoalContributions(tx: Tx, transfer: Transaction): Promise<voi
 async function deleteLinkedRecords(tx: Tx, transactionIds: string[]) {
   if (transactionIds.length === 0) return;
   await tx.friendEntry.deleteMany({ where: { transactionId: { in: transactionIds } } });
+  // The debt side of a recurring payment to a friend (lib/recurring.ts).
+  await tx.friendEntry.deleteMany({ where: { paymentTransactionId: { in: transactionIds } } });
   await tx.goalContribution.deleteMany({ where: { transactionId: { in: transactionIds } } });
 }
 
@@ -865,6 +868,11 @@ export async function updateTransactionIn(
   }
 
   const updated = await tx.transaction.update({ where: { id }, data });
+  // A payment to a friend: what it paid back follows the expense.
+  await tx.friendEntry.updateMany({
+    where: { paymentTransactionId: id },
+    data: { amount: updated.amount, date: updated.date },
+  });
   if (updated.kind === 'TRANSFER') {
     await syncGoalContributions(tx, updated);
   } else {

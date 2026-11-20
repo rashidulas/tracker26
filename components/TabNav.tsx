@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useReviewCount } from '@/components/review/reviewCount';
+import { useDueCount } from '@/components/reminders/reminderStore';
 
 interface Tab {
   href: string;
@@ -10,7 +11,7 @@ interface Tab {
   /** Match only the exact path (for index tabs such as "/"). */
   exact?: boolean;
   /** Show how many entries wait in the review inbox next to the label. */
-  badge?: 'review';
+  badge?: 'review' | 'reminders';
 }
 
 /**
@@ -20,6 +21,7 @@ interface Tab {
 export default function TabNav({ tabs, label }: { tabs: Tab[]; label: string }) {
   const pathname = usePathname();
   const reviewCount = useReviewCount();
+  const dueCount = useDueCount();
 
   return (
     <nav aria-label={label} className="mb-6 -mx-1 px-1 overflow-x-auto scrollbar-none">
@@ -28,6 +30,7 @@ export default function TabNav({ tabs, label }: { tabs: Tab[]; label: string }) 
           const active = tab.exact
             ? pathname === tab.href
             : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+          const count = tab.badge === 'review' ? reviewCount : tab.badge === 'reminders' ? dueCount : 0;
           return (
             <li key={tab.href} className="flex-1 sm:flex-initial">
               <Link
@@ -40,14 +43,14 @@ export default function TabNav({ tabs, label }: { tabs: Tab[]; label: string }) 
                 }`}
               >
                 {tab.label}
-                {tab.badge === 'review' && reviewCount > 0 && (
+                {count > 0 && (
                   <span
                     className={`ml-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
                       active ? 'bg-graphite text-mint' : 'bg-mint text-graphite'
                     }`}
                   >
-                    {reviewCount > 99 ? '99+' : reviewCount}
-                    <span className="sr-only"> to review</span>
+                    {count > 99 ? '99+' : count}
+                    <span className="sr-only">{tab.badge === 'review' ? ' to review' : ' due'}</span>
                   </span>
                 )}
               </Link>

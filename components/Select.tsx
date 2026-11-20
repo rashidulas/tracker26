@@ -4,17 +4,20 @@ import { ChevronDown } from 'lucide-react';
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
+  hint?: string;
   options: { value: string; label: string }[];
 }
 
 const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, className = '', id, ...props }, ref) => {
+  ({ label, error, hint, options, className = '', id, ...props }, ref) => {
     const generatedId = useId();
     const selectId = id ?? generatedId;
     const errorId = `${selectId}-error`;
+    const hintId = `${selectId}-hint`;
     const describedBy =
-      [props['aria-describedby'], error ? errorId : null].filter(Boolean).join(' ') ||
-      undefined;
+      [props['aria-describedby'], hint ? hintId : null, error ? errorId : null]
+        .filter(Boolean)
+        .join(' ') || undefined;
 
     return (
       <div className="w-full">
@@ -60,6 +63,11 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(
             className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted"
           />
         </div>
+        {hint && !error && (
+          <p id={hintId} className="mt-1.5 text-xs text-ink-muted">
+            {hint}
+          </p>
+        )}
         {error && (
           <p id={errorId} className="mt-1.5 text-sm text-danger">
             {error}

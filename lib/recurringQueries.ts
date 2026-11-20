@@ -4,21 +4,29 @@
  */
 import { prisma } from '@/lib/prisma';
 import { addDays, parseDay, todayInAppTimeZone, type DayString } from '@/lib/dates';
-import { buildUpcoming, UPCOMING_DAYS, type UpcomingItem } from '@/lib/recurring';
+import { buildUpcoming, paidByRecurring, UPCOMING_DAYS, type UpcomingItem } from '@/lib/recurring';
 import { detectRecurring, type RecurringSuggestion } from '@/lib/recurringDetection';
 
 /** How much history detection looks at: enough for two yearly charges. */
 const DETECTION_DAYS = 800;
 
-export async function loadUpcoming(today: DayString = todayInAppTimeZone()): Promise<UpcomingItem[]> {
+export async function loadUpcoming(
+  today: DayString = todayInAppTimeZone(),
+  days = UPCOMING_DAYS
+): Promise<UpcomingItem[]> {
   const entries = await prisma.recurringTransaction.findMany({
-    where: { active: true, nextDueDate: { lte: parseDay(addDays(today, UPCOMING_DAYS)) } },
+    where: { active: true, nextDueDate: { lte: parseDay(addDays(today, days)) } },
     include: {
       category: { select: { name: true, color: true, icon: true } },
       account: { select: { name: true } },
+      friend: { select: { name: true } },
     },
   });
-  return buildUpcoming(entries, today);
+  const paid = await paidByRecurring(
+    prisma,
+    entries.filter((e) => e.totalAmount != null).map((e) => e.id)
+  );
+  return buildUpcoming(entries, today, days, paid);
 }
 
 export async function loadSuggestions(

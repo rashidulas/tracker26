@@ -16,7 +16,7 @@
  */
 import type { Friend, FriendEntry } from '@prisma/client';
 import { z } from 'zod';
-import { isValidDay, parseDay } from '@/lib/dates';
+import { isValidDay, parseDay, toDayString } from '@/lib/dates';
 import {
   fail,
   refreshSharedAmount,
@@ -183,6 +183,22 @@ export async function updateFriendEntry(
     if (!existing) fail('Entry not found');
     const data = parseEntry({ ...input, friendId: existing.friendId });
 
+    if (existing.paymentTransactionId) {
+      // The debt side of a recurring payment: the expense holds the money.
+      if (
+        data.amount !== existing.amount ||
+        data.type !== existing.type ||
+        data.date !== toDayString(existing.date) ||
+        data.accountId
+      ) {
+        fail('This payment was recorded as an expense. Change its amount or date on the expense instead.');
+      }
+      return tx.friendEntry.update({
+        where: { id },
+        data: { description: data.description, notes: data.notes },
+      });
+    }
+
     if (existing.transactionId) {
       if (data.type !== existing.type) {
         fail("This entry is a friend's share of an expense, so it stays \"They owe me\"");
@@ -248,6 +264,8 @@ export async function deleteFriend(
       ...new Set(entries.map((e) => e.transactionId).filter((t): t is string => !!t)),
     ];
     for (const transactionId of expenses) await refreshSharedAmount(tx, transactionId);
+    // Recurring payments to this friend keep going as plain expenses.
+    await tx.recurringTransaction.updateMany({ where: { friendId: id }, data: { friendId: null } });
     await tx.friend.delete({ where: { id } });
     return { deleted: entries.length };
   });

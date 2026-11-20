@@ -20,7 +20,11 @@ const ROOT = path.resolve(__dirname, '..');
 const ACTIONS_WITHOUT_SESSION = ['app/login/actions.ts'];
 /** Public by design (lib/auth/gate.ts). The cron routes check CRON_SECRET instead. */
 const HEALTH_ROUTE = 'app/api/health/route.ts';
-const CRON_ROUTES = ['app/api/recurring/run/route.ts', 'app/api/insights/run/route.ts'];
+const CRON_ROUTES = [
+  'app/api/recurring/run/route.ts',
+  'app/api/insights/run/route.ts',
+  'app/api/reminders/run/route.ts',
+];
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {

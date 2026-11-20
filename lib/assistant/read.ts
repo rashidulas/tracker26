@@ -37,7 +37,7 @@ import { expenseCategoryAllocations, myShareOfExpense } from '@/lib/expenseAlloc
 import { signedFriendAmount } from '@/lib/friends';
 import { goalProgress as computeGoalProgress } from '@/lib/goals';
 import { loadAccountBalances } from '@/lib/ledgerBalances';
-import { buildUpcoming } from '@/lib/recurring';
+import { buildUpcoming, paidByRecurring, planProgress } from '@/lib/recurring';
 import { detectRecurring } from '@/lib/recurringDetection';
 import { FREQUENCY_LABELS, type Frequency } from '@/lib/recurringSchedule';
 import type { SearchFilters } from '@/lib/transactionFilters';
@@ -830,11 +830,10 @@ export async function upcomingRecurring(
   const days = Math.min(Math.max(Math.round(input.days ?? 30), 1), 365);
   const horizon = addDays(ctx.today, days);
 
-  const [lookups, entries, history, existing, dismissed] = await Promise.all([
+  const [lookups, friends, activeEntries, history, existing, dismissed] = await Promise.all([
     loadLookups(ctx.db),
-    ctx.db.recurringTransaction.findMany({
-      where: { active: true, nextDueDate: { lte: parseDay(horizon) } },
-    }),
+    ctx.db.friend.findMany({ select: { id: true, name: true } }),
+    ctx.db.recurringTransaction.findMany({ where: { active: true } }),
     ctx.db.transaction.findMany({
       where: {
         kind: { in: ['INCOME', 'EXPENSE'] },
@@ -864,16 +863,23 @@ export async function upcomingRecurring(
   const name = (id: string | null, map: Map<string, { name: string }>) =>
     id ? map.get(id)?.name ?? null : null;
 
+  const friendNames = new Map(friends.map((f) => [f.id, f.name]));
+  const entries = activeEntries.filter((e) => toDayString(e.nextDueDate) <= horizon);
+  const planEntries = activeEntries.filter((e) => e.totalAmount != null);
+  const paid = await paidByRecurring(ctx.db, planEntries.map((e) => e.id));
+
   const upcoming = buildUpcoming(
     entries.map((e) => ({
       ...e,
+      friend: e.friendId && friendNames.has(e.friendId) ? { name: friendNames.get(e.friendId)! } : null,
       category: e.categoryId
         ? { name: name(e.categoryId, lookups.categories) ?? '(deleted category)', color: '', icon: null }
         : null,
       account: { name: name(e.accountId, lookups.accounts) ?? '(deleted account)' },
     })),
     ctx.today,
-    days
+    days,
+    paid
   ).filter((i) => !input.kind || i.kind === input.kind);
 
   const suggestions = detectRecurring(history, {
@@ -915,7 +921,35 @@ export async function upcomingRecurring(
       postsAutomatically: i.autoPost,
       category: i.categoryName,
       account: i.accountName,
+      /** The friend this payment pays back; posting it lowers what the user owes them. */
+      ...(i.friendName ? { paysBackFriend: i.friendName } : {}),
+      /** Installment plan: where it stands before this payment. */
+      ...(i.plan
+        ? { plan: { total: i.plan.total, paid: i.plan.paid, remaining: i.plan.remaining, paymentsLeft: i.plan.paymentsLeft } }
+        : {}),
     })),
+    /** Every active installment plan (a total paid off in regular payments), also those not due within the window. */
+    ...(planEntries.length > 0
+      ? {
+          installmentPlans: planEntries
+            .filter((e) => !input.kind || e.kind === input.kind)
+            .map((e) => {
+              const progress = planProgress(e.totalAmount!, paid.get(e.id) ?? 0, e.amount);
+              return {
+                recurringId: e.id,
+                name: clip(e.name, 80),
+                payment: round2(e.amount),
+                frequency: FREQUENCY_LABELS[e.frequency as Frequency] ?? e.frequency,
+                nextDue: toDayString(e.nextDueDate),
+                total: progress.total,
+                paid: progress.paid,
+                remaining: progress.remaining,
+                paymentsLeft: progress.paymentsLeft,
+                ...(e.friendId && friendNames.has(e.friendId) ? { paysBackFriend: friendNames.get(e.friendId)! } : {}),
+              };
+            }),
+        }
+      : {}),
     totals: { scheduledExpenses: expenses.value, scheduledIncome: income.value },
     /** Entries the user paused: nothing comes due until they are resumed. */
     ...(paused.length > 0

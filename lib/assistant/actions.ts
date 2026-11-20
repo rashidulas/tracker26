@@ -41,7 +41,14 @@ import { createFriendEntryIn, createFriendIn } from '@/lib/friendLedger';
 import { signedFriendAmount } from '@/lib/friends';
 import { contributionNeedsTransfer, createContributionIn, createGoalIn } from '@/lib/goalLedger';
 import { MerchantDefaultError, setMerchantCategoryDefaultIn } from '@/lib/merchants';
-import { createRecurringIn, setRecurringActiveIn, skipRecurringIn } from '@/lib/recurring';
+import {
+  createRecurringIn,
+  paidByRecurring,
+  planProgress,
+  postRecurringNowIn,
+  setRecurringActiveIn,
+  skipRecurringIn,
+} from '@/lib/recurring';
 import { FREQUENCIES, FREQUENCY_LABELS, type Frequency } from '@/lib/recurringSchedule';
 import {
   applyMerchantCategoryIn,
@@ -1250,10 +1257,16 @@ const updateBudgets = define({
 
 const updateRecurring = define({
   description:
-    'Propose a change to recurring entries (bills, subscriptions, paychecks, regular transfers). action "create": set up a new one from `kind`, `amount`, `frequency`, `startDate` (the first due day), the account and, for income and expenses, a category. action "pause": stop an entry from coming due until it is resumed. action "resume": undo a pause. action "skip": skip only the next occurrence of an entry and move it on to the one after. Get `recurringId` from upcomingRecurring.',
+    'Propose a change to recurring entries (bills, subscriptions, paychecks, regular transfers) and installment plans. action "create": set up a new one from `kind`, `amount`, `frequency`, `startDate` (the first due day), the account and, for income and expenses, a category. For something bought now and paid off over time (on a friend\'s card, on credit, a loan from a friend) create an EXPENSE with `totalAmount` (the whole amount to pay off) and `amount` (each payment: totalAmount divided by the number of payments, rounded up to the cent); it ends by itself when the total is paid. With `friendId` every payment also lowers what the user owes that friend, and `recordDebt` true first adds totalAmount to what they owe (leave it false when that debt is already on the Friends page). action "pay": record the next payment of an entry now (the user says they paid it); `payAmount` pays a different amount this once. action "pause": stop an entry from coming due until it is resumed. action "resume": undo a pause. action "skip": skip only the next occurrence of an entry and move it on to the one after. Get `recurringId` from upcomingRecurring.',
   inputSchema: z.object({
-    action: z.enum(['create', 'pause', 'resume', 'skip']),
-    recurringId: id.optional().describe('For "pause", "resume" and "skip": the entry, from upcomingRecurring.'),
+    action: z.enum(['create', 'pay', 'pause', 'resume', 'skip']),
+    recurringId: id.optional().describe('For "pay", "pause", "resume" and "skip": the entry, from upcomingRecurring.'),
+    payAmount: amount.optional().describe('For "pay": pay this instead of the regular amount, this once.'),
+    totalAmount: amount.optional().describe('For "create": makes it an installment plan that ends when this total is paid.'),
+    friendId: id.nullish().describe('For "create" (expenses): the friend each payment pays back, from friendBalances.'),
+    recordDebt: z.boolean().optional().describe('For "create" with friendId and totalAmount: also add totalAmount to what the user owes the friend. False when that debt is already recorded.'),
+    purchaseDate: day.optional().describe('For "create" with recordDebt: the day the debt started (the purchase). Defaults to the first due day.'),
+    remindDaysBefore: z.number().int().min(-1).max(60).optional().describe('For "create": remind this many days before each due day (0 = on the day, -1 = never). Leave out for the default of 2.'),
     name: z.string().max(80).optional().describe('For "create": a short name. Defaults to the merchant.'),
     kind: z.enum(['EXPENSE', 'INCOME', 'TRANSFER']).optional().describe('For "create".'),
     amount: amount.optional().describe('For "create": the amount each time.'),
@@ -1272,7 +1285,7 @@ const updateRecurring = define({
     notes: z.string().max(500).nullish(),
   }),
   editable: /^(amount|startDate|name)$/,
-  perform: async (tx, input) => {
+  perform: async (tx, input, ctx) => {
     const names = await loadNames(tx);
     const link = { href: buildAppLink({ page: 'recurring' }).href, label: 'View in Recurring' };
 
@@ -1286,6 +1299,10 @@ const updateRecurring = define({
       const account = accountOf(names, input.accountId);
       const to = input.kind === 'TRANSFER' ? accountOf(names, input.toAccountId, 'toAccountId') : null;
       const category = input.kind === 'TRANSFER' ? null : categoryOf(names, input.categoryId, input.kind);
+      const friend = input.friendId ? await friendOf(tx, input.friendId) : null;
+      if (friend && input.kind !== 'EXPENSE') bad('Only an expense can pay back a friend.');
+      if (input.totalAmount !== undefined) checkAmount(input.totalAmount);
+      const recordDebt = Boolean(input.recordDebt && friend && input.totalAmount !== undefined);
       const created = await createRecurringIn(tx, {
         name: input.name,
         kind: input.kind,
@@ -1300,14 +1317,23 @@ const updateRecurring = define({
         startDate: input.startDate,
         endDate: input.endDate ?? null,
         autoPost: input.autoPost ?? false,
+        friendId: friend?.id ?? null,
+        totalAmount: input.totalAmount ?? null,
+        recordDebt,
+        debtDate: input.purchaseDate ?? null,
+        remindDaysBefore: input.remindDaysBefore ?? null,
       });
       const frequency = FREQUENCY_LABELS[created.frequency as Frequency] ?? created.frequency;
+      const plan = created.totalAmount != null ? planProgress(created.totalAmount, 0, created.amount) : null;
+      const owedAfter = recordDebt && friend ? await friendBalance(tx, friend.id) : null;
       return {
         preview: {
           v: 1,
-          heading: 'Create recurring entry',
-          done: 'Created recurring entry',
-          summary: `Created recurring ${created.kind.toLowerCase()} ${created.name}: ${money(created.amount)} ${frequency.toLowerCase()}, first due ${input.startDate} (id ${created.id})`,
+          heading: plan ? 'Start installment plan' : 'Create recurring entry',
+          done: plan ? 'Started installment plan' : 'Created recurring entry',
+          summary: plan
+            ? `Started installment plan ${created.name}: ${money(plan.total)} in ${plan.paymentsLeft} payments of ${money(created.amount)} ${frequency.toLowerCase()}, first due ${input.startDate}${friend ? `, paid to ${friend.name}` : ''}${owedAfter !== null && friend ? `. ${owedText(friend.name, owedAfter)}` : ''} (id ${created.id})`
+            : `Created recurring ${created.kind.toLowerCase()} ${created.name}: ${money(created.amount)} ${frequency.toLowerCase()}, first due ${input.startDate}${friend ? `, paying back ${friend.name}` : ''} (id ${created.id})`,
           destructive: false,
           count: 1,
           items: [
@@ -1316,7 +1342,17 @@ const updateRecurring = define({
               tone: 'add',
               fields: [
                 { label: 'Name', value: created.name, edit: { key: 'name', control: 'text', value: input.name ?? created.name } },
-                { label: 'Amount', value: money(created.amount), edit: { key: 'amount', control: 'amount', value: created.amount } },
+                ...(plan
+                  ? [
+                      { label: 'Total to pay off', value: money(plan.total) },
+                      { label: 'Payments', value: String(plan.paymentsLeft) },
+                    ]
+                  : []),
+                { label: plan ? 'Each payment' : 'Amount', value: money(created.amount), edit: { key: 'amount', control: 'amount' as const, value: created.amount } },
+                ...(friend ? [{ label: 'Paid to', value: friend.name }] : []),
+                ...(friend && plan
+                  ? [{ label: `Owed to ${friend.name}`, value: recordDebt ? `Adds ${money(plan.total)}` : 'Already recorded' }]
+                  : []),
                 { label: 'Repeats', value: frequency },
                 { label: 'First due', value: input.startDate, edit: { key: 'startDate', control: 'date', value: input.startDate } },
                 ...(category ? [{ label: 'Category', value: category.name }] : []),
@@ -1329,7 +1365,7 @@ const updateRecurring = define({
           ],
           link,
         },
-        refs: noRefs(),
+        refs: { ...noRefs(), friendIds: friend ? [friend.id] : [] },
       };
     }
 
@@ -1337,6 +1373,52 @@ const updateRecurring = define({
     const before = await tx.recurringTransaction.findUnique({ where: { id: recurringId } });
     if (!before) bad(`recurringId "${recurringId}" is not a recurring entry. Call upcomingRecurring to list them.`);
     const title = `${before.name} · ${money(before.amount)} ${(FREQUENCY_LABELS[before.frequency as Frequency] ?? before.frequency).toLowerCase()}`;
+
+    if (input.action === 'pay') {
+      const due = toDayString(before.nextDueDate);
+      if (input.payAmount !== undefined) checkAmount(input.payAmount);
+      const result = await postRecurringNowIn(tx, before.id, due, {
+        today: ctx.today,
+        amount: input.payAmount,
+      });
+      const friend = before.friendId
+        ? await tx.friend.findUnique({ where: { id: before.friendId }, select: { id: true, name: true } })
+        : null;
+      const plan =
+        before.totalAmount != null
+          ? planProgress(before.totalAmount, (await paidByRecurring(tx, [before.id])).get(before.id) ?? 0, before.amount)
+          : null;
+      const owed = friend ? await friendBalance(tx, friend.id) : null;
+      const account = names.accounts.get(before.accountId);
+      return {
+        preview: {
+          v: 1,
+          heading: 'Record payment',
+          done: 'Recorded payment',
+          summary: `Recorded ${money(result.amount)} for ${before.name} (due ${due})${account ? ` from ${account.name}` : ''}.${plan ? (result.completed ? ' The plan is paid off.' : ` ${money(plan.remaining)} left in ${plan.paymentsLeft} payments; next due ${result.nextDueDate}.`) : ` Next due ${result.nextDueDate}.`}${friend && owed !== null ? ` ${owedText(friend.name, owed)}` : ''}`,
+          destructive: false,
+          count: 1,
+          items: [
+            {
+              title,
+              tone: 'add',
+              fields: [
+                { label: 'Pays', value: money(result.amount) },
+                { label: 'Due', value: due },
+                ...(account ? [{ label: before.kind === 'INCOME' ? 'Into' : 'From', value: account.name }] : []),
+                ...(friend ? [{ label: 'Paid to', value: friend.name }] : []),
+                ...(plan
+                  ? [{ label: 'Left after this', value: result.completed ? 'Nothing (paid off)' : `${money(plan.remaining)} · ${plan.paymentsLeft} payments` }]
+                  : []),
+                ...(!result.completed ? [{ label: 'Next due', value: result.nextDueDate }] : []),
+              ],
+            },
+          ],
+          link,
+        },
+        refs: { ...noRefs(), accountIds: [before.accountId], friendIds: friend ? [friend.id] : [] },
+      };
+    }
 
     if (input.action === 'skip') {
       const due = toDayString(before.nextDueDate);

@@ -208,9 +208,20 @@ model RecurringTransaction {
   endDate          DateTime?
   autoPost         Boolean            @default(false)
   active           Boolean            @default(true)
+  /// Expenses only: each payment also pays back this friend. Posting writes
+  /// an I_PAID_THEM entry linked to the expense (FriendEntry.paymentTransactionId).
+  friendId         String?            @db.ObjectId
+  /// Set for an installment plan: the total to pay off. What is paid is the
+  /// sum of the transactions posted from this entry; the plan ends itself
+  /// once that reaches the total, and the last payment is the remainder.
+  totalAmount      Float?
+  /// Remind this many days before the due day (0 = on the day, negative =
+  /// never). Null = the app default (lib/reminders.ts).
+  remindDaysBefore Int?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
+  friend       Friend?            @relation(fields: [friendId], references: [id], onDelete: SetNull)
   category     Category?          @relation("RecurringCategory", fields: [categoryId], references: [id])
   subcategory  Subcategory?       @relation("RecurringSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
   account      Account            @relation("RecurringAccount", fields: [accountId], references: [id])
@@ -223,6 +234,7 @@ model RecurringTransaction {
   @@index([accountId])
   @@index([toAccountId])
   @@index([categoryId])
+  @@index([friendId])
 }
 
 /// One row per occurrence that was posted or skipped. The unique index makes
@@ -385,25 +397,30 @@ model Friend {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  entries FriendEntry[]
+  entries   FriendEntry[]
+  recurring RecurringTransaction[]
 }
 
 model FriendEntry {
-  id            String          @id @default(auto()) @map("_id") @db.ObjectId
-  friendId      String          @db.ObjectId
-  date          DateTime
-  amount        Float
-  type          FriendEntryType
-  description   String?
-  notes         String?
+  id                   String          @id @default(auto()) @map("_id") @db.ObjectId
+  friendId             String          @db.ObjectId
+  date                 DateTime
+  amount               Float
+  type                 FriendEntryType
+  description          String?
+  notes                String?
   /// Set when this IOU is a friend's share of one of your expenses. The
   /// expense moved the money, so an entry with a transaction has no account.
-  transactionId String?         @db.ObjectId
+  transactionId        String?         @db.ObjectId
   /// Account the money went through (lent, borrowed, received or paid back).
   /// Moves that account's balance. Never set together with transactionId.
-  accountId     String?         @db.ObjectId
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  accountId            String?         @db.ObjectId
+  /// Set on the I_PAID_THEM entry a recurring payment to a friend writes: the
+  /// expense that moved the money. Such an entry has no account, follows the
+  /// expense's amount and date and is deleted with it (lib/transactions.ts).
+  paymentTransactionId String?         @db.ObjectId
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   friend      Friend       @relation(fields: [friendId], references: [id], onDelete: Cascade)
   transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
@@ -414,6 +431,29 @@ model FriendEntry {
   @@index([friendId, date])
   @@index([transactionId])
   @@index([accountId])
+  @@index([paymentTransactionId])
+}
+
+// Reminders (lib/reminders.ts, lib/push.ts)
+
+/// A browser or phone that asked for reminder notifications (Web Push).
+model PushSubscription {
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  /// Shown in the device list, from the browser's user agent.
+  label      String?
+  createdAt  DateTime  @default(now())
+  lastSentAt DateTime?
+}
+
+/// One row per reminder notification sent, keyed
+/// "<recurringId>:<dueDay>:<stage>", so the daily run never repeats one.
+model ReminderLog {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  createdAt DateTime @default(now())
 }
 
 // Proactive insights and recaps (lib/insights/).

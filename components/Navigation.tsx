@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useQuickAdd } from '@/components/quickadd/QuickAddProvider';
 import { useReviewCount } from '@/components/review/reviewCount';
+import { useDueCount } from '@/components/reminders/reminderStore';
 import { signOut } from '@/app/login/actions';
 
 type NavItem = {
@@ -50,7 +51,7 @@ const PLAN: NavItem = {
   href: '/plan',
   label: 'Plan',
   icon: Target,
-  hint: 'Budgets and recurring',
+  hint: 'Budgets, recurring, reminders',
   except: ['/plan/goals'],
 };
 const GOALS: NavItem = {
@@ -98,26 +99,55 @@ function isActivePath(pathname: string, item: NavItem) {
   return [item.href, ...(item.also ?? [])].some((href) => matchesPrefix(pathname, href));
 }
 
-/** Entries waiting in the review inbox, shown on the Transactions item. */
-function ReviewBadge({ count, className = '' }: { count: number; className?: string }) {
+/**
+ * A count on a navigation item: entries waiting in the review inbox on
+ * Transactions, payments due today or overdue on Plan.
+ */
+function ReviewBadge({
+  count,
+  className = '',
+  label = ' to review',
+  tone = 'mint',
+}: {
+  count: number;
+  className?: string;
+  label?: string;
+  tone?: 'mint' | 'warning';
+}) {
   if (count <= 0) return null;
   return (
     <span
-      className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-mint px-1 text-[10px] font-bold leading-none text-graphite ${className}`}
+      className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none text-graphite ${
+        tone === 'warning' ? 'bg-warning' : 'bg-mint'
+      } ${className}`}
     >
       {count > 99 ? '99+' : count}
-      <span className="sr-only"> to review</span>
+      <span className="sr-only">{label}</span>
     </span>
   );
 }
 
-function SidebarLink({ item, pathname, badge = 0 }: { item: NavItem; pathname: string; badge?: number }) {
+function SidebarLink({
+  item,
+  pathname,
+  badge = 0,
+  badgeHref = '/transactions/review',
+  due = false,
+}: {
+  item: NavItem;
+  pathname: string;
+  badge?: number;
+  /** Where the item goes while it has a badge. */
+  badgeHref?: string;
+  /** The badge counts payments due, not entries to review. */
+  due?: boolean;
+}) {
   const Icon = item.icon;
   const isActive = isActivePath(pathname, item);
   return (
     <Link
-      // With entries waiting, the item opens the inbox.
-      href={badge > 0 ? '/transactions/review' : item.href}
+      // With entries waiting, the item opens the inbox (or the reminders).
+      href={badge > 0 ? badgeHref : item.href}
       aria-current={isActive ? 'page' : undefined}
       className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] transition-all duration-200 ${
         isActive
@@ -138,7 +168,12 @@ function SidebarLink({ item, pathname, badge = 0 }: { item: NavItem; pathname: s
         className={isActive ? 'text-mint' : 'text-ink-muted group-hover:text-ink-secondary'}
       />
       <span>{item.label}</span>
-      <ReviewBadge count={badge} className="ml-auto" />
+      <ReviewBadge
+        count={badge}
+        className="ml-auto"
+        label={due ? ' due' : undefined}
+        tone={due ? 'warning' : 'mint'}
+      />
     </Link>
   );
 }
@@ -148,6 +183,7 @@ export default function Navigation() {
   const [moreOpen, setMoreOpen] = useState(false);
   const quickAdd = useQuickAdd();
   const reviewCount = useReviewCount();
+  const dueCount = useDueCount();
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -290,7 +326,9 @@ export default function Navigation() {
                 <SidebarLink
                   item={item}
                   pathname={pathname}
-                  badge={item === TRANSACTIONS ? reviewCount : 0}
+                  badge={item === TRANSACTIONS ? reviewCount : item === PLAN ? dueCount : 0}
+                  badgeHref={item === PLAN ? '/plan/reminders' : undefined}
+                  due={item === PLAN}
                 />
               </li>
             ))}
@@ -352,6 +390,7 @@ export default function Navigation() {
                 }`}
               >
                 <Grid2x2 size={22} strokeWidth={moreOpen || moreActive ? 2.35 : 1.75} />
+                <ReviewBadge count={dueCount} className="absolute -right-1 -top-1" label=" due" tone="warning" />
               </span>
               <span
                 className={`text-[10px] tracking-wide ${
@@ -405,7 +444,7 @@ export default function Navigation() {
                   return (
                     <li key={item.href}>
                       <Link
-                        href={item.href}
+                        href={item === PLAN && dueCount > 0 ? '/plan/reminders' : item.href}
                         onClick={() => setMoreOpen(false)}
                         aria-current={active ? 'page' : undefined}
                         className={`block h-full rounded-2xl border p-3.5 transition-colors ${
@@ -424,6 +463,9 @@ export default function Navigation() {
                         </div>
                         <p className={`text-sm font-medium ${active ? 'text-mint' : 'text-ink'}`}>
                           {item.label}
+                          {item === PLAN && (
+                            <ReviewBadge count={dueCount} className="ml-1.5 align-middle" label=" due" tone="warning" />
+                          )}
                         </p>
                         <p className="text-[11px] text-ink-muted mt-0.5 leading-snug">{item.hint}</p>
                       </Link>

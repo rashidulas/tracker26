@@ -6,6 +6,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 import { QuickAddProvider } from "@/components/quickadd/QuickAddProvider";
 import { MerchantRuleProvider } from "@/components/merchants/MerchantRulePrompt";
 import DueCheck from "@/components/recurring/DueCheck";
+import ReminderCheck from "@/components/reminders/ReminderCheck";
 import InsightsCheck from "@/components/insights/InsightsCheck";
 import { AskAssistantProvider } from "@/components/assistant/AskAssistant";
 import { getSessionState } from "@/lib/auth/session";
@@ -28,12 +29,14 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Tracker26 — Personal Finance",
   description: "Manage your personal finances",
+  appleWebApp: { capable: true, title: "Tracker26", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#0a0b0d",
 };
 
 export default async function RootLayout({
@@ -65,6 +68,7 @@ export default async function RootLayout({
               <AskAssistantProvider>
               <DueCheck />
               <InsightsCheck />
+              <ReminderCheck />
               <div className="flex min-h-screen">
                 <Navigation />
                 <main id="main-content" tabIndex={-1} className="focus:outline-none flex-1 lg:ml-64 pt-[calc(3rem+env(safe-area-inset-top))] lg:pt-0 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:pb-24 w-full max-w-full overflow-x-clip min-h-screen">

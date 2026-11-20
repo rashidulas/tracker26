@@ -256,7 +256,16 @@ const PROTECTED_APIS = [
   '/api/health/extra',
   '/api/recurring/run/extra',
 ];
-const OPEN = ['/api/health', '/api/recurring/run', '/api/insights/run'];
+const OPEN = [
+  '/api/health',
+  '/api/recurring/run',
+  '/api/insights/run',
+  '/api/reminders/run',
+  '/sw.js',
+  '/manifest.webmanifest',
+  '/icon',
+  '/apple-icon',
+];
 
 test('without a session, pages go to the login page with the place to return to', () => {
   for (const pathname of PAGES) {

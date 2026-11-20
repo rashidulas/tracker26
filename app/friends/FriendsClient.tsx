@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useToast } from '@/components/ToastProvider';
 import { AskButton } from '@/components/assistant/AskAssistant';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +30,7 @@ import {
   ChevronRight,
   Receipt,
   Wallet,
+  CalendarRange,
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toDayString, todayInAppTimeZone } from '@/lib/dates';
@@ -45,6 +47,8 @@ interface FriendEntry {
   notes: string | null;
   accountId?: string | null;
   transactionId?: string | null;
+  /** Set when a recurring payment wrote this entry: the expense that paid. */
+  paymentTransactionId?: string | null;
   /** Account the money went through (settlements, loans). */
   account?: { id: string; name: string } | null;
   /** The expense this entry is a share of. */
@@ -530,6 +534,24 @@ export default function FriendsClient({ initialFriends, accounts = [] }: Friends
               </p>
             </div>
 
+            {detailFriend.balance < -0.005 && (
+              <Link
+                href={`/plan/recurring?plan=1&debt=existing&friend=${detailFriend.id}&total=${Math.abs(
+                  detailFriend.balance
+                ).toFixed(2)}`}
+                className="flex items-center gap-3 rounded-2xl border border-graphite-border-subtle bg-graphite-surface-2/60 p-3.5 hover:border-mint/30 transition-colors"
+              >
+                <CalendarRange size={18} className="text-mint shrink-0" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-ink">Pay this back in installments</span>
+                  <span className="block text-xs text-ink-muted">
+                    Set a regular payment and get reminded before each one is due.
+                  </span>
+                </span>
+                <ChevronRight size={16} className="ml-auto text-ink-muted shrink-0" aria-hidden="true" />
+              </Link>
+            )}
+
             {detailFriend.notes && (
               <p className="text-sm text-ink-secondary">{detailFriend.notes}</p>
             )}
@@ -597,6 +619,14 @@ export default function FriendsClient({ initialFriends, accounts = [] }: Friends
                                   {formatCurrency(entry.transaction.amount)}
                                   {entry.transaction.account &&
                                     ` paid from ${entry.transaction.account.name}`}
+                                </span>
+                              </p>
+                            )}
+                            {entry.paymentTransactionId && (
+                              <p className="mt-1 inline-flex items-center gap-1 text-xs text-info">
+                                <Receipt size={11} aria-hidden="true" className="shrink-0" />
+                                <span className="truncate">
+                                  Recorded as an expense. Change the amount there.
                                 </span>
                               </p>
                             )}

@@ -60,7 +60,13 @@ export function proposalNoun(toolName: string, input: Input): string {
     case 'updateBudgets':
       return i.action === 'copyLastMonth' ? 'budget copy' : 'budget change';
     case 'updateRecurring':
-      return i.action === 'create' ? 'recurring entry' : 'recurring change';
+      return i.action === 'create'
+        ? i.totalAmount
+          ? 'installment plan'
+          : 'recurring entry'
+        : i.action === 'pay'
+        ? 'payment'
+        : 'recurring change';
     case 'updateCategories':
       return i.action === 'setMerchantDefault' ? 'merchant default' : i.action === 'createSubcategory' ? 'subcategory' : 'category';
     default:

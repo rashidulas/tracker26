@@ -750,6 +750,48 @@ test('updateRecurring create, pause, resume and skip', async () => {
   assert.equal(db.data.transaction.length, transactions);
 });
 
+test('updateRecurring starts an installment plan with a friend and records payments', async () => {
+  const friend = db.data.friend[0];
+  const owedBefore = db.data.friendEntry.filter((e) => e.friendId === friend.id).length;
+  const created = await roundTrip('updateRecurring', {
+    action: 'create',
+    kind: 'EXPENSE',
+    name: 'Camera',
+    amount: 416.67,
+    totalAmount: 15000,
+    frequency: 'MONTHLY',
+    startDate: '2026-12-05',
+    categoryId: ids.household,
+    accountId: ids.checking,
+    friendId: friend.id,
+    recordDebt: true,
+    purchaseDate: TODAY,
+  });
+  assert.equal(created.preview.heading, 'Start installment plan');
+  assert.equal(field(created.preview, 0, 'Total to pay off').value, '$15,000.00');
+  assert.equal(field(created.preview, 0, 'Payments').value, '36');
+  assert.equal(field(created.preview, 0, 'Paid to').value, friend.name);
+  const plan = db.data.recurringTransaction.find((r) => r.name === 'Camera')!;
+  assert.deepEqual([plan.totalAmount, plan.friendId], [15000, friend.id]);
+  const debt = db.data.friendEntry.filter((e) => e.friendId === friend.id);
+  assert.equal(debt.length, owedBefore + 1);
+  assert.deepEqual([debt.at(-1)!.type, debt.at(-1)!.amount], ['I_OWE_THEM', 15000]);
+
+  const transactions = db.data.transaction.length;
+  const paid = await roundTrip('updateRecurring', { action: 'pay', recurringId: plan.id });
+  assert.equal(paid.preview.heading, 'Record payment');
+  assert.equal(field(paid.preview, 0, 'Pays').value, '$416.67');
+  assert.equal(field(paid.preview, 0, 'Left after this').value, '$14,583.33 · 35 payments');
+  assert.equal(db.data.transaction.length, transactions + 1);
+  const expense = db.data.transaction.at(-1)!;
+  assert.deepEqual([expense.kind, expense.amount, expense.recurringId], ['EXPENSE', 416.67, plan.id]);
+  assert.equal(
+    db.data.friendEntry.filter((e) => e.paymentTransactionId === expense.id && e.type === 'I_PAID_THEM').length,
+    1
+  );
+  assert.equal(toDayString(db.data.recurringTransaction.find((r) => r.id === plan.id)!.nextDueDate), '2027-01-05');
+});
+
 // ==================== CATEGORIES AND MERCHANTS ====================
 
 test('updateCategories createCategory and createSubcategory', async () => {
