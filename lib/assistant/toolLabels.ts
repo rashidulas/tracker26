@@ -147,6 +147,8 @@ export function toolActivityLabel(toolName: string, input: Input, today: DayStri
     }
     case 'readReceipt':
       return pair('Reading', 'Read', 'the receipt');
+    case 'readStatement':
+      return pair('Reading', 'Read', 'the transactions in the image');
     case 'accountBalances':
       return pair('Checking', 'Checked', 'account balances');
     case 'budgetStatus':

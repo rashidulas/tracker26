@@ -15,6 +15,7 @@
  * recover from. Messages are written for the model; nothing raw from Zod or
  * Prisma is passed through.
  */
+import { scanStatement } from '@/lib/ai/statements';
 import { tool, type LanguageModel, type ModelMessage } from 'ai';
 import { z } from 'zod';
 import { isValidDay, type DayString } from '@/lib/dates';
@@ -357,7 +358,7 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
 
     readReceipt: tool({
       description:
-        'Read the newest receipt, bill or payment screenshot the user sent in this chat. Returns the merchant, date and total as printed, a category from the user\'s own list (null if none clearly fits), and, when the line items clearly belong to different categories, a split by category whose parts add up to the total. Call it for every receipt image before proposing anything; do not read amounts off the image yourself. If status is "not_a_receipt" or "unreadable", tell the user and propose nothing.',
+        'Read the newest image the user sent when it shows ONE purchase: a receipt, bill or payment screenshot. For an image that lists several transactions (a card or bank statement, an activity list) call readStatement instead. Returns the merchant, date and total as printed, a category from the user\'s own list (null if none clearly fits), and, when the line items clearly belong to different categories, a split by category whose parts add up to the total. Call it for every receipt image before proposing anything; do not read amounts off the image yourself. If status is "not_a_receipt" or "unreadable", tell the user and propose nothing.',
       inputSchema: z.object({}),
       execute: (_input, { messages, abortSignal }) =>
         safely('readReceipt', async () => {
@@ -375,6 +376,7 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
             return {
               status: result.error.startsWith('This does not look like') ? ('not_a_receipt' as const) : ('unreadable' as const),
               reason: result.error,
+              hint: 'If the image lists several transactions, call readStatement.',
             };
           }
           const d = result.draft;
@@ -389,6 +391,52 @@ export function buildAssistantTools(deps: AssistantToolDeps) {
             accountId: d.accountId,
             categorySplits: d.splits,
             items: d.items.slice(0, 30),
+            confidence: d.confidence,
+            toCheck: d.issues,
+          };
+        }),
+    }),
+
+    readStatement: tool({
+      description:
+        'Read the newest image the user sent when it lists several transactions: a credit card or bank statement, the posted-transactions list from a banking app, an order history. Returns every purchase with its date, merchant, amount, a category from their own list (null if none fits) and `alreadyRecorded` when a transaction with the same amount within a day is already in the app; payments to the card and refunds come back separately in `notSpending`. Use what it returns; do not read amounts or dates off the image yourself.',
+      inputSchema: z.object({}),
+      execute: (_input, { messages, abortSignal }) =>
+        safely('readStatement', async () => {
+          const image = lastUserImage(messages);
+          if (!image) throw new ToolInputError('There is no image in this conversation. Ask the user to attach the screenshot.');
+          if (!deps.receiptModel) throw new ToolInputError('Reading images is not available right now. Ask the user to type the transactions.');
+          const result = await scanStatement({
+            db: deps.db,
+            model: deps.receiptModel,
+            image,
+            today: deps.today,
+            abortSignal,
+          });
+          if (!result.ok) {
+            return {
+              status: result.error.startsWith('This does not look like') ? ('not_a_statement' as const) : ('unreadable' as const),
+              reason: result.error,
+            };
+          }
+          const d = result.draft;
+          return {
+            status: 'read' as const,
+            /** As printed on the image, if any. The account id still comes from the user or the conversation. */
+            accountNameOnImage: d.accountName,
+            purchases: d.purchases.map((p) => ({
+              date: p.date,
+              merchant: p.merchant,
+              amount: p.amount,
+              categoryId: p.categoryId,
+              subcategoryId: p.subcategoryId,
+              ...(p.type !== 'purchase' ? { type: p.type } : {}),
+              ...(p.pending ? { pending: true } : {}),
+              ...(p.alreadyRecorded ? { alreadyRecorded: p.alreadyRecorded } : {}),
+            })),
+            purchaseCount: d.purchases.length,
+            purchaseTotal: Math.round(d.purchases.reduce((sum, p) => sum + p.amount * 100, 0)) / 100,
+            notSpending: d.notSpending,
             confidence: d.confidence,
             toCheck: d.issues,
           };

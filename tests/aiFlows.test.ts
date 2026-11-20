@@ -917,3 +917,121 @@ describe('ask-about-this context', () => {
     assert.deepEqual(loaded?.context, context);
   });
 });
+
+// ==================== STATEMENT SCREENSHOTS ====================
+
+describe('statement screenshot', () => {
+  const image = { type: 'file' as const, data: 'aGVsbG8gd29ybGQ=', mediaType: 'image/jpeg' };
+  const row = (over: Record<string, unknown>) => ({
+    date: { year: null, month: 11, day: 10 },
+    description: 'X',
+    merchant: 'X',
+    amount: 1,
+    type: 'purchase',
+    pending: false,
+    categoryId: null,
+    ...over,
+  });
+  const statement = (rows: unknown[], over: Record<string, unknown> = {}) => ({
+    isTransactionList: true,
+    whatItShows: null,
+    accountName: 'Discover it',
+    rows,
+    confidence: 'high',
+    ...over,
+  });
+
+  test('purchases are read with categories; payments and refunds are kept apart', async () => {
+    const { scanStatement } = await import('../lib/ai/statements');
+    const { model } = jsonModel(
+      statement([
+        row({ description: 'NORTH TEXAS TOLLWAY AUTH PLANO TX', merchant: 'North Texas Tollway Authority', amount: 12.5, categoryId: ids.household }),
+        row({ description: 'WALGREENS #1234', merchant: 'Walgreens', amount: 8.2, date: { year: 2026, month: 11, day: 9 }, categoryId: 'not-a-real-id' }),
+        row({ description: 'INTERNET PAYMENT - THANK YOU', merchant: 'Payment', amount: 3000, type: 'payment' }),
+        row({ description: 'AMAZON REFUND', merchant: 'Amazon', amount: 20, type: 'refund' }),
+        row({ description: 'BROKEN', merchant: 'Broken', amount: -4 }),
+      ])
+    );
+    const result = await scanStatement({ db: db as never, model, image, today: TODAY });
+    assert.ok(result.ok);
+    const d = result.draft;
+    assert.deepEqual(
+      d.purchases.map((p) => [p.date, p.merchant, p.amount, p.categoryId]),
+      [
+        ['2026-11-10', 'North Texas Tollway Authority', 12.5, ids.household],
+        ['2026-11-09', 'Walgreens', 8.2, null],
+      ]
+    );
+    assert.deepEqual(
+      d.notSpending.map((r) => [r.type, r.amount]),
+      [
+        ['payment', 3000],
+        ['refund', 20],
+      ]
+    );
+    assert.ok(d.issues.some((i) => /1 row could not be read/.test(i)));
+    assert.ok(d.issues.some((i) => /fit none of the categories/.test(i)));
+  });
+
+  test('a purchase already in the app is flagged, once per recorded transaction', async () => {
+    const { scanStatement } = await import('../lib/ai/statements');
+    const existing = db.seed('transaction', {
+      kind: 'EXPENSE',
+      date: parseDay('2026-11-11'),
+      amount: 42.1,
+      merchantOrSource: 'Shell',
+      accountId: ids.checking,
+      categoryId: ids.household,
+    });
+    const { model } = jsonModel(
+      statement([
+        row({ description: 'SHELL OIL 5551', merchant: 'Shell', amount: 42.1 }),
+        row({ description: 'SHELL OIL 5551', merchant: 'Shell', amount: 42.1 }),
+      ])
+    );
+    const result = await scanStatement({ db: db as never, model, image, today: TODAY });
+    assert.ok(result.ok);
+    assert.deepEqual(
+      result.draft.purchases.map((p) => p.alreadyRecorded?.id ?? null),
+      [existing.id, null]
+    );
+    assert.ok(result.draft.issues.some((i) => /1 purchase looks already recorded/.test(i)));
+  });
+
+  test('a single receipt or an unreadable answer is refused with a reason', async () => {
+    const { scanStatement } = await import('../lib/ai/statements');
+    const notList = await scanStatement({
+      db: db as never,
+      model: jsonModel(statement([], { isTransactionList: false, whatItShows: 'a restaurant receipt' })).model,
+      image,
+      today: TODAY,
+    });
+    assert.deepEqual(notList, {
+      ok: false,
+      error: 'This does not look like a list of transactions (it looks like a restaurant receipt).',
+    });
+    const failed = await scanStatement({ db: db as never, model: failingModel(), image, today: TODAY });
+    assert.equal(failed.ok, false);
+  });
+
+  test('the chat tool returns the purchases and their total', async () => {
+    const { model } = jsonModel(
+      statement([
+        row({ merchant: 'Kroger', description: 'KROGER #55', amount: 30.25, categoryId: ids.groceries }),
+        row({ merchant: 'Uber', description: 'UBER TRIP', amount: 9.75, categoryId: null, pending: true }),
+      ])
+    );
+    const tools = buildAssistantTools({ db: db as never, today: TODAY, receiptModel: model });
+    const messages = [{ role: 'user' as const, content: [image, { type: 'text' as const, text: 'add these' }] }];
+    const output = (await tools.readStatement.execute!({}, { toolCallId: 's1', messages } as never)) as {
+      status: string;
+      purchaseCount: number;
+      purchaseTotal: number;
+      purchases: { merchant: string; pending?: boolean }[];
+    };
+    assert.equal(output.status, 'read');
+    assert.equal(output.purchaseCount, 2);
+    assert.equal(output.purchaseTotal, 40);
+    assert.equal(output.purchases[1].pending, true);
+  });
+});
